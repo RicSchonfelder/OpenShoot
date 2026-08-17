@@ -1,6 +1,8 @@
 # OpenShoot 📸
 
 > Open-source AI culling, editing & retouching for photographers.
+>
+> [![CI](https://github.com/RicSchonfelder/OpenShoot/actions/workflows/ci.yml/badge.svg)](https://github.com/RicSchonfelder/OpenShoot/actions/workflows/ci.yml)
 
 Aplicativo desktop para fotógrafos que automatiza o pós-processamento de fotos —
 **100% local e offline**. Arquitetura inspirada no AfterShoot (UI Electron/React +
