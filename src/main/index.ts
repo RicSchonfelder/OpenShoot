@@ -1,11 +1,11 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
 import { loadCore, getCore } from './core'
 
 function createWindow(): void {
   const win = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: 1280,
+    height: 860,
     minWidth: 800,
     minHeight: 600,
     title: 'OpenShoot',
@@ -36,6 +36,19 @@ function createWindow(): void {
 app.whenReady().then(() => {
   loadCore()
 
+  // Inicializa o catálogo SQLite no diretório de dados do usuário.
+  const core = getCore()
+  try {
+    core.setup(app.getPath('userData'))
+  } catch (e) {
+    // fallback: se o userData nao tiver permissao, tenta diretorio padrao do app
+    try {
+      core.setup(join(app.getAppPath(), '.data'))
+    } catch (e2) {
+      console.error('Falha ao inicializar catálogo:', e2)
+    }
+  }
+
   ipcMain.handle('core:hello', (_e, name: string) => getCore().hello(name))
   ipcMain.handle('core:add', (_e, a: number, b: number) => getCore().add(a, b))
   ipcMain.handle('core:version', () => getCore().coreVersion())
@@ -48,6 +61,39 @@ app.whenReady().then(() => {
       chrome: process.versions.chrome
     }
   }))
+
+  // ---- Fase 1: catálogo + thumbnails ----
+  ipcMain.handle('core:scanFolder', async (_e, dir: string) => {
+    try {
+      return getCore().scanFolder(dir)
+    } catch (e) {
+      return { error: String(e) }
+    }
+  })
+  ipcMain.handle(
+    'core:listPhotos',
+    (_e, search: string, offset: number, limit: number) =>
+      getCore().listPhotos(search, offset, limit)
+  )
+  ipcMain.handle('core:photoCount', () => getCore().photoCount())
+  ipcMain.handle('core:thumbForPhoto', async (_e, id: number, maxDim: number) => {
+    try {
+      return (await getCore().thumbForPhoto(id, maxDim)) ?? null
+    } catch {
+      return null
+    }
+  })
+
+  ipcMain.handle('core:pickFolder', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return null
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Escolha uma pasta de fotos',
+      properties: ['openDirectory']
+    })
+    if (result.canceled || !result.filePaths.length) return null
+    return result.filePaths[0]
+  })
 
   createWindow()
 

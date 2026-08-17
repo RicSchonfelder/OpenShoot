@@ -10,54 +10,63 @@
 ### Concluído
 - **Fase 0** ✅ — Esqueleto Electron (React/TS) + core Rust (napi-rs) com ponte IPC
   validada E2E. Repo público no GitHub.
-- **Fase 1 (em andamento)** — Catálogo + decode + thumbnails:
+- **Fase 1** ✅ — Catálogo + decode + thumbnails + grid virtualizado:
   - `core/src/catalog.rs` — Catálogo SQLite (`photos`), schema, upsert, listagem
     com paginação/busca, `scan_folder` recursivo com `walkdir`.
   - `core/src/imageproc.rs` — `inspect_file` (dimensões, câmera, EXIF via
     kamadak-exif, hash SHA-256), extração de preview embutido via tags
     JPEGInterchangeFormat, geração de thumbnail JPEG base64.
-  - `core/src/types.rs` — Tipos NAPI (`PhotoMeta`, `ScanResult`, `PhotoList`).
   - `core/src/lib.rs` — Funções NAPI: `setup`, `scan_folder`, `list_photos`,
-    `get_photo`, `photo_count`, `thumb_for_photo` (async), `thumb_for_path`
-    (async).
-  - **Validado em runtime**: scan de pasta + catálogo + thumbnail de PNG/JPG
-    funcionando via addon `.node` no Node.
+    `get_photo`, `photo_count`, `thumb_for_photo` (async), `thumb_for_path`.
+  - **UI**: `Gallery.tsx` com grid virtualizado (react-window 2.x `Grid` +
+    `cellComponent`/`cellProps`), `App.tsx` com import de pasta via dialog nativo,
+    `preload` expondo `scanFolder`/`listPhotos`/`thumbForPhoto`/`pickFolder`.
+  - **Validado E2E**: app abre, importa 30 fotos, grid virtualizado exibe todas
+    com thumbnails carregadas.
 
 ### Failures / pontos de atenção
 - **RAW preview** (CR3/NEF/ARW/DNG):
   - NEF/ARW/DNG/CR2 (TIFF-based): **funciona** via `read_embedded_jpeg` usando os
     tags `JPEGInterchangeFormat` (0x201) / `JPEGInterchangeFormatLength` (0x202)
-    do kamadak, iterando TODOS os IFDs (o preview full-size costuma estar num
-    SubIFD/thumbnail).
-  - **CR3 (Canon, HEIF container)**: NÃO funciona com kamadak (ele só extrai EXIF,
-    não o preview). Requer parser de container BMFF/HEIF (boxes PRVW/THMB).
-  - **`jpgfromraw-lib` (MIT) FALHA de build**: o `build.rs` obrigatório tenta
-    compilar `gpr_tools` + `dcraw_tool` (C/CMake/nasm) com `.expect`, o que panica
-    sem nasm/CMake. Tentamos `default-features = false`, mas o build.rs não é
-    controlado por features → **descartado**. Se um dia quisermos CR3, usar parser
-    BMFF próprio leve (box `PRVW`/`THMB`).
+    do kamadak, iterando TODOS os IFDs.
+  - **CR3 (Canon, HEIF container)**: NÃO funciona com kamadak. Requer parser de
+    container BMFF/HEIF (boxes PRVW/THMB) — futuro.
+  - **`jpgfromraw-lib` (MIT) FALHA de build**: build.rs obrigatório exige nasm/CMake
+    (gpr_tools + dcraw), panica sem ferramentas C → **descartado**.
 - `setup()` usa `OnceLock` por processo — cada processo Node novo precisa chamar
-  `setup()` antes de usar o catálogo.
-- Dimensões (width/height) podem vir como 0 para PNG sem EXIF (kamadak lê
-  primariamente TIFF/JPEG/HEIF). Melhoria futura: ler cabeçalho de imagem.
+  `setup()`.
+- **userData do preview**: electron-vite preview usa `app.getPath('userData')` =
+  `~/Library/Application Support/openshoot` (nome do package.json). Para popular o
+  catálogo fora do dialog, rodar `setup` apontando para esse diretório.
+- Dimensões (width/height) podem vir 0 p/ PNG sem EXIF (kamadak lê TIFF/JPEG/HEIF).
+- react-window é a **v2.x** (API nova: `Grid` + `cellComponent`/`cellProps`,
+  sem `width`/`height` como props, usa `defaultWidth`/`defaultHeight` + `onResize`).
 
 ## Decisões técnicas tomadas
-- Stack: Electron/React (UI) ⇄ IPC ⇄ Rust core via **napi-rs** (mesmo do Aftershoot).
-- Decode de metadados: **kamadak-exif** (BSD-2-Clause). Preview de RAW embutido: via
-  tags `JPEGInterchangeFormat` (0x201) e `JPEGInterchangeFormatLength` (0x202),
-  iterando todos os IFDs. Confirmado no fonte do kamadak 0.6.1.
-- Thumbnails: crate `image` 0.25 (thumbnail + JPEG encode base64). Funções async
-  com `#[napi] async` + `tokio::task::spawn_blocking` para decode pesado.
-- **`jpgfromraw-lib` (MIT) rejeitado** — build.rs obrigatório exige ferramentas C
-  (nasm/CMake). Abordagem kamadak + parser próprio leve é preferível.
+- Stack: Electron/React ⇄ IPC ⇄ Rust core via **napi-rs**.
+- kamadak-exif (BSD-2-Clause) para EXIF. Preview RAW via tags JPEGInterchangeFormat.
+- crate `image` 0.25 para thumbnails. react-window 2.x para virtualização.
+- `jpgfromraw-lib` (MIT) rejeitado (build script exige ferramentas C).
 
 ## Próximos passos (ordem sugerida)
-1. Template de thumbnail/único caminho: manter `thumbForPhoto` (id) e
-   `thumbForPath` — validar dimensões via cabeçalho p/ PNG.
-2. **IPC/preload/renderer** — expor `setup`, `scanFolder`, `listPhotos`,
-   `thumbForPhoto` no Electron e criar grid virtualizado na UI (react-window).
-3. **UI Grid** — decisão de lib de virtualização (react-window recomendado).
-4. Commit da Fase 1 (UI) + validação final + push.
+1. **Culling (Fase 2)** — detectar faces, nitidez, score, XMP. Este é o próximo
+   grande marco (ver issue #2).
+2. Melhorias Fase 1: dimensões via cabeçalho p/ imagens sem EXIF; CR3 via parser BMFF.
+3. Commit Fase 1 concluído. Próximo commit: Fase 2 ou CR3.
+
+## Como retomar (recuperação de crash)
+1. `cd ~/OpenShoot`
+2. `npm install` (aprovar scripts electron/esbuild/fsevents se pedir)
+3. `npm run build:core` — regenera o addon `.node`
+4. `npm run dev` — sobe o app
+5. `npm run typecheck` e `npm test` — validação
+
+## Notas de ambiente
+- Máquina: macOS (darwin/arm64). Rust 1.97.1, Node 24.18.
+- addon: `core/openshoot_core.darwin.arm64.node` (gitignored).
+- userData app: `~/Library/Application Support/openshoot` (contém catalog.db).
+- Catalogo de teste: `/tmp/ostest/shoot` (30 PNGs gerados; `.jpg` fake ignorados).
+- Dependencias novas: react-window 2.x, @types/react-window.
 
 ## Como retomar (recuperação de crash)
 1. `cd ~/OpenShoot`

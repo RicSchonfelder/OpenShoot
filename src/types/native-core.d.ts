@@ -1,0 +1,40 @@
+// Declaração global do addon nativo (napi-rs). Deve ser um SCRIPT (sem export
+// no topo) para que o `declare module '*.node'` seja global e visível em todo o projeto.
+declare module '*.node' {
+  export interface NativePhotoMeta {
+    id: number
+    path: string
+    fileName: string
+    ext: string
+    fileSize: number
+    width: number
+    height: number
+    camera: string
+    takenAt: string | null
+    rating: number
+    hasXmp: boolean
+    previewAvailable: boolean
+    hash: string
+  }
+  export interface NativeScanResult {
+    scanned: number
+    added: number
+    updated: number
+    skipped: number
+    errors: string[]
+  }
+  export interface NativePhotoList {
+    photos: NativePhotoMeta[]
+    total: number
+  }
+  export function setup(dataDir: string): string
+  export function add(a: number, b: number): number
+  export function coreVersion(): string
+  export function hello(name: string): string
+  export function scanFolder(dir: string): NativeScanResult
+  export function listPhotos(search: string, offset: number, limit: number): NativePhotoList
+  export function getPhoto(id: number): NativePhotoMeta | null
+  export function photoCount(): number
+  export function thumbForPhoto(id: number, maxDim: number): Promise<string | null>
+  export function thumbForPath(path: string, maxDim: number): Promise<string | null>
+}

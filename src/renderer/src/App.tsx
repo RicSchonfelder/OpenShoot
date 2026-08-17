@@ -1,88 +1,82 @@
 import { useCallback, useEffect, useState } from 'react'
+import Gallery from './components/Gallery'
+import type { PhotoMeta } from '../../types/photo'
 
-type AppInfo = Awaited<ReturnType<typeof window.openshoot.appInfo>>
-
-interface ChipProps {
-  label: string
-  value: string
-}
-
-function Chip({ label, value }: ChipProps) {
-  return (
-    <span className="chip">
-      <span className="chip-label">{label}</span>
-      <code>{value}</code>
-    </span>
-  )
-}
+const PAGE_SIZE = 200
 
 export default function App() {
-  const [coreMsg, setCoreMsg] = useState<string>('')
-  const [name, setName] = useState<string>('fotógrafo')
-  const [info, setInfo] = useState<AppInfo | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [photos, setPhotos] = useState<PhotoMeta[]>([])
+  const [scanning, setScanning] = useState(false)
+  const [scanMsg, setScanMsg] = useState<string | null>(null)
+  const [scanErrors, setScanErrors] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    window.openshoot.appInfo().then(setInfo).catch((e) => setError(String(e)))
+  const loadPhotos = useCallback(async () => {
+    try {
+      const list = await window.openshoot.listPhotos('', 0, PAGE_SIZE)
+      setPhotos(list.photos)
+    } catch (e) {
+      setError(String(e))
+    }
   }, [])
 
-  const runHello = useCallback(async () => {
-    setBusy(true)
+  useEffect(() => {
+    loadPhotos()
+  }, [loadPhotos])
+
+  const importFolder = useCallback(async () => {
     setError(null)
+    setScanMsg(null)
+    setScanErrors([])
+    const dir = await window.openshoot.pickFolder()
+    if (!dir) return
+    setScanning(true)
     try {
-      const msg = await window.openshoot.hello(name || 'fotógrafo')
-      setCoreMsg(msg)
+      const res = await window.openshoot.scanFolder(dir)
+      if ('error' in res) {
+        setError(res.error as string)
+      } else {
+        setScanMsg(
+          `Importado ${dir}: ${res.scanned} arquivos, +${res.added} novos, ` +
+            `${res.updated} atualizados, ${res.errors.length} erros`
+        )
+        if (res.errors.length) setScanErrors(res.errors.slice(0, 20))
+        await loadPhotos()
+      }
     } catch (e) {
       setError(String(e))
     } finally {
-      setBusy(false)
+      setScanning(false)
     }
-  }, [name])
+  }, [loadPhotos])
 
   return (
-    <div className="screen">
+    <div className="app">
       <header className="topbar">
         <span className="logo">OpenShoot</span>
-        <span className="badge">Fase 0 · esqueleto</span>
+        <div className="topbar-right">
+          <span className="badge">Fase 1 · catálogo</span>
+          <button onClick={importFolder} disabled={scanning}>
+            {scanning ? 'Importando…' : 'Importar pasta'}
+          </button>
+        </div>
       </header>
 
+      {scanMsg && <div className="toast">{scanMsg}</div>}
+      {scanErrors.length > 0 && (
+        <details className="scan-errors">
+          <summary>{scanErrors.length} erro(s) ao importar</summary>
+          <ul>
+            {scanErrors.map((er, i) => (
+              <li key={i}>{er}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {error && <div className="toast error">{error}</div>}
+
       <main className="content">
-        <section className="panel">
-          <h1>Ponte Electron ⇄ Rust</h1>
-          <p className="muted">
-            Prova de conceito: a UI (Electron/React) chama o core Rust (napi-rs)
-            via IPC isolado — a mesma arquitetura do Aftershoot.
-          </p>
-
-          <div className="chips">
-            {info && (
-              <>
-                <Chip label="Rust core" value={coreMsg ? 'carregado' : '…'} />
-                <Chip label="SO" value={info.platform} />
-                <Chip label="CPU" value={info.arch} />
-                <Chip label="Electron" value={info.versions.electron ?? '?'} />
-                <Chip label="Node" value={info.versions.node ?? '?'} />
-                <Chip label="Chrome" value={info.versions.chrome ?? '?'} />
-              </>
-            )}
-          </div>
-
-          <div className="row">
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Seu nome"
-              aria-label="Seu nome"
-            />
-            <button onClick={runHello} disabled={busy}>
-              {busy ? 'Chamando Rust…' : 'Chamar Rust'}
-            </button>
-          </div>
-
-          {coreMsg && <pre className="output">{coreMsg}</pre>}
-          {error && <pre className="output error">{error}</pre>}
-        </section>
+        <Gallery photos={photos} onRefresh={loadPhotos} />
       </main>
     </div>
   )
