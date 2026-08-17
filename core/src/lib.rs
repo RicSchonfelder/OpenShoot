@@ -6,7 +6,7 @@ mod imageproc;
 mod types;
 
 use napi::bindgen_prelude::*;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use types::{PhotoList, PhotoMeta, ScanResult};
 
@@ -78,25 +78,19 @@ pub async fn thumb_for_photo(id: i64, max_dim: u32) -> Result<Option<String>> {
   let path = PathBuf::from(&photo.path);
   // Run blocking decode off the async thread.
   let dim = if max_dim == 0 { 256 } else { max_dim };
-  tokio::task::spawn_blocking(move || match imageproc::thumbnail_base64(&path, dim) {
-    Ok(b) => Some(b),
-    Err(_) => None,
-  })
-  .await
-  .map(|o| o)
-  .map_err(|e| Error::from_reason(e.to_string()))
+  tokio::task::spawn_blocking(move || imageproc::thumbnail_base64(&path, dim).ok())
+    .await
+    .map_err(|e| Error::from_reason(e.to_string()))
 }
 
 /// Gera thumbnail a partir de um caminho absoluto (independente do catálogo).
 #[napi]
 pub async fn thumb_for_path(path: String, max_dim: u32) -> Result<Option<String>> {
   let dim = if max_dim == 0 { 256 } else { max_dim };
-  tokio::task::spawn_blocking(move || {
-    imageproc::thumbnail_base64(Path::new(&path), dim).ok()
-  })
-  .await
-  .map(|o| o)
-  .map_err(|e| Error::from_reason(e.to_string()))
+  let pathb = PathBuf::from(&path);
+  tokio::task::spawn_blocking(move || imageproc::thumbnail_base64(&pathb, dim).ok())
+    .await
+    .map_err(|e| Error::from_reason(e.to_string()))
 }
 
 #[cfg(test)]

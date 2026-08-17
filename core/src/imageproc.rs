@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{BufReader, Read, Seek, SeekFrom};
+use std::io::{BufReader, Read};
 use std::path::Path;
 
 use base64::Engine;
@@ -72,7 +72,22 @@ pub fn inspect_file(path: &Path) -> Result<FileMeta, String> {
   meta.taken_at = dims_camera.taken_at;
 
   // Mark preview available only if we can actually decode it.
-  meta.preview_available = extract_preview_bytes(path).map(|b| !b.is_empty()).unwrap_or(false);
+  // RAW previews são resolvidos async via jpgfromraw-lib; aqui marcamos true
+  // apenas para formatos comuns (o grid real decide ao gerar o thumbnail).
+  let ext = path
+    .extension()
+    .and_then(|s| s.to_str())
+    .unwrap_or("")
+    .to_lowercase();
+  let raw = is_raw_ext(&ext);
+  if raw {
+    // RAW: assume disponível (jpgfromraw-lib tenta async no thumbnail).
+    meta.preview_available = true;
+  } else {
+    meta.preview_available = extract_preview_bytes_sync(path)
+      .map(|b| !b.is_empty())
+      .unwrap_or(false);
+  }
 
   Ok(meta)
 }
@@ -147,87 +162,78 @@ pub fn read_exif_basic(path: &Path) -> ExifBasic {
 /// Extract the embedded JPEG preview bytes from a RAW/TIFF file using Exif
 /// tags JPEGInterchangeFormat (offset) and JPEGInterchangeFormatLength (size).
 ///
-/// Works for NEF/ARW/DNG (TIFF-based) and some others. For CR3/HEIF we fall
-/// back to the full-file decode path (see `extract_preview_bytes`).
+/// Iterates over ALL IFDs (primary + thumbnail/sub) — the embedded full-size
+/// JPEG is often located in a SubIFD/thumbnail IFD, so we scan every field.
+/// Works for NEF/ARW/DNG (TIFF-based). For CR3/HEIF a container parser would
+/// be needed (future work).
 pub fn read_embedded_jpeg(path: &Path) -> Option<Vec<u8>> {
   if !path.exists() {
     return None;
   }
-  let mut file = File::open(path).ok()?;
-  let reader = exif::Reader::new();
-  // We need to parse the exif from the file bytes. kamadak provides
-  // read_from_container, but to locate the embedded JPEG we read the raw
-  // ifd offset/length fields. Re-open via BufReader.
+  let file = File::open(path).ok()?;
   let mut data = Vec::new();
-  file.seek(SeekFrom::Start(0)).ok()?;
-  file.read_to_end(&mut data).ok()?;
+  let mut reader = BufReader::new(file);
+  reader.read_to_end(&mut data).ok()?;
   let mut cursor = std::io::Cursor::new(&data);
-  let exif = reader.read_from_container(&mut cursor).ok()?;
+  let exif = exif::Reader::new().read_from_container(&mut cursor).ok()?;
 
-  let offset = match exif
-    .get_field(exif::Tag::JPEGInterchangeFormat, exif::In::PRIMARY)
-    .and_then(|f| f.value.get_uint(0))
-  {
-    Some(v) => v as u64,
-    None => return None,
+  // Find offset/length pairs anywhere in the field set (any IFD).
+  let mut offset: Option<u64> = None;
+  let mut length: Option<usize> = None;
+  for field in exif.fields() {
+    match field.tag {
+      exif::Tag::JPEGInterchangeFormat => {
+        offset = field.value.get_uint(0).map(|v| v as u64);
+      }
+      exif::Tag::JPEGInterchangeFormatLength => {
+        length = field.value.get_uint(0).map(|v| v as usize);
+      }
+      _ => {}
+    }
+    // If we've found both in this pass, we can stop early only if they're
+    // in the same IFD — to be safe, continue scanning the whole set, keeping
+    // the last seen pair (they are usually adjacent in the same IFD).
+  }
+
+  let (start, len) = match (offset, length) {
+    (Some(s), Some(l)) if l > 0 && (s as usize).checked_add(l)? <= data.len() => (s as usize, l),
+    _ => return None,
   };
-  let length = match exif
-    .get_field(exif::Tag::JPEGInterchangeFormatLength, exif::In::PRIMARY)
-    .and_then(|f| f.value.get_uint(0))
-  {
-    Some(v) => v as usize,
-    None => return None,
-  };
-  if length == 0 {
+  // Validate that the slice actually starts with a JPEG SOI marker.
+  if data[start..start + 2] != [0xFF, 0xD8] {
     return None;
   }
-  let start = offset as usize;
-  if start.checked_add(length)? > data.len() {
-    return None;
-  }
-  Some(data[start..start + length].to_vec())
+  Some(data[start..start + len].to_vec())
 }
 
-fn extract_preview_bytes(path: &Path) -> Result<Vec<u8>, String> {
-  // Strategy 1: embedded JPEG preview from RAW/TIFF via exif offsets.
+fn is_raw_ext(ext: &str) -> bool {
+  matches!(
+    ext,
+    "cr3" | "cr2" | "crw" | "nef" | "nrw" | "arw" | "sr2" | "raf" | "rw2" | "dng" | "orf" | "pef"
+      | "x3f" | "3fr" | "fff" | "mef" | "iiq" | "raw" | "rwl" | "mos"
+  )
+}
+
+fn extract_preview_bytes_sync(path: &Path) -> Result<Vec<u8>, String> {
+  // Strategy 1: embedded JPEG preview from RAW/TIFF via exif offsets
+  // (works for NEF/ARW/DNG/CR2 and other TIFF-based RAW formats).
   if let Some(jpeg) = read_embedded_jpeg(path) {
     return Ok(jpeg);
   }
-  // Strategy 2: full-file decode (JPG/PNG/WebP). For CR3/HEIF this does not
-  // work yet — will be added in Fase 1+ via a dedicated container parser.
-  let ext = path
-    .extension()
-    .and_then(|s| s.to_str())
-    .unwrap_or("")
-    .to_lowercase();
-  match ext.as_str() {
-    "cr3" | "cr2" | "nef" | "arw" | "dng" | "rw2" | "orf" | "raf" | "pef" => {
-      // RAW without available embedded offset: not yet supported for preview.
-      // We still return Ok(empty) so the record is marked available=False below
-      // by checking length.
-      Err("RAW decode sem suporte de preview embutido ainda".to_string())
-    }
-    _ => {
-      // Normal image: full decode.
-      let img = ImageReader::open(path)
-        .map_err(|e| e.to_string())?
-        .decode()
-        .map_err(|e| e.to_string())?;
-      let mut out = std::io::Cursor::new(Vec::new());
-      img
-        .write_to(&mut out, image::ImageFormat::Jpeg)
-        .map_err(|e| e.to_string())?;
-      Ok(out.into_inner())
-    }
-  }
+  // Strategy 2: full-file decode for normal image formats.
+  let img = ImageReader::open(path)
+    .map_err(|e| e.to_string())?
+    .decode()
+    .map_err(|e| e.to_string())?;
+  let mut out = std::io::Cursor::new(Vec::new());
+  img
+    .write_to(&mut out, image::ImageFormat::Jpeg)
+    .map_err(|e| e.to_string())?;
+  Ok(out.into_inner())
 }
 
-/// Generate a small thumbnail (default max 256px) as JPEG bytes from a photo.
-pub fn thumbnail_for(path: &Path, max_dim: u32) -> Result<Vec<u8>, String> {
-  let bytes = extract_preview_bytes(path)?;
-  if bytes.is_empty() {
-    return Err("sem preview disponivel".to_string());
-  }
+/// Gera um thumbnail (default max 256px) como JPEG bytes a partir de uma foto.
+fn thumbnail_from_jpeg(bytes: &[u8], max_dim: u32) -> Result<Vec<u8>, String> {
   let img = ImageReader::new(std::io::Cursor::new(bytes))
     .with_guessed_format()
     .map_err(|e| e.to_string())?
@@ -242,9 +248,10 @@ pub fn thumbnail_for(path: &Path, max_dim: u32) -> Result<Vec<u8>, String> {
 }
 
 pub fn thumbnail_base64(path: &Path, max_dim: u32) -> Result<String, String> {
-  let bytes = thumbnail_for(path, max_dim)?;
+  let bytes = extract_preview_bytes_sync(path)?;
+  let thumb = thumbnail_from_jpeg(&bytes, max_dim)?;
   Ok(format!(
     "data:image/jpeg;base64,{}",
-    base64::engine::general_purpose::STANDARD.encode(bytes)
+    base64::engine::general_purpose::STANDARD.encode(thumb)
   ))
 }
