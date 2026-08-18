@@ -60,6 +60,21 @@ thumbnails, botão "Cull" roda IA local (NIMA+SCRFD) em ~5.6s/30 fotos.
 
 ---
 
+## 4.5 EMPACOTAMENTO macOS (app nativo)
+
+Para gerar um `.app`/`.dmg` instalável (arrastar p/ Aplicativos):
+
+```bash
+cd ~/OpenShoot
+npm run dist:mac     # compila core + UI + empacota (dmg/zip em release/)
+```
+
+- Artefato: `release/mac-arm64/OpenShoot.app` e `release/OpenShoot-<ver>-arm64.dmg`
+- O app usa userData em `~/Library/Application Support/OpenShoot/`
+- **Para atualizar**: modificar código e rodar `npm run dist:mac` de novo (gera novo dmg)
+- **Nota**: build demora ~10min (recompila Rust + baixa Electron) e gera ~1.1GB (ONNX estático + modelos). `release/` está no .gitignore (não commitar).
+- Ícone: `build/icon.png` (placeholder gerado; trocar por logo real quando tiver).
+
 ## 5. Como recompor o ambiente após RESTART
 
 Pré-requisitos já instalados nesta máquina: Rust 1.97.1, Node 24.18, `gh` logado
