@@ -87,6 +87,7 @@
   usa sidecar .xmp sync ou `.cos` em CaptureOne/Settings*; naming `<stem>.xmp`.
 
 ## Próximos passos (ordem sugerida)
+1. **Fase 3 concluída** ✅ — edição em lote não-destrutiva (exposição, WB, contraste, saturação, sombras, realces, brilho) com preview e persistência por foto.
 1. **Refinar SCRFD decode multi-escala**: o SCRFD emite score_8/16/32 + bbox_8/16/32 (multi-escala). A decodificação atual é simplificada (assume N detecções). Para produção, implementar NMS (non-max suppression) por escala (ver InsightFace pynms).
 2. **Filtro/UI picks + export XMP em massa**.
 3. Melhorias Fase 1: dimensões via cabeçalho; CR3 via parser BMFF.

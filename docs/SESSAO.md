@@ -144,7 +144,7 @@ validada** (decisão multi-escala + NMS). Detalhes:
    unrated no header, botão Exportar XMP em massa (31 sidecars validado E2E).
 2. **Melhorias Fase 1**: **CR3** ✅ FEITO (parser BMFF em core/src/cr3.rs, validado).
    Resta: dimensões via cabeçalho p/ imagens sem EXIF.
-3. **Fase 3**: edição em lote (feature flag OFF, opt-in).
+3. **Fase 3: edição em lote** ✅ FEITO — motor não-destrutivo (exposição/WB/contraste/saturação/sombras/realces/brilho) + painel de sliders com preview em tempo real + aplicar em lote (32 fotos validado).
 4. **Fase 4**: retoque básico (segmentação de pele via ONNX).
 5. **Fase 6**: OpenRouter opt-in (chave do usuário no Keychain).
 
