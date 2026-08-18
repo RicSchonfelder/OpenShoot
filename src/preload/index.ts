@@ -23,7 +23,18 @@ const api = {
   writeXmpForPhoto: (id: number): Promise<string> =>
     ipcRenderer.invoke('core:writeXmpForPhoto', id),
   exportAllXmp: (): Promise<{ exported: number; errors: number; total: number }> =>
-    ipcRenderer.invoke('core:exportAllXmp')
+    ipcRenderer.invoke('core:exportAllXmp'),
+  // Fase 3: edição
+  setPhotoEdit: (id: number, paramsJson: string): Promise<void> =>
+    ipcRenderer.invoke('core:setPhotoEdit', id, paramsJson),
+  getPhotoEdit: (id: number): Promise<string> =>
+    ipcRenderer.invoke('core:getPhotoEdit', id),
+  previewEdit: (id: number, paramsJson: string, maxDim: number): Promise<string | null> =>
+    ipcRenderer.invoke('core:previewEdit', id, paramsJson, maxDim),
+  applyEditAll: (paramsJson: string): Promise<string> =>
+    ipcRenderer.invoke('core:applyEditAll', paramsJson),
+  applyEditOne: (id: number, paramsJson: string, maxDim: number): Promise<string | null> =>
+    ipcRenderer.invoke('core:applyEditOne', id, paramsJson, maxDim)
 }
 
 contextBridge.exposeInMainWorld('openshoot', api)

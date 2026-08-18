@@ -118,6 +118,37 @@ app.whenReady().then(() => {
     }
   })
 
+  // ---- Fase 3: edição ----
+  ipcMain.handle('core:setPhotoEdit', (_e, id: number, paramsJson: string) => {
+    try {
+      return getCore().setPhotoEdit(id, paramsJson)
+    } catch (e) {
+      return { error: String(e) }
+    }
+  })
+  ipcMain.handle('core:getPhotoEdit', (_e, id: number) => getCore().getPhotoEdit(id))
+  ipcMain.handle('core:previewEdit', async (_e, id: number, paramsJson: string, maxDim: number) => {
+    try {
+      return (await getCore().previewEdit(id, paramsJson, maxDim)) ?? null
+    } catch {
+      return null
+    }
+  })
+  ipcMain.handle('core:applyEditAll', async (_e, paramsJson: string) => {
+    try {
+      return await getCore().applyEditAll(paramsJson)
+    } catch (e) {
+      return JSON.stringify({ applied: 0, errors: 1, total: 0 })
+    }
+  })
+  ipcMain.handle('core:applyEditOne', async (_e, id: number, paramsJson: string, maxDim: number) => {
+    try {
+      return (await getCore().applyEditOne(id, paramsJson, maxDim)) ?? null
+    } catch {
+      return null
+    }
+  })
+
   createWindow()
 
   app.on('activate', () => {

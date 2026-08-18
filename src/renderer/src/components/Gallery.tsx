@@ -5,6 +5,8 @@ import type { PhotoMeta } from '../../../types/photo'
 interface GalleryProps {
   photos: PhotoMeta[]
   onRefresh: () => void
+  selectedId: number | null
+  onSelect: (id: number) => void
 }
 
 const CELL_SIZE = 200
@@ -19,9 +21,21 @@ interface CellData {
   photos: PhotoMeta[]
   cols: number
   maxDim: number
+  selectedId: number | null
+  onSelect: (id: number) => void
 }
 
-function Thumb({ photo, maxDim }: { photo: PhotoMeta; maxDim: number }) {
+function Thumb({
+  photo,
+  maxDim,
+  selected,
+  onSelect
+}: {
+  photo: PhotoMeta
+  maxDim: number
+  selected: boolean
+  onSelect: (id: number) => void
+}) {
   const [src, setSrc] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
 
@@ -48,7 +62,11 @@ function Thumb({ photo, maxDim }: { photo: PhotoMeta; maxDim: number }) {
   const label = photo.fileName
 
   return (
-    <div className="cell">
+    <div
+      className={`cell ${selected ? 'selected' : ''}`}
+      onClick={() => onSelect(photo.id)}
+      title={photo.path}
+    >
       <div className="cell-img">
         {src ? (
           <img src={src} alt={label} loading="lazy" draggable={false} />
@@ -62,7 +80,7 @@ function Thumb({ photo, maxDim }: { photo: PhotoMeta; maxDim: number }) {
           <span className="cell-score">{Math.round(photo.cullScore)}</span>
         )}
       </div>
-      <div className="cell-meta" title={photo.path}>
+      <div className="cell-meta">
         <span className="cell-name">{label}</span>
         {photo.camera && <span className="cell-camera">{photo.camera}</span>}
       </div>
@@ -76,7 +94,9 @@ function cellComponent({
   style,
   photos,
   cols,
-  maxDim
+  maxDim,
+  selectedId,
+  onSelect
 }: {
   columnIndex: number
   rowIndex: number
@@ -84,23 +104,36 @@ function cellComponent({
   photos: PhotoMeta[]
   cols: number
   maxDim: number
+  selectedId: number | null
+  onSelect: (id: number) => void
 }) {
   const index = rowIndex * cols + columnIndex
   const photo = photos[index]
   if (!photo) return <div style={style} />
   return (
     <div style={style}>
-      <Thumb photo={photo} maxDim={maxDim} />
+      <Thumb
+        photo={photo}
+        maxDim={maxDim}
+        selected={selectedId === photo.id}
+        onSelect={onSelect}
+      />
     </div>
   )
 }
 
-export default function Gallery({ photos, onRefresh }: GalleryProps) {
+export default function Gallery({ photos, onRefresh, selectedId, onSelect }: GalleryProps) {
   const [cols, setCols] = useState(() => computeCols(DEFAULT_WIDTH))
 
   const colCount = cols
   const rowCount = Math.max(1, Math.ceil(photos.length / colCount))
-  const cellProps: CellData = { photos, cols: colCount, maxDim: CELL_SIZE * 2 }
+  const cellProps: CellData = {
+    photos,
+    cols: colCount,
+    maxDim: CELL_SIZE * 2,
+    selectedId,
+    onSelect
+  }
 
   return (
     <div className="gallery">

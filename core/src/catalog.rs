@@ -68,7 +68,42 @@ fn ensure_schema(conn: &Connection) -> Result<(), String> {
       .execute("ALTER TABLE photos ADD COLUMN cull_score REAL", [])
       .map_err(|e| e.to_string())?;
   }
+  let has_edit: bool = conn
+    .query_row(
+      "SELECT COUNT(*) FROM pragma_table_info('photos') WHERE name='edit_json'",
+      [],
+      |r| Ok(r.get::<_, i64>(0)? != 0),
+    )
+    .map_err(|e| e.to_string())?;
+  if !has_edit {
+    conn
+      .execute("ALTER TABLE photos ADD COLUMN edit_json TEXT", [])
+      .map_err(|e| e.to_string())?;
+  }
   Ok(())
+}
+
+/// Persiste a receita de edição (JSON) de uma foto. Não-destrutiva.
+pub fn set_photo_edit(id: i64, edit_json: &str) -> Result<(), String> {
+  let conn = open()?;
+  conn
+    .execute(
+      "UPDATE photos SET edit_json=?2 WHERE id=?1",
+      rusqlite::params![id, edit_json],
+    )
+    .map_err(|e| e.to_string())?;
+  Ok(())
+}
+
+/// Lê a receita de edição (JSON) de uma foto. Retorna "" se não houver.
+pub fn get_photo_edit(id: i64) -> Result<String, String> {
+  let conn = open()?;
+  conn
+    .query_row("SELECT edit_json FROM photos WHERE id=?1", [id], |r| {
+      r.get::<_, Option<String>>(0)
+    })
+    .map(|o| o.unwrap_or_default())
+    .map_err(|e| e.to_string())
 }
 
 pub fn upsert_photo(conn: &Connection, meta: &crate::imageproc::FileMeta) -> Result<bool, String> {

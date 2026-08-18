@@ -4,6 +4,7 @@ extern crate napi_derive;
 mod catalog;
 mod cr3;
 mod culling;
+mod edit;
 mod imageproc;
 mod ml;
 mod types;
@@ -272,6 +273,87 @@ pub fn export_all_xmp() -> Result<XmpExportResult> {
     errors,
     total: exported + errors,
   })
+}
+
+// ---------------- Fase 3: edição em lote ----------------
+
+fn parse_edit_params(json: &str) -> std::result::Result<edit::EditParams, String> {
+  serde_json::from_str(json).map_err(|e| format!("receita inválida: {e}"))
+}
+
+/// Salva a receita de edição (JSON) de uma foto. Não-destrutiva.
+#[napi]
+pub fn set_photo_edit(id: i64, params_json: String) -> Result<()> {
+  // valida a receita antes de persistir
+  parse_edit_params(&params_json).map_err(|e| Error::from_reason(e))?;
+  catalog::set_photo_edit(id, &params_json).map_err(|e| Error::from_reason(e))
+}
+
+/// Lê a receita de edição (JSON) de uma foto. "" se não houver.
+#[napi]
+pub fn get_photo_edit(id: i64) -> Result<String> {
+  catalog::get_photo_edit(id).map_err(|e| Error::from_reason(e))
+}
+
+/// Gera um thumbnail EDITADO (base64) de uma foto, aplicando a receita.
+/// Usado para preview em tempo real na UI.
+#[napi]
+pub async fn preview_edit(id: i64, params_json: String, max_dim: u32) -> Result<Option<String>> {
+  let params = match parse_edit_params(&params_json) {
+    Ok(p) => p,
+    Err(e) => return Err(Error::from_reason(e)),
+  };
+  let photo = match catalog::get_photo(id) {
+    Ok(Some(p)) => p,
+    Ok(None) => return Ok(None),
+    Err(e) => return Err(Error::from_reason(e)),
+  };
+  let path = PathBuf::from(&photo.path);
+  let dim = if max_dim == 0 { 256 } else { max_dim };
+  tokio::task::spawn_blocking(move || edit::edit_thumbnail_base64(&path, &params, dim).ok())
+    .await
+    .map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// Aplica a receita de edição a TODAS as fotos do catálogo (não-destrutivo).
+/// Retorna JSON { applied, errors, total }.
+#[napi]
+pub fn apply_edit_all(params_json: String) -> Result<String> {
+  let params = match parse_edit_params(&params_json) {
+    Ok(p) => p,
+    Err(e) => return Err(Error::from_reason(e)),
+  };
+  let photos = match catalog::all_photo_paths() {
+    Ok(p) => p,
+    Err(e) => return Err(Error::from_reason(e)),
+  };
+  let mut applied = 0i64;
+  let mut errors = 0i64;
+  for p in photos {
+    let json = serde_json::to_string(&params).unwrap_or_default();
+    match catalog::set_photo_edit(p.id, &json) {
+      Ok(_) => applied += 1,
+      Err(e) => {
+        errors += 1;
+        crate::catalog::log_debug(&format!("[edit] erro {}: {e}", p.id));
+      }
+    }
+  }
+  Ok(serde_json::json!({ "applied": applied, "errors": errors, "total": applied + errors }).to_string())
+}
+
+/// Aplica a receita a uma foto específica e retorna o preview editado.
+#[napi]
+pub async fn apply_edit_one(id: i64, params_json: String, max_dim: u32) -> Result<Option<String>> {
+  let params = match parse_edit_params(&params_json) {
+    Ok(p) => p,
+    Err(e) => return Err(Error::from_reason(e)),
+  };
+  let json = serde_json::to_string(&params).unwrap_or_default();
+  if let Err(e) = catalog::set_photo_edit(id, &json) {
+    return Err(Error::from_reason(e));
+  }
+  preview_edit(id, json, max_dim).await
 }
 
 #[cfg(test)]

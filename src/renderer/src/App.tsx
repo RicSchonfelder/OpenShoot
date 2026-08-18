@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import Gallery from './components/Gallery'
+import EditPanel from './components/EditPanel'
 import type { PhotoMeta } from '../../types/photo'
 
 const PAGE_SIZE = 200
@@ -15,6 +16,7 @@ const FILTER_LABELS: Record<Filter, string> = {
 
 export default function App() {
   const [photos, setPhotos] = useState<PhotoMeta[]>([])
+  const [selectedId, setSelectedId] = useState<number | null>(null)
   const [filter, setFilter] = useState<Filter>('all')
   const [scanning, setScanning] = useState(false)
   const [culling, setCulling] = useState(false)
@@ -106,6 +108,26 @@ export default function App() {
     }
   }, [])
 
+  const selectedPhoto = photos.find((p) => p.id === selectedId) ?? null
+
+  const handleApplyAll = useCallback(
+    async (json: string) => {
+      try {
+        const res = await window.openshoot.applyEditAll(json)
+        let r
+        try {
+          r = JSON.parse(res)
+        } catch {
+          r = { applied: 0 }
+        }
+        setScanMsg(`Edição aplicada a ${r.applied} fotos (não-destrutiva)`)
+      } catch (e) {
+        setError(String(e))
+      }
+    },
+    []
+  )
+
   return (
     <div className="app">
       <header className="topbar">
@@ -148,7 +170,15 @@ export default function App() {
       {error && <div className="toast error">{error}</div>}
 
       <main className="content">
-        <Gallery photos={photos} onRefresh={loadPhotos} />
+        <div className="main-gallery">
+          <Gallery
+            photos={photos}
+            onRefresh={loadPhotos}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+          />
+        </div>
+        <EditPanel photo={selectedPhoto} onApplyAll={handleApplyAll} />
       </main>
     </div>
   )

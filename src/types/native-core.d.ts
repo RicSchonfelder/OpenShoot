@@ -48,4 +48,9 @@ declare module '*.node' {
   export function writeXmpForPhoto(id: number): string
   export function exportAllXmp(): { exported: number; errors: number; total: number }
   export function detectFacesInPath(path: string): unknown
+  export function setPhotoEdit(id: number, paramsJson: string): void
+  export function getPhotoEdit(id: number): string
+  export function previewEdit(id: number, paramsJson: string, maxDim: number): Promise<string | null>
+  export function applyEditAll(paramsJson: string): string
+  export function applyEditOne(id: number, paramsJson: string, maxDim: number): Promise<string | null>
 }
