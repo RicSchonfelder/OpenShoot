@@ -197,6 +197,22 @@ pub fn write_xmp_for_photo(id: i64) -> Result<String> {
     .map_err(|e| Error::from_reason(e))
 }
 
+/// [debug] Detecta faces numa imagem por caminho. Retorna contagem + bboxes.
+#[napi]
+pub fn detect_faces_in_path(path: String) -> Result<serde_json::Value> {
+  let pb = PathBuf::from(&path);
+  let (rgb, w, h) = ml::load_rgb(&pb, 640).map_err(|e| Error::from_reason(e))?;
+  let faces = ml::detect_faces(&rgb, w, h, 0.5).map_err(|e| Error::from_reason(e))?;
+  serde_json::json!({
+    "count": faces.len(),
+    "faces": faces,
+    "width": w,
+    "height": h,
+  })
+  .try_into()
+  .map_err(|e| Error::from_reason(format!("json: {e}")))
+}
+
 #[cfg(test)]
 mod tests {
   #[test]

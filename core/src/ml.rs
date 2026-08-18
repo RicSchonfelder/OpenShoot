@@ -76,8 +76,7 @@ fn build_session(model: &Path) -> Result<Session, Box<dyn std::error::Error>> {
     .outputs()
     .iter()
     .map(|o| format!("{:?}", o.name()))
-    .collect();
-  crate::catalog::log_debug(&format!(
+    .collect();  crate::catalog::log_debug(&format!(
     "[ml] modelo {} | inputs={:?} outputs={:?}",
     model.file_name().unwrap_or_default().to_string_lossy(),
     inputs,
@@ -146,6 +145,7 @@ fn to_nhwc(
 }
 
 /// Deteta faces (SCRFD) numa imagem RGB. Retorna bboxes normalizadas (0..1).
+/// Decodifica as três escalas (stride 8/16/32) com NMS.
 pub fn detect_faces(
   rgb: &[u8],
   width: u32,
@@ -160,63 +160,155 @@ pub fn detect_faces(
   const SIDE: usize = 640;
   let tensor = to_nchw(rgb, width, height, SIDE, 128.0, 127.5);
 
+  // Fator de escala do letterbox (imagem -> 640x640).
+  let scale = (SIDE as f32 / width as f32).min(SIDE as f32 / height as f32);
+  let nw = width as f32 * scale;
+  let nh = height as f32 * scale;
+  let ox = (SIDE as f32 - nw) / 2.0;
+  let oy = (SIDE as f32 - nh) / 2.0;
+
   let input = Tensor::from_array(tensor).map_err(|e| e.to_string())?;
   let outputs = guard
     .run(ort::inputs![input])
     .map_err(|e| format!("erro SCRFD: {e}"))?;
 
-  // Extrai arrays de saída por nome ou posição.
-  let mut score_data: Option<Vec<f32>> = None;
-  let mut bbox_data: Option<Vec<f32>> = None;
+  // Coletar outputs por escala: score_s (fg), bbox_s.
+  // SCRFD: score_s shape [1, Hs, Ws, 2] (bg/fg); bbox_s [1, Hs, Ws, 4] (offsets).
+  let mut scores: Vec<(u32, Vec<f32>)> = Vec::new(); // (stride, dados)
+  let mut boxes: Vec<(u32, Vec<f32>)> = Vec::new();
   for (name, val) in outputs.iter() {
     let n = name.to_string();
-    if n.contains("score") || n.contains("scores") {
+    let stride = if n.contains("_8") { Some(8u32) }
+      else if n.contains("_16") { Some(16) }
+      else if n.contains("_32") { Some(32) }
+      else { None };
+    if let Some(s) = stride {
       if let Ok((_, arr)) = val.try_extract_tensor::<f32>() {
-        score_data = Some(arr.to_vec());
-      }
-    } else if n.contains("bbox") || n.contains("boxes") || n.contains("loc") {
-      if let Ok((_, arr)) = val.try_extract_tensor::<f32>() {
-        bbox_data = Some(arr.to_vec());
+        let data = arr.to_vec();
+        if n.contains("score") {
+          scores.push((s, data));
+        } else if n.contains("bbox") {
+          boxes.push((s, data));
+        }
       }
     }
   }
-  if score_data.is_none() || bbox_data.is_none() {
-    // Fallback por posição: [0] = score, [1] = bbox
-    let vals: Vec<_> = outputs.iter().map(|(_, v)| v).collect();
-    if score_data.is_none() && !vals.is_empty() {
-      if let Ok((_, arr)) = vals[0].try_extract_tensor::<f32>() {
-        score_data = Some(arr.to_vec());
-      }
+  if scores.is_empty() || boxes.is_empty() {
+    return Err("outputs SCRFD por escala nao encontrados".to_string());
+  }
+
+  // Decodificar cada escala.
+  // SCRFD outputs: score_s [1, N, 1] (fg), bbox_s [1, N, 4] (offsets), com
+  // N = (SIDE/stride)^2 * num_anchors (num_anchors=2 para este modelo).
+  let mut candidates: Vec<[f32; 4]> = Vec::new(); // bbox em pixels (letterbox 640)
+  let mut candidate_scores: Vec<f32> = Vec::new();
+  for (s, sdata) in &scores {
+    let bdata = boxes.iter().find(|(bs, _)| bs == s).map(|(_, d)| d);
+    let Some(bdata) = bdata else { continue };
+    let stride_f = *s as f32;
+    let num_anchors = 2usize;
+    let cells_per_anchor = (SIDE as usize / *s as usize).pow(2);
+    let cols = SIDE as usize / *s as usize;
+    let total = bdata.len() / 4;
+    if total != cells_per_anchor * num_anchors {
+      crate::catalog::log_debug(&format!(
+        "[scrfd] aviso: stride {s} total={total} esperado={}",
+        cells_per_anchor * num_anchors
+      ));
     }
-    if bbox_data.is_none() && vals.len() > 1 {
-      if let Ok((_, arr)) = vals[1].try_extract_tensor::<f32>() {
-        bbox_data = Some(arr.to_vec());
+    for cell in 0..cells_per_anchor {
+      let row = cell / cols;
+      let col = cell % cols;
+      for a in 0..num_anchors {
+        let idx = (cell * num_anchors + a) * 4;
+        let sidx = cell * num_anchors + a;
+        if sidx >= sdata.len() {
+          continue;
+        }
+        let fg = sdata[sidx];
+        if fg < threshold {
+          continue;
+        }
+        let cx = col as f32 * stride_f + stride_f / 2.0 - 0.5;
+        let cy = row as f32 * stride_f + stride_f / 2.0 - 0.5;
+        let (dx1, dy1, dx2, dy2) = (
+          bdata[idx],
+          bdata[idx + 1],
+          bdata[idx + 2],
+          bdata[idx + 3],
+        );
+        let x1 = cx - dx1 * stride_f;
+        let y1 = cy - dy1 * stride_f;
+        let x2 = cx + dx2 * stride_f;
+        let y2 = cy + dy2 * stride_f;
+        candidates.push([x1, y1, x2, y2]);
+        candidate_scores.push(fg);
       }
     }
   }
 
-  let scores = score_data.ok_or_else(|| "output score nao encontrado".to_string())?;
-  let boxes = bbox_data.ok_or_else(|| "output bbox nao encontrado".to_string())?;
+  // NMS (Intersection-over-Union) não supressivo.
+  let keep = nms(&candidates, &candidate_scores, 0.4);
 
-  // SCRFD: score shape [1, N, 2] (bg/fg), bbox [1, N, 4].
-  // Interpretação simplificada: emparelhar pela dimensão N.
-  let stride = if boxes.len() % 4 == 0 { 4 } else { boxes.len() };
-  let num = boxes.len() / stride;
+  // Remover o offset do letterbox e normalizar para 0..1 na imagem original.
   let mut faces = Vec::new();
-  for i in 0..num {
-    // score pode ser [N] ou [N,2]; usa o maior valor do par.
-    let s = scores
-      .get(i)
-      .copied()
-      .or_else(|| scores.get(i * 2).copied())
-      .unwrap_or(0.0);
-    let s2 = scores.get(i * 2 + 1).copied().unwrap_or(0.0);
-    let score = s.max(s2);
-    if score >= threshold {
-      faces.push([boxes[i * 4], boxes[i * 4 + 1], boxes[i * 4 + 2], boxes[i * 4 + 3]]);
+  for idx in keep {
+    let b = &candidates[idx];
+    let x1 = ((b[0] - ox) / (scale * width as f32)).max(0.0).min(1.0);
+    let y1 = ((b[1] - oy) / (scale * height as f32)).max(0.0).min(1.0);
+    let x2 = ((b[2] - ox) / (scale * width as f32)).max(0.0).min(1.0);
+    let y2 = ((b[3] - oy) / (scale * height as f32)).max(0.0).min(1.0);
+    if (x2 - x1) > 0.001 && (y2 - y1) > 0.001 {
+      faces.push([x1, y1, x2, y2]);
     }
   }
   Ok(faces)
+}
+
+/// Non-Maximum Suppression (IOU) sobre bboxes. Retorna índices mantidos.
+fn nms(boxes: &[[f32; 4]], scores: &[f32], iou_threshold: f32) -> Vec<usize> {
+  let n = boxes.len();
+  if n == 0 {
+    return Vec::new();
+  }
+  // Ordenar por score decrescente.
+  let mut order: Vec<usize> = (0..n).collect();
+  order.sort_by(|a, b| scores[*b].partial_cmp(&scores[*a]).unwrap_or(std::cmp::Ordering::Equal));
+
+  let mut area = vec![0.0f32; n];
+  for i in 0..n {
+    let b = &boxes[i];
+    area[i] = ((b[2] - b[0]).max(0.0)) * ((b[3] - b[1]).max(0.0));
+  }
+
+  let mut keep = Vec::new();
+  let mut suppressed = vec![false; n];
+  for &i in &order {
+    if suppressed[i] {
+      continue;
+    }
+    keep.push(i);
+    for &j in &order {
+      if suppressed[j] {
+        continue;
+      }
+      let a = boxes[i];
+      let b = boxes[j];
+      let xx1 = a[0].max(b[0]);
+      let yy1 = a[1].max(b[1]);
+      let xx2 = a[2].min(b[2]);
+      let yy2 = a[3].min(b[3]);
+      let iw = (xx2 - xx1).max(0.0);
+      let ih = (yy2 - yy1).max(0.0);
+      let inter = iw * ih;
+      let union = area[i] + area[j] - inter;
+      let iou = if union > 0.0 { inter / union } else { 0.0 };
+      if iou > iou_threshold {
+        suppressed[j] = true;
+      }
+    }
+  }
+  keep
 }
 
 /// Score estético 1..10 via NIMA. Entrada RGB u8.
@@ -312,4 +404,43 @@ pub fn ml_quality_score(rgb: &[u8], width: u32, height: u32) -> Result<f64, Stri
   let out = (nima_norm * 0.8 + face_bonus).clamp(0.0, 100.0);
   crate::catalog::log_debug(&format!("[ml] nima={nima:.2} nima_norm={nima_norm:.1} faces={face_bonus:.1} out={out:.1}"));
   Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn nms_keeps_distinct_boxes() {
+    // Duas caixas distantes -> ambas mantidas.
+    let boxes = vec![[0.0, 0.0, 10.0, 10.0], [100.0, 100.0, 110.0, 110.0]];
+    let scores = vec![0.9, 0.8];
+    let keep = nms(&boxes, &scores, 0.4);
+    assert_eq!(keep.len(), 2);
+  }
+
+  #[test]
+  fn nms_suppresses_overlapping() {
+    // Duas caixas sobrepostas com scores diferentes -> só a melhor.
+    let boxes = vec![[0.0, 0.0, 10.0, 10.0], [1.0, 1.0, 11.0, 11.0]];
+    let scores = vec![0.9, 0.7];
+    let keep = nms(&boxes, &scores, 0.4);
+    assert_eq!(keep.len(), 1);
+    assert_eq!(keep[0], 0); // mantém o de maior score
+  }
+
+  #[test]
+  fn nms_empty() {
+    assert!(nms(&[], &[], 0.4).is_empty());
+  }
+
+  #[test]
+  fn nms_orders_by_score() {
+    // A caixa de maior score deve ser mantida, mesmo se não vier primeiro.
+    let boxes = vec![[1.0, 1.0, 11.0, 11.0], [0.0, 0.0, 10.0, 10.0]];
+    let scores = vec![0.5, 0.95];
+    let keep = nms(&boxes, &scores, 0.4);
+    assert_eq!(keep.len(), 1);
+    assert_eq!(keep[0], 1);
+  }
 }

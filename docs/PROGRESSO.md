@@ -14,6 +14,10 @@
   - `core/src/catalog.rs` — Catálogo SQLite (`photos`), schema, upsert, listagem
     com paginação/busca, `scan_folder` recursivo com `walkdir`.
 - **Fase 2 (heurístico + ML local)** ✅ — Culling com IA local (ONNX):
+  - **SCRFD multi-escala + NMS** implementado e validado: detecta 1 rosto na
+    imagem Lena ([0.435,0.404,0.721,0.793]) e 0 em gradientes (discriminativo).
+    Outputs SCRFD: score_s [1,N,1] fg, bbox_s [1,N,4], N=(640/stride)^2*2 anchors.
+    Correção: normalizar por `scale*width/height` (não só scale) p/ coords 0..1.
   - **NIMA** (estética, NHWC, score 1-10) + **SCRFD** (detecção de faces, NCHW)
   - Engine **ort 2.0.0-rc.13** com EP **CoreML** (GPU/ANE) + fallback CPU
   - Score final: heurística (Laplacian) + NIMA + bônus por rostos; fallback p/ heurística se modelo ausente
