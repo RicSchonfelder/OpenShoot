@@ -2,6 +2,7 @@
 extern crate napi_derive;
 
 mod catalog;
+mod captions;
 mod cr3;
 mod culling;
 mod edit;
@@ -407,6 +408,36 @@ pub async fn inpaint_photo(
   tokio::task::spawn_blocking(move || retouch::inpaint_thumbnail_base64(&path, rect, dim).ok())
     .await
     .map_err(|e| Error::from_reason(e.to_string()))
+}
+
+// ---------------- Fase 6: captions locais ----------------
+
+/// Gera captions/keywords locais (offline) para uma foto, usando EXIF + faces.
+/// Retorna JSON { keywords, title, description }.
+#[napi]
+pub async fn generate_caption(id: i64) -> Result<String> {
+  let photo = match catalog::get_photo(id) {
+    Ok(Some(p)) => p,
+    Ok(None) => return Err(Error::from_reason(format!("foto {id} nao encontrada"))),
+    Err(e) => return Err(Error::from_reason(e)),
+  };
+  // Conta faces localmente (se disponível).
+  let mut face_count = 0usize;
+  if ml::models_available() {
+    let path = PathBuf::from(&photo.path);
+    if let Ok((rgb, w, h)) = ml::load_rgb(&path, 640) {
+      if let Ok(faces) = ml::detect_faces(&rgb, w, h, 0.5) {
+        face_count = faces.len();
+      }
+    }
+  }
+  let cap = captions::generate(&photo, face_count);
+  Ok(serde_json::json!({
+    "keywords": cap.keywords,
+    "title": cap.title,
+    "description": cap.description,
+  })
+  .to_string())
 }
 
 #[cfg(test)]

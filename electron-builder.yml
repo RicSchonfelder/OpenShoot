@@ -1,0 +1,37 @@
+appId: com.openshoot.app
+productName: OpenShoot
+copyright: Copyright © 2026 OpenShoot contributors
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/**/*
+  - package.json
+  - core/**/*
+  - '!**/.DS_Store'
+
+asarUnpack:
+  - core/**/*.node
+
+mac:
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  category: public.app-category.photography
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+dmg:
+  title: ${productName}
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+npmRebuild: false
