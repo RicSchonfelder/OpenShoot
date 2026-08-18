@@ -142,8 +142,8 @@ validada** (decisão multi-escala + NMS). Detalhes:
 **Próximos passos (ordem sugerida):**
 1. **UI de picks/filtro + export XMP em massa** ✅ FEITO — filtros all/picks/rejects/
    unrated no header, botão Exportar XMP em massa (31 sidecars validado E2E).
-2. **Melhorias Fase 1**: dimensões via cabeçalho p/ imagens sem EXIF; **CR3** via
-   parser BMFF (PRVW/THMB).
+2. **Melhorias Fase 1**: **CR3** ✅ FEITO (parser BMFF em core/src/cr3.rs, validado).
+   Resta: dimensões via cabeçalho p/ imagens sem EXIF.
 3. **Fase 3**: edição em lote (feature flag OFF, opt-in).
 4. **Fase 4**: retoque básico (segmentação de pele via ONNX).
 5. **Fase 6**: OpenRouter opt-in (chave do usuário no Keychain).

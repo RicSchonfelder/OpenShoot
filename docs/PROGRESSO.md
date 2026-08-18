@@ -44,8 +44,9 @@
   - NEF/ARW/DNG/CR2 (TIFF-based): **funciona** via `read_embedded_jpeg` usando os
     tags `JPEGInterchangeFormat` (0x201) / `JPEGInterchangeFormatLength` (0x202)
     do kamadak, iterando TODOS os IFDs.
-  - **CR3 (Canon, HEIF container)**: NÃO funciona com kamadak. Requer parser de
-    container BMFF/HEIF (boxes PRVW/THMB) — futuro.
+  - **CR3 (Canon, HEIF container)**: ✅ AGORA FUNCIONA via `core/src/cr3.rs`
+    (parser BMFF/HEIF: detecta brand 'crx ', extrai maior JPEG por marcadores
+    SOI/EOI). Validado com CR3 sintético (preview Lena -> thumbnail + 1 face).
   - **`jpgfromraw-lib` (MIT) FALHA de build**: build.rs obrigatório exige nasm/CMake
     (gpr_tools + dcraw), panica sem ferramentas C → **descartado**.
 - `setup()` usa `OnceLock` por processo — cada processo Node novo precisa chamar
