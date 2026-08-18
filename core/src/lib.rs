@@ -2,10 +2,13 @@
 extern crate napi_derive;
 
 mod catalog;
+mod culling;
 mod imageproc;
 mod types;
+mod xmp;
 
 use napi::bindgen_prelude::*;
+use rayon::prelude::*;
 use std::path::PathBuf;
 
 use types::{PhotoList, PhotoMeta, ScanResult};
@@ -91,6 +94,84 @@ pub async fn thumb_for_path(path: String, max_dim: u32) -> Result<Option<String>
   tokio::task::spawn_blocking(move || imageproc::thumbnail_base64(&pathb, dim).ok())
     .await
     .map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// Executa o culling heurístico em todas as fotos do catálogo.
+/// Persiste rating (0-5) e cull_score. Retorna resumo.
+#[napi(object)]
+pub struct CullSummary {
+  pub processed: i64,
+  pub errors: i64,
+  pub avg_score: f64,
+  pub picks: i64,
+}
+
+#[napi]
+pub async fn cull_photos() -> Result<CullSummary> {
+  let paths = match catalog::all_photo_paths() {
+    Ok(p) => p,
+    Err(e) => return Err(Error::from_reason(e)),
+  };
+  let results: Vec<(i64, std::result::Result<f64, String>)> = paths
+    .into_par_iter()
+    .map(|p: catalog::PhotoPath| -> (i64, std::result::Result<f64, String>) {
+      let score = culling::heuristic_score(&PathBuf::from(&p.path), 320);
+      (p.id, score)
+    })
+    .collect();
+
+  let mut processed = 0;
+  let mut errors = 0;
+  let mut sum = 0.0;
+  let mut scores: Vec<(i64, f64)> = Vec::new();
+  for (id, r) in results {
+    match r {
+      Ok(s) => {
+        processed += 1;
+        sum += s;
+        scores.push((id, s));
+      }
+      Err(_) => errors += 1,
+    }
+  }
+
+  // Normaliza scores 0..100 -> rating 1..5 pela distribuição (quantis simples).
+  scores.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+  let n = scores.len();
+  for (i, (id, s)) in scores.iter().enumerate() {
+    let q = if n <= 1 { 1.0 } else { i as f64 / (n - 1) as f64 };
+    let rating = if q < 0.2 { 1 } else if q < 0.4 { 2 } else if q < 0.6 { 3 } else if q < 0.8 { 4 } else { 5 };
+    if let Err(e) = catalog::set_photo_rating(*id, rating, *s) {
+      crate::catalog::log_debug(&format!("falha ao salvar rating {}: {e}", id));
+      errors += 1;
+    }
+  }
+  let picks = scores.iter().filter(|(_, s)| *s >= 70.0).count() as i64;
+
+  Ok(CullSummary {
+    processed: processed as i64,
+    errors,
+    avg_score: if processed > 0 { sum / processed as f64 } else { 0.0 },
+    picks: picks.max(0),
+  })
+}
+
+/// Escreve o sidecar XMP da foto (rating + label) ao lado do arquivo original.
+#[napi]
+pub fn write_xmp_for_photo(id: i64) -> Result<String> {
+  let photo = catalog::get_photo(id).map_err(|e| Error::from_reason(e))?;
+  let photo = photo.ok_or_else(|| Error::from_reason(format!("foto {id} nao encontrada")))?;
+  let path = PathBuf::from(&photo.path);
+  let (label, keywords) = if photo.rating >= 4 {
+    ("Green", vec!["OpenShoot:keep".to_string()])
+  } else if photo.rating == 3 {
+    ("Yellow", vec!["OpenShoot:maybe".to_string()])
+  } else {
+    ("Red", vec!["OpenShoot:cull".to_string()])
+  };
+  xmp::write_xmp(&path, photo.rating, label, &keywords)
+    .map(|p| p.to_string_lossy().to_string())
+    .map_err(|e| Error::from_reason(e))
 }
 
 #[cfg(test)]

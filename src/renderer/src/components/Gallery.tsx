@@ -58,6 +58,9 @@ function Thumb({ photo, maxDim }: { photo: PhotoMeta; maxDim: number }) {
           <div className="cell-loading" />
         )}
         {photo.rating > 0 && <span className="cell-rating">★{photo.rating}</span>}
+        {photo.cullScore != null && (
+          <span className="cell-score">{Math.round(photo.cullScore)}</span>
+        )}
       </div>
       <div className="cell-meta" title={photo.path}>
         <span className="cell-name">{label}</span>

@@ -54,7 +54,21 @@ fn ensure_schema(conn: &Connection) -> Result<(), String> {
     CREATE INDEX IF NOT EXISTS idx_photos_taken ON photos(taken_at);
     ",
   )
-  .map_err(|e| e.to_string())
+  .map_err(|e| e.to_string())?;
+  // Migração leve: garante colunas adicionadas em versões posteriores.
+  let has_cull: bool = conn
+    .query_row(
+      "SELECT COUNT(*) FROM pragma_table_info('photos') WHERE name='cull_score'",
+      [],
+      |r| Ok(r.get::<_, i64>(0)? != 0),
+    )
+    .map_err(|e| e.to_string())?;
+  if !has_cull {
+    conn
+      .execute("ALTER TABLE photos ADD COLUMN cull_score REAL", [])
+      .map_err(|e| e.to_string())?;
+  }
+  Ok(())
 }
 
 pub fn upsert_photo(conn: &Connection, meta: &crate::imageproc::FileMeta) -> Result<bool, String> {
@@ -114,6 +128,7 @@ fn row_to_photo(row: &rusqlite::Row) -> rusqlite::Result<PhotoMeta> {
     rating: row.get(9).unwrap_or(0),
     has_xmp: row.get::<_, i64>(10).unwrap_or(0) != 0,
     preview_available: row.get::<_, i64>(11).unwrap_or(0) != 0,
+    cull_score: row.get(12).unwrap_or(None),
     hash: String::new(),
   })
 }
@@ -136,14 +151,14 @@ pub fn list_photos(search: &str, offset: i64, limit: i64) -> Result<PhotoList, S
   let mut stmt = if search.trim().is_empty() {
     conn
       .prepare(
-        "SELECT id, path, file_name, ext, file_size, width, height, camera, taken_at, rating, has_xmp, preview_available
+        "SELECT id, path, file_name, ext, file_size, width, height, camera, taken_at, rating, has_xmp, preview_available, cull_score
          FROM photos ORDER BY taken_at DESC, id DESC LIMIT ?1 OFFSET ?2",
       )
       .map_err(|e| e.to_string())?
   } else {
     conn
       .prepare(
-        "SELECT id, path, file_name, ext, file_size, width, height, camera, taken_at, rating, has_xmp, preview_available
+        "SELECT id, path, file_name, ext, file_size, width, height, camera, taken_at, rating, has_xmp, preview_available, cull_score
          FROM photos WHERE file_name LIKE ?1 OR camera LIKE ?1
          ORDER BY taken_at DESC, id DESC LIMIT ?2 OFFSET ?3",
       )
@@ -175,7 +190,7 @@ pub fn get_photo(id: i64) -> Result<Option<PhotoMeta>, String> {
   let conn = open()?;
   conn
     .query_row(
-      "SELECT id, path, file_name, ext, file_size, width, height, camera, taken_at, rating, has_xmp, preview_available
+      "SELECT id, path, file_name, ext, file_size, width, height, camera, taken_at, rating, has_xmp, preview_available, cull_score
        FROM photos WHERE id=?1",
       [id],
       row_to_photo,
@@ -193,6 +208,43 @@ pub fn count_photos() -> Result<i64, String> {
 
 pub fn upsert_scan_photo(conn: &Connection, meta: &crate::imageproc::FileMeta) -> Result<bool, String> {
   upsert_photo(conn, meta)
+}
+
+pub struct PhotoPath {
+  pub id: i64,
+  pub path: String,
+}
+
+/// Todos os caminhos de fotos do catálogo (para culling em lote).
+pub fn all_photo_paths() -> Result<Vec<PhotoPath>, String> {
+  let conn = open()?;
+  let mut stmt = conn
+    .prepare("SELECT id, path FROM photos")
+    .map_err(|e| e.to_string())?;
+  let rows = stmt
+    .query_map([], |r| {
+      Ok(PhotoPath {
+        id: r.get(0)?,
+        path: r.get(1)?,
+      })
+    })
+    .map_err(|e| e.to_string())?;
+  let mut out = Vec::new();
+  for r in rows {
+    out.push(r.map_err(|e| e.to_string())?);
+  }
+  Ok(out)
+}
+
+/// Persiste o rating (0-5) e o score bruto de uma foto.
+pub fn set_photo_rating(id: i64, rating: i64, cull_score: f64) -> Result<(), String> {
+  let conn = open()?;
+  conn.execute(
+    "UPDATE photos SET rating=?2, cull_score=?3 WHERE id=?1",
+    rusqlite::params![id, rating, cull_score],
+  )
+  .map_err(|e| e.to_string())?;
+  Ok(())
 }
 
 pub fn scan_folder(dir: &str) -> Result<ScanResult, String> {

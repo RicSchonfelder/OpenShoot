@@ -95,6 +95,22 @@ app.whenReady().then(() => {
     return result.filePaths[0]
   })
 
+  // ---- Fase 2: culling + XMP ----
+  ipcMain.handle('core:cullPhotos', async () => {
+    try {
+      return await getCore().cullPhotos()
+    } catch (e) {
+      return { processed: 0, errors: 1, avgScore: 0, picks: 0, error: String(e) }
+    }
+  })
+  ipcMain.handle('core:writeXmpForPhoto', (_e, id: number) => {
+    try {
+      return getCore().writeXmpForPhoto(id)
+    } catch (e) {
+      return String(e)
+    }
+  })
+
   createWindow()
 
   app.on('activate', () => {

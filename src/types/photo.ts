@@ -11,6 +11,7 @@ export interface PhotoMeta {
   rating: number
   hasXmp: boolean
   previewAvailable: boolean
+  cullScore: number | null
   hash: string
 }
 

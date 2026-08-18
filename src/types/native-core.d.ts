@@ -14,6 +14,7 @@ declare module '*.node' {
     rating: number
     hasXmp: boolean
     previewAvailable: boolean
+    cullScore: number | null
     hash: string
   }
   export interface NativeScanResult {
@@ -27,6 +28,12 @@ declare module '*.node' {
     photos: NativePhotoMeta[]
     total: number
   }
+  export interface NativeCullSummary {
+    processed: number
+    errors: number
+    avgScore: number
+    picks: number
+  }
   export function setup(dataDir: string): string
   export function add(a: number, b: number): number
   export function coreVersion(): string
@@ -37,4 +44,6 @@ declare module '*.node' {
   export function photoCount(): number
   export function thumbForPhoto(id: number, maxDim: number): Promise<string | null>
   export function thumbForPath(path: string, maxDim: number): Promise<string | null>
+  export function cullPhotos(): Promise<NativeCullSummary>
+  export function writeXmpForPhoto(id: number): string
 }

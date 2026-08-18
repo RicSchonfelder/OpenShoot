@@ -16,7 +16,12 @@ const api = {
   photoCount: (): Promise<number> => ipcRenderer.invoke('core:photoCount'),
   thumbForPhoto: (id: number, maxDim: number): Promise<string | null> =>
     ipcRenderer.invoke('core:thumbForPhoto', id, maxDim),
-  pickFolder: (): Promise<string | null> => ipcRenderer.invoke('core:pickFolder')
+  pickFolder: (): Promise<string | null> => ipcRenderer.invoke('core:pickFolder'),
+  // Fase 2
+  cullPhotos: (): Promise<{ processed: number; errors: number; avgScore: number; picks: number }> =>
+    ipcRenderer.invoke('core:cullPhotos'),
+  writeXmpForPhoto: (id: number): Promise<string> =>
+    ipcRenderer.invoke('core:writeXmpForPhoto', id)
 }
 
 contextBridge.exposeInMainWorld('openshoot', api)

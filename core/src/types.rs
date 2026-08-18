@@ -15,6 +15,7 @@ pub struct PhotoMeta {
   pub rating: i64,
   pub has_xmp: bool,
   pub preview_available: bool,
+  pub cull_score: Option<f64>,
   pub hash: String,
 }
 
