@@ -50,11 +50,22 @@ pub fn scan_folder(dir: String) -> Result<ScanResult> {
   catalog::scan_folder(&dir).map_err(|e| Error::from_reason(e))
 }
 
-/// Lista fotos do catálogo com paginação + busca opcional.
+/// Lista fotos do catálogo com paginação, busca e filtro de rating.
+/// filter: "all" | "picks" (>=4) | "rejects" (<=1, >0) | "unrated" (==0)
 #[napi]
-pub fn list_photos(search: Option<String>, offset: i64, limit: i64) -> Result<PhotoList> {
-  catalog::list_photos(&search.unwrap_or_default(), offset, limit)
-    .map_err(|e| Error::from_reason(e))
+pub fn list_photos(
+  search: Option<String>,
+  filter: Option<String>,
+  offset: i64,
+  limit: i64,
+) -> Result<PhotoList> {
+  catalog::list_photos(
+    &search.unwrap_or_default(),
+    &filter.unwrap_or_else(|| "all".to_string()),
+    offset,
+    limit,
+  )
+  .map_err(|e| Error::from_reason(e))
 }
 
 /// Retorna metadados de uma foto pelo id.
@@ -211,6 +222,55 @@ pub fn detect_faces_in_path(path: String) -> Result<serde_json::Value> {
   })
   .try_into()
   .map_err(|e| Error::from_reason(format!("json: {e}")))
+}
+
+/// Exporta sidecars XMP em massa para todas as fotos com rating > 0.
+/// Retorna { exported, errors }.
+#[napi(object)]
+pub struct XmpExportResult {
+  pub exported: i64,
+  pub errors: i64,
+  pub total: i64,
+}
+
+#[napi]
+pub fn export_all_xmp() -> Result<XmpExportResult> {
+  let photos = catalog::all_photo_paths().map_err(|e| Error::from_reason(e))?;
+  let mut exported = 0i64;
+  let mut errors = 0i64;
+  for p in photos {
+    // busca rating da foto
+    let photo = match catalog::get_photo(p.id) {
+      Ok(Some(x)) => x,
+      _ => {
+        errors += 1;
+        continue;
+      }
+    };
+    if photo.rating <= 0 {
+      continue;
+    }
+    let path = PathBuf::from(&photo.path);
+    let (label, keywords) = if photo.rating >= 4 {
+      ("Green", vec!["OpenShoot:keep".to_string()])
+    } else if photo.rating == 3 {
+      ("Yellow", vec!["OpenShoot:maybe".to_string()])
+    } else {
+      ("Red", vec!["OpenShoot:cull".to_string()])
+    };
+    match xmp::write_xmp(&path, photo.rating, label, &keywords) {
+      Ok(_) => exported += 1,
+      Err(e) => {
+        errors += 1;
+        crate::catalog::log_debug(&format!("[xmp] erro {}: {e}", p.path));
+      }
+    }
+  }
+  Ok(XmpExportResult {
+    exported,
+    errors,
+    total: exported + errors,
+  })
 }
 
 #[cfg(test)]

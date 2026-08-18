@@ -29,9 +29,11 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 12px 20px;
   background: #161a22;
   border-bottom: 1px solid #252b37;
+  flex-wrap: wrap;
 }
 
 .logo {
@@ -43,6 +45,27 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.topbar-filters {
+  display: flex;
+  gap: 6px;
+}
+
+.filter-btn {
+  background: transparent;
+  border: 1px solid #2c3442;
+  color: #9aa3b2;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 999px;
+}
+
+.filter-btn.active {
+  background: #1e293b;
+  border-color: #3b82f6;
+  color: #93c5fd;
 }
 
 .badge {

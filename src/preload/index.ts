@@ -11,8 +11,8 @@ const api = {
     ipcRenderer.invoke('app:info'),
   // Fase 1
   scanFolder: (dir: string): Promise<ScanResultData | { error: string }> => ipcRenderer.invoke('core:scanFolder', dir),
-  listPhotos: (search: string, offset: number, limit: number): Promise<PhotoListData> =>
-    ipcRenderer.invoke('core:listPhotos', search, offset, limit),
+  listPhotos: (search: string, filter: string, offset: number, limit: number): Promise<PhotoListData> =>
+    ipcRenderer.invoke('core:listPhotos', search, filter, offset, limit),
   photoCount: (): Promise<number> => ipcRenderer.invoke('core:photoCount'),
   thumbForPhoto: (id: number, maxDim: number): Promise<string | null> =>
     ipcRenderer.invoke('core:thumbForPhoto', id, maxDim),
@@ -21,7 +21,9 @@ const api = {
   cullPhotos: (): Promise<{ processed: number; errors: number; avgScore: number; picks: number }> =>
     ipcRenderer.invoke('core:cullPhotos'),
   writeXmpForPhoto: (id: number): Promise<string> =>
-    ipcRenderer.invoke('core:writeXmpForPhoto', id)
+    ipcRenderer.invoke('core:writeXmpForPhoto', id),
+  exportAllXmp: (): Promise<{ exported: number; errors: number; total: number }> =>
+    ipcRenderer.invoke('core:exportAllXmp')
 }
 
 contextBridge.exposeInMainWorld('openshoot', api)

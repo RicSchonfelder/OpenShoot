@@ -133,54 +133,72 @@ fn row_to_photo(row: &rusqlite::Row) -> rusqlite::Result<PhotoMeta> {
   })
 }
 
-pub fn list_photos(search: &str, offset: i64, limit: i64) -> Result<PhotoList, String> {
+/// Lista fotos com paginação, busca e filtro de rating.
+/// filter: "all" | "picks" (>=4) | "rejects" (<=1, >0) | "unrated" (==0)
+pub fn list_photos(
+  search: &str,
+  filter: &str,
+  offset: i64,
+  limit: i64,
+) -> Result<PhotoList, String> {
   let conn = open()?;
-  let total: i64 = if search.trim().is_empty() {
-    conn.query_row("SELECT COUNT(*) FROM photos", [], |r| r.get(0))
-      .map_err(|e| e.to_string())?
-  } else {
+
+  // Construir cláusula WHERE dinamicamente.
+  let mut conds: Vec<String> = Vec::new();
+  let mut params: Vec<rusqlite::types::Value> = Vec::new();
+  if !search.trim().is_empty() {
     let like = format!("%{}%", search.trim());
-    conn.query_row(
-      "SELECT COUNT(*) FROM photos WHERE file_name LIKE ?1 OR camera LIKE ?1",
-      [&like],
-      |r| r.get(0),
-    )
-    .map_err(|e| e.to_string())?
+    conds.push("(file_name LIKE ? || camera LIKE ?)".to_string());
+    params.push(rusqlite::types::Value::Text(like.clone()));
+    params.push(rusqlite::types::Value::Text(like));
+  }
+  match filter {
+    "picks" => {
+      conds.push("rating >= 4".to_string());
+    }
+    "rejects" => {
+      conds.push("rating >= 1 AND rating <= 1".to_string());
+    }
+    "unrated" => {
+      conds.push("rating = 0".to_string());
+    }
+    _ => {}
+  }
+  let where_clause = if conds.is_empty() {
+    String::new()
+  } else {
+    format!("WHERE {}", conds.join(" AND "))
   };
 
-  let mut stmt = if search.trim().is_empty() {
-    conn
-      .prepare(
-        "SELECT id, path, file_name, ext, file_size, width, height, camera, taken_at, rating, has_xmp, preview_available, cull_score
-         FROM photos ORDER BY taken_at DESC, id DESC LIMIT ?1 OFFSET ?2",
-      )
-      .map_err(|e| e.to_string())?
-  } else {
-    conn
-      .prepare(
-        "SELECT id, path, file_name, ext, file_size, width, height, camera, taken_at, rating, has_xmp, preview_available, cull_score
-         FROM photos WHERE file_name LIKE ?1 OR camera LIKE ?1
-         ORDER BY taken_at DESC, id DESC LIMIT ?2 OFFSET ?3",
-      )
-      .map_err(|e| e.to_string())?
+  let total_sql = format!("SELECT COUNT(*) FROM photos {}", where_clause);
+  let mut total_stmt = conn.prepare(&total_sql).map_err(|e| e.to_string())?;
+  let total: i64 = {
+    let mut rows = total_stmt
+      .query(rusqlite::params_from_iter(params.iter()))
+      .map_err(|e| e.to_string())?;
+    match rows.next() {
+      Ok(Some(row)) => row.get(0).map_err(|e| e.to_string())?,
+      _ => 0,
+    }
   };
+
+  // SELECT com paginação. Parâmetros de busca/filtro vêm antes de LIMIT/OFFSET.
+  let list_sql = format!(
+    "SELECT id, path, file_name, ext, file_size, width, height, camera, taken_at, rating, has_xmp, preview_available, cull_score
+     FROM photos {} ORDER BY rating DESC, cull_score DESC, id DESC LIMIT ? OFFSET ?",
+    where_clause
+  );
+  let mut stmt = conn.prepare(&list_sql).map_err(|e| e.to_string())?;
+  let mut all_params = params.clone();
+  all_params.push(rusqlite::types::Value::Integer(limit));
+  all_params.push(rusqlite::types::Value::Integer(offset));
 
   let mut photos: Vec<PhotoMeta> = Vec::new();
-  if search.trim().is_empty() {
-    let rows = stmt
-      .query_map([limit, offset], row_to_photo)
-      .map_err(|e| e.to_string())?;
-    for row in rows {
-      photos.push(row.map_err(|e| e.to_string())?);
-    }
-  } else {
-    let like = format!("%{}%", search.trim());
-    let rows = stmt
-      .query_map(rusqlite::params![like, limit, offset], row_to_photo)
-      .map_err(|e| e.to_string())?;
-    for row in rows {
-      photos.push(row.map_err(|e| e.to_string())?);
-    }
+  let rows = stmt
+    .query_map(rusqlite::params_from_iter(all_params.iter()), row_to_photo)
+    .map_err(|e| e.to_string())?;
+  for row in rows {
+    photos.push(row.map_err(|e| e.to_string())?);
   }
 
   Ok(PhotoList { photos, total })

@@ -4,26 +4,40 @@ import type { PhotoMeta } from '../../types/photo'
 
 const PAGE_SIZE = 200
 
+type Filter = 'all' | 'picks' | 'rejects' | 'unrated'
+
+const FILTER_LABELS: Record<Filter, string> = {
+  all: 'Todos',
+  picks: 'Picks (★≥4)',
+  rejects: 'Rejects (★≤1)',
+  unrated: 'Sem avaliação'
+}
+
 export default function App() {
   const [photos, setPhotos] = useState<PhotoMeta[]>([])
+  const [filter, setFilter] = useState<Filter>('all')
   const [scanning, setScanning] = useState(false)
   const [culling, setCulling] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [scanMsg, setScanMsg] = useState<string | null>(null)
   const [scanErrors, setScanErrors] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
 
-  const loadPhotos = useCallback(async () => {
-    try {
-      const list = await window.openshoot.listPhotos('', 0, PAGE_SIZE)
-      setPhotos(list.photos)
-    } catch (e) {
-      setError(String(e))
-    }
-  }, [])
+  const loadPhotos = useCallback(
+    async (f: Filter = filter) => {
+      try {
+        const list = await window.openshoot.listPhotos('', f, 0, PAGE_SIZE)
+        setPhotos(list.photos)
+      } catch (e) {
+        setError(String(e))
+      }
+    },
+    [filter]
+  )
 
   useEffect(() => {
     loadPhotos()
-  }, [loadPhotos])
+  }, [loadPhotos, filter])
 
   const importFolder = useCallback(async () => {
     setError(null)
@@ -72,12 +86,45 @@ export default function App() {
     }
   }, [loadPhotos])
 
+  const exportXmp = useCallback(async () => {
+    setError(null)
+    setExporting(true)
+    try {
+      const res = await window.openshoot.exportAllXmp()
+      if ('error' in res) {
+        setError(String(res.error))
+      } else {
+        setScanMsg(
+          `XMP exportado: ${res.exported} sidecars criados` +
+            (res.errors > 0 ? `, ${res.errors} erros` : '')
+        )
+      }
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setExporting(false)
+    }
+  }, [])
+
   return (
     <div className="app">
       <header className="topbar">
         <span className="logo">OpenShoot</span>
+        <div className="topbar-filters">
+          {(Object.keys(FILTER_LABELS) as Filter[]).map((f) => (
+            <button
+              key={f}
+              className={`filter-btn ${filter === f ? 'active' : ''}`}
+              onClick={() => setFilter(f)}
+            >
+              {FILTER_LABELS[f]}
+            </button>
+          ))}
+        </div>
         <div className="topbar-right">
-          <span className="badge">Fase 2 · culling</span>
+          <button onClick={exportXmp} disabled={exporting || photos.length === 0} className="ghost">
+            {exporting ? 'Exportando…' : 'Exportar XMP'}
+          </button>
           <button onClick={runCull} disabled={culling || photos.length === 0} className="primary">
             {culling ? 'Culling…' : 'Cull'}
           </button>

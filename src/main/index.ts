@@ -72,8 +72,8 @@ app.whenReady().then(() => {
   })
   ipcMain.handle(
     'core:listPhotos',
-    (_e, search: string, offset: number, limit: number) =>
-      getCore().listPhotos(search, offset, limit)
+    (_e, search: string, filter: string, offset: number, limit: number) =>
+      getCore().listPhotos(search, filter, offset, limit)
   )
   ipcMain.handle('core:photoCount', () => getCore().photoCount())
   ipcMain.handle('core:thumbForPhoto', async (_e, id: number, maxDim: number) => {
@@ -108,6 +108,13 @@ app.whenReady().then(() => {
       return getCore().writeXmpForPhoto(id)
     } catch (e) {
       return String(e)
+    }
+  })
+  ipcMain.handle('core:exportAllXmp', async () => {
+    try {
+      return await getCore().exportAllXmp()
+    } catch (e) {
+      return { exported: 0, errors: 1, total: 0, error: String(e) }
     }
   })
 

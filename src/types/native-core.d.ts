@@ -39,11 +39,13 @@ declare module '*.node' {
   export function coreVersion(): string
   export function hello(name: string): string
   export function scanFolder(dir: string): NativeScanResult
-  export function listPhotos(search: string, offset: number, limit: number): NativePhotoList
+  export function listPhotos(search: string, filter: string, offset: number, limit: number): NativePhotoList
   export function getPhoto(id: number): NativePhotoMeta | null
   export function photoCount(): number
   export function thumbForPhoto(id: number, maxDim: number): Promise<string | null>
   export function thumbForPath(path: string, maxDim: number): Promise<string | null>
   export function cullPhotos(): Promise<NativeCullSummary>
   export function writeXmpForPhoto(id: number): string
+  export function exportAllXmp(): { exported: number; errors: number; total: number }
+  export function detectFacesInPath(path: string): unknown
 }
