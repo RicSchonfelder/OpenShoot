@@ -149,6 +149,22 @@ app.whenReady().then(() => {
     }
   })
 
+  // ---- Fase 4: retoque ----
+  ipcMain.handle('core:retouchSkinPhoto', async (_e, id: number, intensity: number, maxDim: number) => {
+    try {
+      return (await getCore().retouchSkinPhoto(id, intensity, maxDim)) ?? null
+    } catch {
+      return null
+    }
+  })
+  ipcMain.handle('core:applyRetouch', async (_e, id: number, intensity: number, maxDim: number) => {
+    try {
+      return (await getCore().applyRetouch(id, intensity, maxDim)) ?? null
+    } catch {
+      return null
+    }
+  })
+
   createWindow()
 
   app.on('activate', () => {

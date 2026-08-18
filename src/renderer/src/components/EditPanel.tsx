@@ -61,6 +61,7 @@ interface EditPanelProps {
 
 export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
   const [values, setValues] = useState<EditValues>(EMPTY)
+  const [skinIntensity, setSkinIntensity] = useState(0)
   const [preview, setPreview] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -166,6 +167,37 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
           )
         })}
       </div>
+
+      <div className="edit-retouch">
+        <h4>Retoque</h4>
+        <label className="edit-slider">
+          <span>
+            Suavização de pele
+            <em>{Math.round(skinIntensity * 100)}%</em>
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={Math.round(skinIntensity * 100)}
+            onChange={(e) => {
+              const v = Number(e.target.value) / 100
+              setSkinIntensity(v)
+              if (debounce.current) clearTimeout(debounce.current)
+              debounce.current = setTimeout(() => {
+                setBusy(true)
+                window.openshoot
+                  .retouchSkinPhoto(photo.id, v, 400)
+                  .then((t) => t && setPreview(t))
+                  .catch(() => {})
+                  .finally(() => setBusy(false))
+              }, 200)
+            }}
+          />
+        </label>
+      </div>
+
       <button onClick={applyCurrent} disabled={busy}>
         Aplicar em lote
       </button>

@@ -34,7 +34,12 @@ const api = {
   applyEditAll: (paramsJson: string): Promise<string> =>
     ipcRenderer.invoke('core:applyEditAll', paramsJson),
   applyEditOne: (id: number, paramsJson: string, maxDim: number): Promise<string | null> =>
-    ipcRenderer.invoke('core:applyEditOne', id, paramsJson, maxDim)
+    ipcRenderer.invoke('core:applyEditOne', id, paramsJson, maxDim),
+  // Fase 4: retoque
+  retouchSkinPhoto: (id: number, intensity: number, maxDim: number): Promise<string | null> =>
+    ipcRenderer.invoke('core:retouchSkinPhoto', id, intensity, maxDim),
+  applyRetouch: (id: number, intensity: number, maxDim: number): Promise<string | null> =>
+    ipcRenderer.invoke('core:applyRetouch', id, intensity, maxDim)
 }
 
 contextBridge.exposeInMainWorld('openshoot', api)

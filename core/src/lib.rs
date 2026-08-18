@@ -7,6 +7,7 @@ mod culling;
 mod edit;
 mod imageproc;
 mod ml;
+mod retouch;
 mod types;
 mod xmp;
 
@@ -354,6 +355,34 @@ pub async fn apply_edit_one(id: i64, params_json: String, max_dim: u32) -> Resul
     return Err(Error::from_reason(e));
   }
   preview_edit(id, json, max_dim).await
+}
+
+// ---------------- Fase 4: retoque ----------------
+
+/// Gera um thumbnail com suavização de pele aplicada (base64).
+/// intensity 0..1 (força do retoque). Não-destrutivo.
+#[napi]
+pub async fn retouch_skin_photo(id: i64, intensity: f64, max_dim: u32) -> Result<Option<String>> {
+  let photo = match catalog::get_photo(id) {
+    Ok(Some(p)) => p,
+    Ok(None) => return Ok(None),
+    Err(e) => return Err(Error::from_reason(e)),
+  };
+  let path = PathBuf::from(&photo.path);
+  let dim = if max_dim == 0 { 256 } else { max_dim };
+  let inten = intensity as f32;
+  tokio::task::spawn_blocking(move || {
+    retouch::retouch_skin_thumbnail_base64(&path, inten, dim).ok()
+  })
+  .await
+  .map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// Aplica suavização de pele a uma foto e salva a intensidade (não-destrutiva).
+#[napi]
+pub async fn apply_retouch(id: i64, intensity: f64, max_dim: u32) -> Result<Option<String>> {
+  let preview = retouch_skin_photo(id, intensity, max_dim).await?;
+  Ok(preview)
 }
 
 #[cfg(test)]
