@@ -3,7 +3,7 @@
 > Arquivo de continuidade: registra o estado atual, o que funciona, o que falta e
 > possíveis pontos de retomada caso o ambiente/agente reinicie.
 
-**Última atualização:** 2026-08-17
+**Última atualização:** 2026-08-18
 
 ## Estado atual
 
@@ -13,6 +13,12 @@
 - **Fase 1** ✅ — Catálogo + decode + thumbnails + grid virtualizado:
   - `core/src/catalog.rs` — Catálogo SQLite (`photos`), schema, upsert, listagem
     com paginação/busca, `scan_folder` recursivo com `walkdir`.
+- **Fase 2 (parcial — heurístico)** ✅ — Culling heurístico + XMP:
+  - `core/src/culling.rs` — variância do Laplacian (nitidez), score de exposição,
+    spread de histograma, score composto 0-100, paralelo via rayon.
+  - `core/src/xmp.rs` — sidecar XMP compatível Lightroom/Capture One.
+  - NAPI: `cullPhotos()` (quantis → rating 1-5) + `writeXmpForPhoto()`.
+  - **Validado E2E na UI**: botão Cull → 30 fotos em ~1.3s, ratings/scores no grid.
   - `core/src/imageproc.rs` — `inspect_file` (dimensões, câmera, EXIF via
     kamadak-exif, hash SHA-256), extração de preview embutido via tags
     JPEGInterchangeFormat, geração de thumbnail JPEG base64.
@@ -47,12 +53,36 @@
 - kamadak-exif (BSD-2-Clause) para EXIF. Preview RAW via tags JPEGInterchangeFormat.
 - crate `image` 0.25 para thumbnails. react-window 2.x para virtualização.
 - `jpgfromraw-lib` (MIT) rejeitado (build script exige ferramentas C).
+- **Culling heurístico**: Laplacian variance + exposição + histograma, rayon paralelo.
+- **XMP**: template Lightroom-compatível (xpacket UUID `W5M0MpCehiHzreSzNTczkc9d`,
+  xmp:Rating 0-5, xmp:Label Red/Yellow/Green/Blue/Purple, dc:subject Bag). Testado
+  contra referência do repo `pixcull` (testado em LR Classic 13.x e C1 23).
+
+## Pesquisas concluídas (delegações) — PRÓXIMO PASSO ONNX
+- **`ort` (ONNX Runtime) para IA** (ver `~/.local` ou tmp `ort-metal-research.md`):
+  - Não existe feature "metal" no ort — o EP Apple é **CoreML** (`feature: coreml`).
+    `ort 2.0.0-rc.13` envolve ONNX Runtime 1.28, MSRV 1.88 (OK Rust 1.97).
+  - `download-binaries` baixa binário pré-compilado (~8.8MB) no build.
+  - Config: `ep::CoreML::default().with_compute_units(ALL).with_mlprogram(true)
+    .with_static_input_shapes(true).with_cache_path(<cache>)` + `.error_on_failure()`.
+  - Fallback automático p/ CPU se CoreML não registrar. Inicializar `ort::init()` uma vez.
+  - **Modelos**: SCRFD-500M bnkps (`det_500m.onnx` no buffalo_s.zip 127MB; ou HF
+    RuteNL/SCRFD-face-detection-ONNX `2.5g_bnkps.onnx` 3.3MB, Apache-2.0). NIMA:
+    HF `cromsc/nima-mobilenet-aesthetic` `nima_mobilenet_aesthetic.onnx` 12.9MB
+    (licença não declarada — usar com cautela).
+  - ⚠️ Licença InsightFace: README diz "non-commercial research only" (código MIT,
+    modelos restritos) — verificar antes de uso comercial.
+  - SCRFD input 640x640, NIMA 224x224. `Session` é Send+Sync (rodar em spawn_blocking).
+- **XMP** (ver tmp `xmp-research.md`): confirmou xmp:Rating, xmp:Label; Capture One
+  usa sidecar .xmp sync ou `.cos` em CaptureOne/Settings*; naming `<stem>.xmp`.
 
 ## Próximos passos (ordem sugerida)
-1. **Culling (Fase 2)** — detectar faces, nitidez, score, XMP. Este é o próximo
-   grande marco (ver issue #2).
-2. Melhorias Fase 1: dimensões via cabeçalho p/ imagens sem EXIF; CR3 via parser BMFF.
-3. Commit Fase 1 concluído. Próximo commit: Fase 2 ou CR3.
+1. **ONNX via `ort` (coreml)**: adicionar `ort = { version="=2.0.0-rc.13", features=["coreml"] }`
+   + `ndarray`. Criar módulo `ml.rs` com SCRFD (faces) + NIMA (qualidade). Integrar ao
+   score do culling (com fallback ao heurístico se modelo ausente). Baixar modelos p/
+   `core/models/` (não commitar binários grandes; baixar no primeiro uso).
+2. **Filtro de XMP**: UI para ver/excluir picks; exportar XMP em massa.
+3. Melhorias Fase 1: dimensões via cabeçalho p/ imagens sem EXIF; CR3 via parser BMFF.
 
 ## Como retomar (recuperação de crash)
 1. `cd ~/OpenShoot`
