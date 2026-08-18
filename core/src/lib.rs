@@ -385,6 +385,30 @@ pub async fn apply_retouch(id: i64, intensity: f64, max_dim: u32) -> Result<Opti
   Ok(preview)
 }
 
+/// Remove uma distração (inpainting) de uma foto por bbox normalizada.
+/// mask_rect: [x1, y1, x2, y2] em 0..1. Retorna thumbnail (base64).
+#[napi]
+pub async fn inpaint_photo(
+  id: i64,
+  mask_rect: Vec<f64>,
+  max_dim: u32,
+) -> Result<Option<String>> {
+  if mask_rect.len() != 4 {
+    return Err(Error::from_reason("mask_rect deve ter 4 valores".to_string()));
+  }
+  let photo = match catalog::get_photo(id) {
+    Ok(Some(p)) => p,
+    Ok(None) => return Ok(None),
+    Err(e) => return Err(Error::from_reason(e)),
+  };
+  let path = PathBuf::from(&photo.path);
+  let rect = [mask_rect[0] as f32, mask_rect[1] as f32, mask_rect[2] as f32, mask_rect[3] as f32];
+  let dim = if max_dim == 0 { 256 } else { max_dim };
+  tokio::task::spawn_blocking(move || retouch::inpaint_thumbnail_base64(&path, rect, dim).ok())
+    .await
+    .map_err(|e| Error::from_reason(e.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
   #[test]

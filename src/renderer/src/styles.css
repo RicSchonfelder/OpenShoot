@@ -360,3 +360,8 @@ button.ghost {
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
+
+button.full {
+  width: 100%;
+  margin-top: 8px;
+}

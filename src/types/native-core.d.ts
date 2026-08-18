@@ -55,4 +55,5 @@ declare module '*.node' {
   export function applyEditOne(id: number, paramsJson: string, maxDim: number): Promise<string | null>
   export function retouchSkinPhoto(id: number, intensity: number, maxDim: number): Promise<string | null>
   export function applyRetouch(id: number, intensity: number, maxDim: number): Promise<string | null>
+  export function inpaintPhoto(id: number, maskRect: number[], maxDim: number): Promise<string | null>
 }

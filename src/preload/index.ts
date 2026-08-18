@@ -39,7 +39,9 @@ const api = {
   retouchSkinPhoto: (id: number, intensity: number, maxDim: number): Promise<string | null> =>
     ipcRenderer.invoke('core:retouchSkinPhoto', id, intensity, maxDim),
   applyRetouch: (id: number, intensity: number, maxDim: number): Promise<string | null> =>
-    ipcRenderer.invoke('core:applyRetouch', id, intensity, maxDim)
+    ipcRenderer.invoke('core:applyRetouch', id, intensity, maxDim),
+  inpaintPhoto: (id: number, maskRect: number[], maxDim: number): Promise<string | null> =>
+    ipcRenderer.invoke('core:inpaintPhoto', id, maskRect, maxDim)
 }
 
 contextBridge.exposeInMainWorld('openshoot', api)

@@ -164,6 +164,13 @@ app.whenReady().then(() => {
       return null
     }
   })
+  ipcMain.handle('core:inpaintPhoto', async (_e, id: number, maskRect: number[], maxDim: number) => {
+    try {
+      return (await getCore().inpaintPhoto(id, maskRect, maxDim)) ?? null
+    } catch {
+      return null
+    }
+  })
 
   createWindow()
 

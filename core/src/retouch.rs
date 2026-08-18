@@ -149,6 +149,114 @@ pub fn retouch_skin_thumbnail_base64(
   ))
 }
 
+/// Inpainting por difusão: preenche a região mascarada propagando os pixels das
+/// bordas para dentro, iterativamente (borda → interior). Resultado suave e
+/// adequado para remover objetos pequenos/distrações sobre fundo.
+///
+/// `mask`: 0 = manter, 1 = preencher (região a remover).
+/// `iterations`: número de passadas; mais = preenchimento mais completo.
+pub fn inpaint(
+  rgb: &[u8],
+  width: u32,
+  height: u32,
+  mask: &[u8],
+  iterations: usize,
+) -> Vec<u8> {
+  let w = width as usize;
+  let h = height as usize;
+  let mut out = rgb.to_vec();
+  // Flag: pixel ainda precisa ser preenchido (1) ou já resolvido (0).
+  let mut pending: Vec<u8> = mask.to_vec();
+  let iters = iterations.max(1).min(2000);
+
+  for _ in 0..iters {
+    let mut changed = 0;
+    // Trabalha na borda atual: pixels pendentes com vizinho já resolvido.
+    let snapshot = out.clone();
+    for y in 1..(h - 1) {
+      for x in 1..(w - 1) {
+        let i = y * w + x;
+        if pending[i] == 0 {
+          continue;
+        }
+        // Soma os vizinhos resolvidos (não-pendentes).
+        let mut acc = [0.0f64; 3];
+        let mut n = 0u32;
+        for (dy, dx) in [(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
+          let ny = (y as i32 + dy) as usize;
+          let nx = (x as i32 + dx) as usize;
+          let ni = ny * w + nx;
+          if pending[ni] == 0 {
+            let si = ni * 3;
+            acc[0] += snapshot[si] as f64;
+            acc[1] += snapshot[si + 1] as f64;
+            acc[2] += snapshot[si + 2] as f64;
+            n += 1;
+          }
+        }
+        if n > 0 {
+          let oi = i * 3;
+          out[oi] = (acc[0] / n as f64) as u8;
+          out[oi + 1] = (acc[1] / n as f64) as u8;
+          out[oi + 2] = (acc[2] / n as f64) as u8;
+          pending[i] = 0;
+          changed += 1;
+        }
+      }
+    }
+    if changed == 0 {
+      break;
+    }
+  }
+  out
+}
+
+/// Aplica inpainting a uma foto: remove a região (bbox normalizada 0..1) e
+/// retorna thumbnail JPEG (base64).
+/// mask_rect: [x1, y1, x2, y2] em coordenadas 0..1 relativas à imagem.
+pub fn inpaint_thumbnail_base64(
+  path: &Path,
+  mask_rect: [f32; 4],
+  max_dim: u32,
+) -> Result<String, String> {
+  let img = match crate::imageproc::read_embedded_jpeg(path) {
+    Some(jpeg) => image::ImageReader::new(std::io::Cursor::new(jpeg))
+      .with_guessed_format()
+      .map_err(|e| e.to_string())?
+      .decode()
+      .map_err(|e| e.to_string())?,
+    None => image::ImageReader::open(path)
+      .map_err(|e| e.to_string())?
+      .decode()
+      .map_err(|e| e.to_string())?,
+  };
+  let rgb = img.to_rgb8();
+  let (w, h) = rgb.dimensions();
+  // Máscara para a bbox normalizada.
+  let x1 = ((mask_rect[0].clamp(0.0, 1.0)) * w as f32).round() as usize;
+  let y1 = ((mask_rect[1].clamp(0.0, 1.0)) * h as f32).round() as usize;
+  let x2 = ((mask_rect[2].clamp(0.0, 1.0)) * w as f32).round() as usize;
+  let y2 = ((mask_rect[3].clamp(0.0, 1.0)) * h as f32).round() as usize;
+  let mut mask = vec![0u8; (w * h) as usize];
+  for y in y1..y2.min(h as usize) {
+    for x in x1..x2.min(w as usize) {
+      mask[y * w as usize + x] = 1;
+    }
+  }
+  let inpainted = inpaint(rgb.as_raw(), w, h, &mask, 200);
+  let img = image::RgbImage::from_raw(w, h, inpainted).ok_or("falha ao reconstruir")?;
+  let dynimg = image::DynamicImage::ImageRgb8(img);
+  let thumb = dynimg.thumbnail(max_dim, max_dim);
+  let mut out = std::io::Cursor::new(Vec::new());
+  thumb
+    .write_to(&mut out, image::ImageFormat::Jpeg)
+    .map_err(|e| e.to_string())?;
+  Ok(format!(
+    "data:image/jpeg;base64,{}",
+    base64::engine::general_purpose::STANDARD.encode(out.into_inner())
+  ))
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -185,6 +293,42 @@ mod tests {
   fn zero_intensity_returns_original() {
     let rgb = vec![10u8, 20, 30, 40, 50, 60];
     let out = retouch_skin(&rgb, 1, 2, 0.0);
+    assert_eq!(out, rgb);
+  }
+
+  #[test]
+  fn inpaint_fills_region() {
+    // Imagem 8x8 branca com um bloco 2x2 preto no centro.
+    let w = 8u32;
+    let h = 8u32;
+    let mut rgb = vec![255u8; (w * h * 3) as usize];
+    for y in 3..5 {
+      for x in 3..5 {
+        let i = (y * w + x) as usize * 3;
+        rgb[i] = 0;
+        rgb[i + 1] = 0;
+        rgb[i + 2] = 0;
+      }
+    }
+    // Máscara: bloco central.
+    let mut mask = vec![0u8; (w * h) as usize];
+    for y in 3..5 {
+      for x in 3..5 {
+        mask[(y * w + x) as usize] = 1;
+      }
+    }
+    let out = inpaint(&rgb, w, h, &mask, 200);
+    // O centro deve ter sido preenchido (não mais preto).
+    let center = (4 * w + 4) as usize * 3;
+    assert!(out[center] > 100, "centro deveria ser preenchido, got {}", out[center]);
+    assert_eq!(out.len(), rgb.len());
+  }
+
+  #[test]
+  fn inpaint_empty_mask_keeps_original() {
+    let rgb = vec![100u8, 150, 200, 10, 20, 30];
+    let mask = vec![0u8; 2]; // nada a preencher
+    let out = inpaint(&rgb, 1, 2, &mask, 100);
     assert_eq!(out, rgb);
   }
 }

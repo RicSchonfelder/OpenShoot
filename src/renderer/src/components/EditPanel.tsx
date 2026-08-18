@@ -123,6 +123,18 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
     onApplyAll(json)
   }
 
+  const removeDistraction = () => {
+    if (!photo) return
+    setBusy(true)
+    // MVP: remove uma região central (bbox normalizada). Seleção por arrasto
+    // virá numa próxima iteração.
+    window.openshoot
+      .inpaintPhoto(photo.id, [0.35, 0.35, 0.65, 0.65], 400)
+      .then((t) => t && setPreview(t))
+      .catch(() => {})
+      .finally(() => setBusy(false))
+  }
+
   if (!photo) {
     return (
       <aside className="edit-panel">
@@ -200,6 +212,9 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
 
       <button onClick={applyCurrent} disabled={busy}>
         Aplicar em lote
+      </button>
+      <button onClick={removeDistraction} disabled={busy} className="ghost full">
+        Remover distração (centro)
       </button>
     </aside>
   )
