@@ -145,7 +145,7 @@ validada** (decisão multi-escala + NMS). Detalhes:
 2. **Melhorias Fase 1**: **CR3** ✅ FEITO (parser BMFF em core/src/cr3.rs, validado).
    Resta: dimensões via cabeçalho p/ imagens sem EXIF.
 3. **Fase 3: edição em lote** ✅ FEITO — motor não-destrutivo (exposição/WB/contraste/saturação/sombras/realces/brilho) + painel de sliders com preview em tempo real + aplicar em lote (32 fotos validado).
-4. **Fase 4 (parcial)**: retoque ✅ suavização de pele (segmentação YCbCr + blur seletivo) com slider na UI. Faltam: brilho de óculos, remoção de distrações (inpainting LaMa).
+4. **Fase 4 (parcial)**: retoque ✅ suavização de pele (segmentação YCbCr + blur seletivo) com slider na UI. Faltam: brilho de óculos. Remoção de distrações ✅ (inpainting por difusão, botão na UI).
 5. **Fase 6**: OpenRouter opt-in (chave do usuário no Keychain).
 
 ---
