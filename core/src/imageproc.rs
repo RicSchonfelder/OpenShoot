@@ -160,12 +160,12 @@ pub fn read_exif_basic(path: &Path) -> ExifBasic {
 }
 
 /// Extract the embedded JPEG preview bytes from a RAW/TIFF file using Exif
-/// tags JPEGInterchangeFormat (offset) and JPEGInterchangeFormatLength (size).
+/// tags JPEGInterchangeFormat (offset) and JPEGInterchangeFormatLength (size),
+/// ou via parser CR3 (Canon, container BMFF/HEIF).
 ///
 /// Iterates over ALL IFDs (primary + thumbnail/sub) — the embedded full-size
 /// JPEG is often located in a SubIFD/thumbnail IFD, so we scan every field.
-/// Works for NEF/ARW/DNG (TIFF-based). For CR3/HEIF a container parser would
-/// be needed (future work).
+/// Works for NEF/ARW/DNG (TIFF-based). For CR3/HEIF usa o parser BMFF.
 pub fn read_embedded_jpeg(path: &Path) -> Option<Vec<u8>> {
   if !path.exists() {
     return None;
@@ -174,6 +174,15 @@ pub fn read_embedded_jpeg(path: &Path) -> Option<Vec<u8>> {
   let mut data = Vec::new();
   let mut reader = BufReader::new(file);
   reader.read_to_end(&mut data).ok()?;
+
+  // CR3 (Canon, HEIF container): parser BMFF dedicado.
+  if crate::cr3::looks_like_cr3(&data) {
+    if let Some(jpeg) = crate::cr3::extract_cr3_preview(&data) {
+      return Some(jpeg);
+    }
+    // Se não achou via parser BMFF, tenta o caminho TIFF (fallback).
+  }
+
   let mut cursor = std::io::Cursor::new(&data);
   let exif = exif::Reader::new().read_from_container(&mut cursor).ok()?;
 

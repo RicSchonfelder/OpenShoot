@@ -2,6 +2,7 @@
 extern crate napi_derive;
 
 mod catalog;
+mod cr3;
 mod culling;
 mod imageproc;
 mod ml;
