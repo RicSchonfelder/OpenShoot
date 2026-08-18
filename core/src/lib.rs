@@ -4,6 +4,7 @@ extern crate napi_derive;
 mod catalog;
 mod culling;
 mod imageproc;
+mod ml;
 mod types;
 mod xmp;
 
@@ -105,17 +106,39 @@ pub struct CullSummary {
   pub avg_score: f64,
   pub picks: i64,
 }
-
 #[napi]
 pub async fn cull_photos() -> Result<CullSummary> {
   let paths = match catalog::all_photo_paths() {
     Ok(p) => p,
     Err(e) => return Err(Error::from_reason(e)),
   };
+  let ml_ok = ml::models_available();
+  if ml_ok {
+    crate::catalog::log_debug("[cull] usando ML (NIMA + SCRFD)");
+  } else {
+    crate::catalog::log_debug("[cull] ML indisponivel, usando heuristica apenas");
+  }
+
   let results: Vec<(i64, std::result::Result<f64, String>)> = paths
     .into_par_iter()
     .map(|p: catalog::PhotoPath| -> (i64, std::result::Result<f64, String>) {
-      let score = culling::heuristic_score(&PathBuf::from(&p.path), 320);
+      let path = PathBuf::from(&p.path);
+      let score = if ml_ok {
+        // IA: heurística + ML combinados
+        let heur = culling::heuristic_score(&path, 320);
+        match ml::load_rgb(&path, 640).and_then(|(rgb, w, h)| ml::ml_quality_score(&rgb, w, h)) {
+          Ok(mls) => {
+            let h = heur.unwrap_or(50.0);
+            Ok(h * 0.5 + mls * 0.5)
+          }
+          Err(e) => {
+            crate::catalog::log_debug(&format!("[cull] fallback heuristica p/ {}: {}", p.path, e));
+            heur
+          }
+        }
+      } else {
+        culling::heuristic_score(&path, 320)
+      };
       (p.id, score)
     })
     .collect();
