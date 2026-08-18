@@ -13,7 +13,12 @@
 - **Fase 1** ✅ — Catálogo + decode + thumbnails + grid virtualizado:
   - `core/src/catalog.rs` — Catálogo SQLite (`photos`), schema, upsert, listagem
     com paginação/busca, `scan_folder` recursivo com `walkdir`.
-- **Fase 2 (parcial — heurístico)** ✅ — Culling heurístico + XMP:
+- **Fase 2 (heurístico + ML local)** ✅ — Culling com IA local (ONNX):
+  - **NIMA** (estética, NHWC, score 1-10) + **SCRFD** (detecção de faces, NCHW)
+  - Engine **ort 2.0.0-rc.13** com EP **CoreML** (GPU/ANE) + fallback CPU
+  - Score final: heurística (Laplacian) + NIMA + bônus por rostos; fallback p/ heurística se modelo ausente
+  - Modelos em `core/models/` (Apache-2.0): scrfd_2.5g_bnkps.onnx, nima_mobilenet_aesthetic.onnx
+  - Validado: NIMA+SCRFD inferem na GPU; culling ML ~5.6s/30 fotos
   - `core/src/culling.rs` — variância do Laplacian (nitidez), score de exposição,
     spread de histograma, score composto 0-100, paralelo via rayon.
   - `core/src/xmp.rs` — sidecar XMP compatível Lightroom/Capture One.
@@ -77,7 +82,17 @@
   usa sidecar .xmp sync ou `.cos` em CaptureOne/Settings*; naming `<stem>.xmp`.
 
 ## Próximos passos (ordem sugerida)
-1. **ONNX via `ort` (coreml)**: adicionar `ort = { version="=2.0.0-rc.13", features=["coreml"] }`
+1. **Refinar SCRFD decode multi-escala**: o SCRFD emite score_8/16/32 + bbox_8/16/32 (multi-escala). A decodificação atual é simplificada (assume N detecções). Para produção, implementar NMS (non-max suppression) por escala (ver InsightFace pynms).
+2. **Filtro/UI picks + export XMP em massa**.
+3. Melhorias Fase 1: dimensões via cabeçalho; CR3 via parser BMFF.
+
+## NOTA de integração ONNX (feito)
+- `ort = { version="=2.0.0-rc.13", features=["coreml"] }` + `ndarray = 0.17` (ALINHAR versão com a do ort — havia 0.16 vs 0.17 duplicadas; resolver usando 0.17).
+- **NIMA = NHWC** `(1,224,224,3)`; **SCRFD = NCHW** `(1,3,640,640)`. Erro 'invalid dimensions' = layout errado.
+- `Session` não clona nem é &mut através de OnceLock → usar `Mutex<Session>`.
+- `ComputeUnits::All` (não ALL). `session.inputs()/outputs()` são métodos.
+- `Tensor::from_array(Array4)` (feature ndarray). `try_extract_tensor` retorna `(&Shape, &[T])`.
+- **Adicionado**: `ort` 2.0.0-rc.13, `ndarray` 0.17, modelos em core/models/. adicionar `ort = { version="=2.0.0-rc.13", features=["coreml"] }`
    + `ndarray`. Criar módulo `ml.rs` com SCRFD (faces) + NIMA (qualidade). Integrar ao
    score do culling (com fallback ao heurístico se modelo ausente). Baixar modelos p/
    `core/models/` (não commitar binários grandes; baixar no primeiro uso).
