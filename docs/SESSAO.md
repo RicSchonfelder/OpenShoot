@@ -129,24 +129,24 @@ O `ort` com feature `coreml` baixa o ONNX Runtime pré-compilado no build
 
 ## 8. ONDE PARAMOS → PRÓXIMO PASSO SUGERIDO
 
-O **pipeline de culling ML funciona**, mas o **SCRFD** ainda usa decodificação
-**simplificada** para os outputs multi-escala. Detalhes:
+O **pipeline de culling ML funciona** e a **detecção de faces SCRFD está refinada e
+validada** (decisão multi-escala + NMS). Detalhes:
 
-- O SCRFD emite **6 outputs** por escala: `score_8`, `score_16`, `score_32`,
-  `bbox_8`, `bbox_16`, `bbox_32` (e kps). O código atual pega o primeiro score/bbox
-  e faz uma interpretação ingênua (assume N detecções por 4 valores).
-- **Para produção/qualidade**, implementar a decodificação correta do SCRFD com
-  **NMS (non-max suppression)** por escala, como o InsightFace (`pynms`): para cada
-  escala, aplicar stride/anchors → bbox em pixels → filtrar por score → NMS global.
+- **SCRFD implementado corretamente**: outputs reais `score_s [1,N,1]` (fg),
+  `bbox_s [1,N,4]`, com N = (640/stride)² × 2 anchors (stride 8/16/32). Decodificação
+  por escala + **NMS (IOU)**. Corrigido normalização por `scale*width/height`.
+- **Validado**: detecta 1 rosto na imagem Lena, 0 em gradientes (discriminativo).
+  A foto com rosto recebe bônus no score (+1.7 vs média) e aparece no topo do grid.
+- **Debug NAPI**: `detectFacesInPath(path)` retorna faces detectadas (útil p/ testes).
 
-**Sugestão de ordem (próximos trabalhos):**
-1. **Refinar SCRFD multi-escala + NMS** (maior precisão de detecção de faces)
-2. **UI de picks/filtro + export XMP em massa** (Fase 5 parcial)
-3. **Melhorias Fase 1**: dimensões via cabeçalho p/ imagens sem EXIF; **CR3** via
-   parser BMFF (PRVW/THMB)
-4. **Fase 3**: edição em lote (feature flag OFF, opt-in)
-5. **Fase 4**: retoque básico (segmentação de pele via ONNX)
-6. **Fase 6**: OpenRouter opt-in (chave do usuário no Keychain) — placeholders prontos
+**Próximos passos (ordem sugerida):**
+1. **UI de picks/filtro + export XMP em massa** (Fase 5 parcial) — mostrar apenas
+   ★≥4 / ★≤1, e botão "Exportar XMP" que chama `writeXmpForPhoto` em lote.
+2. **Melhorias Fase 1**: dimensões via cabeçalho p/ imagens sem EXIF; **CR3** via
+   parser BMFF (PRVW/THMB).
+3. **Fase 3**: edição em lote (feature flag OFF, opt-in).
+4. **Fase 4**: retoque básico (segmentação de pele via ONNX).
+5. **Fase 6**: OpenRouter opt-in (chave do usuário no Keychain).
 
 ---
 
