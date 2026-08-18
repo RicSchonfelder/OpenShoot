@@ -140,8 +140,8 @@ validada** (decisão multi-escala + NMS). Detalhes:
 - **Debug NAPI**: `detectFacesInPath(path)` retorna faces detectadas (útil p/ testes).
 
 **Próximos passos (ordem sugerida):**
-1. **UI de picks/filtro + export XMP em massa** (Fase 5 parcial) — mostrar apenas
-   ★≥4 / ★≤1, e botão "Exportar XMP" que chama `writeXmpForPhoto` em lote.
+1. **UI de picks/filtro + export XMP em massa** ✅ FEITO — filtros all/picks/rejects/
+   unrated no header, botão Exportar XMP em massa (31 sidecars validado E2E).
 2. **Melhorias Fase 1**: dimensões via cabeçalho p/ imagens sem EXIF; **CR3** via
    parser BMFF (PRVW/THMB).
 3. **Fase 3**: edição em lote (feature flag OFF, opt-in).
