@@ -257,6 +257,113 @@ pub fn inpaint_thumbnail_base64(
   ))
 }
 
+/// Regiões faciais suportadas para retoque direcionado (proporções relativas
+/// à bbox do rosto detectado).
+pub const FACE_REGIONS: &[(&str, [f32; 4])] = &[
+  // [x0, y0, x1, y1] relativos à bbox do rosto.
+  ("acne", [0.05, 0.05, 0.95, 0.9]), // pele central (testa→queixo)
+  ("olhos", [0.05, 0.32, 0.95, 0.45]), // faixa dos olhos
+  ("dentes", [0.25, 0.6, 0.75, 0.75]), // boca
+  ("cabelo", [0.0, 0.0, 1.0, 0.25]), // topo (testa/cabelo)
+];
+
+/// Retoque direcionado de região facial dentro da bbox do rosto.
+/// `region`: "acne" | "olhos" | "dentes" | "cabelo". `intensity` 0..1.
+/// Operação:
+/// - acne/cabelo → blur seletivo forte (suaviza imperfeições).
+/// - olhos/dentes → clareia e aumenta levemente o contraste local.
+pub fn retouch_face_region(
+  rgb: &[u8],
+  width: u32,
+  height: u32,
+  face_bbox: [f32; 4],
+  region: &str,
+  intensity: f32,
+) -> Vec<u8> {
+  let intensity = intensity.clamp(0.0, 1.0);
+  if intensity <= 0.001 || rgb.is_empty() {
+    return rgb.to_vec();
+  }
+  let Some(reg) = FACE_REGIONS.iter().find(|(n, _)| *n == region) else {
+    return rgb.to_vec();
+  };
+  let (_name, r) = reg;
+
+  let w = width as usize;
+  let h = height as usize;
+  // Bbox do rosto em pixels (normalizada 0..1).
+  let (fx0, fy0) = (face_bbox[0], face_bbox[1]);
+  let (fx1, fy1) = (face_bbox[2], face_bbox[3]);
+  let fw = (fx1 - fx0).max(0.01);
+  let fh = (fy1 - fy0).max(0.01);
+  // Região-alvo em pixels (recortada à imagem).
+  let px0 = ((fx0 + r[0] * fw) * width as f32).max(0.0) as usize;
+  let py0 = ((fy0 + r[1] * fh) * height as f32).max(0.0) as usize;
+  let px1 = (((fx0 + r[2] * fw) * width as f32) as usize).min(w);
+  let py1 = (((fy0 + r[3] * fh) * height as f32) as usize).min(h);
+
+  // Máscara suave (gaussiana radial no centro da região) para misturar.
+  let mut out = rgb.to_vec();
+  let cx = (px0 + px1) as f32 / 2.0;
+  let cy = (py0 + py1) as f32 / 2.0;
+  let rx = ((px1 - px0) as f32 / 2.0).max(1.0);
+  let ry = ((py1 - py0) as f32 / 2.0).max(1.0);
+
+  // Pré-computa blur 3x3 para o recorte (apenas a região-alvo).
+  let blur = |x: usize, y: usize, c: usize| -> f32 {
+    let mut acc = 0.0f32;
+    let mut n = 0.0f32;
+    for dy in -1i32..=1 {
+      for dx in -1i32..=1 {
+        let (nx, ny) = (x as i32 + dx, y as i32 + dy);
+        if nx >= 0 && nx < w as i32 && ny >= 0 && ny < h as i32 {
+          acc += rgb[((ny as usize) * w + nx as usize) * 3 + c] as f32;
+          n += 1.0;
+        }
+      }
+    }
+    if n > 0.0 {
+      acc / n
+    } else {
+      rgb[y * w * 3 + x * 3 + c] as f32
+    }
+  };
+
+  for y in py0..py1 {
+    for x in px0..px1 {
+      // Peso gaussiano pelo centro da região (1 no centro → 0 nas bordas).
+      let dxn = (x as f32 - cx) / rx;
+      let dyn_n = (y as f32 - cy) / ry;
+      let weight = (-(dxn * dxn + dyn_n * dyn_n) * 2.0).exp();
+      if weight < 0.02 {
+        continue;
+      }
+      let i = (y * w + x) * 3;
+      for c in 0..3 {
+        let orig = rgb[i + c] as f32;
+        match region {
+          "olhos" | "dentes" => {
+            // Clarear + leve contraste local.
+            let brightened = orig * (1.0 + 0.15 * intensity) + 8.0 * intensity;
+            let b = blur(x, y, c);
+            let contrasted = orig + (orig - b) * 0.3 * intensity;
+            out[i + c] = ((contrasted * 0.5 + brightened * 0.5) * weight
+              + orig * (1.0 - weight))
+              .clamp(0.0, 255.0) as u8;
+          }
+          _ => {
+            // acne/cabelo: blur forte.
+            let b = blur(x, y, c);
+            out[i + c] = (b * weight * (0.5 + 0.5 * intensity) + orig * (1.0 - weight * (0.5 + 0.5 * intensity)))
+              .clamp(0.0, 255.0) as u8;
+          }
+        }
+      }
+    }
+  }
+  out
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -330,5 +437,30 @@ mod tests {
     let mask = vec![0u8; 2]; // nada a preencher
     let out = inpaint(&rgb, 1, 2, &mask, 100);
     assert_eq!(out, rgb);
+  }
+
+  #[test]
+  fn face_region_blurs_skin() {
+    // Imagem uniforme cinza-escuro; região "acne" deve suavizar (blur ≈ mesmo valor).
+    let w = 20u32;
+    let h = 20u32;
+    let mut rgb = Vec::new();
+    for _ in 0..(w * h) {
+      rgb.push(120);
+      rgb.push(110);
+      rgb.push(100);
+    }
+    // Insere "mancha" (pixel claro) dentro da bbox do rosto.
+    let i = (10 * w + 10) as usize * 3;
+    rgb[i] = 240;
+    let out = retouch_face_region(&rgb, w, h, [0.0, 0.0, 1.0, 1.0], "acne", 1.0);
+    // O pixel da mancha deve ter sido suavizado (mais perto de 120).
+    assert!(
+      (out[i] as i32 - 120).abs() < (rgb[i] as i32 - 120).abs(),
+      "mancha deve suavizar: {} vs {}",
+      out[i],
+      rgb[i]
+    );
+    assert_eq!(out.len(), rgb.len());
   }
 }

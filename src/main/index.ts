@@ -251,6 +251,13 @@ app.whenReady().then(() => {
       return null
     }
   })
+  ipcMain.handle('core:retouchFacePhoto', async (_e, id: number, region: string, intensity: number, maxDim: number) => {
+    try {
+      return await getCore().retouchFacePhoto(id, region, intensity, maxDim)
+    } catch (e) {
+      return null
+    }
+  })
   ipcMain.handle(
     'core:scanFolderProgress',
     async (

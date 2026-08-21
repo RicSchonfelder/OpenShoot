@@ -116,6 +116,7 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
   const [presets, setPresets] = useState<PresetItem[]>([])
   const [presetName, setPresetName] = useState('')
   const [hslColor, setHslColor] = useState(0)
+  const [faceRegions, setFaceRegions] = useState<Record<string, number>>({})
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Carrega a lista de presets salvos.
@@ -473,6 +474,44 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
             }}
           />
         </label>
+        {(
+          [
+            ['edit.acne', 'acne'],
+            ['edit.olhos', 'olhos'],
+            ['edit.dentes', 'dentes'],
+            ['edit.cabelo', 'cabelo']
+          ] as Array<[string, string]>
+        ).map(([labelKey, region]) => {
+          const v = faceRegions[region] ?? 0
+          return (
+            <label key={region} className="edit-slider">
+              <span>
+                {t(labelKey)}
+                <em>{Math.round(v * 100)}%</em>
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={Math.round(v * 100)}
+                onChange={(e) => {
+                  const val = Number(e.target.value) / 100
+                  setFaceRegions((prev) => ({ ...prev, [region]: val }))
+                  if (debounce.current) clearTimeout(debounce.current)
+                  debounce.current = setTimeout(() => {
+                    setBusy(true)
+                    window.openshoot
+                      .retouchFacePhoto(photo.id, region, val, 400)
+                      .then((t) => t && setPreview(t))
+                      .catch(() => {})
+                      .finally(() => setBusy(false))
+                  }, 200)
+                }}
+              />
+            </label>
+          )
+        })}
       </div>
 
       <button onClick={applyCurrent} disabled={busy}>

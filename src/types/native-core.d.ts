@@ -71,6 +71,7 @@ declare module '*.node' {
   export function deletePreset(name: string): boolean
   export function autoLevelPhoto(id: number, maxDim: number): Promise<{ preview: string; angle: number } | { error: string }>
   export function aiCropPhoto(id: number, maxDim: number): Promise<string | null>
+  export function retouchFacePhoto(id: number, region: string, intensity: number, maxDim: number): Promise<string | null>
   export function scanFolderProgress(
     dir: string,
     includeSubdirs: boolean,

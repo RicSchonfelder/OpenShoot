@@ -17,6 +17,8 @@ use napi::bindgen_prelude::*;
 use rayon::prelude::*;
 use std::path::PathBuf;
 
+use base64::Engine;
+
 use types::{DuplicateGroup, FilterCounts, PhotoList, PhotoMeta, Preset, ScanResult};
 
 /// Inicializa o core: diretório de dados + catálogo SQLite.
@@ -567,6 +569,68 @@ pub async fn ai_crop_photo(id: i64, max_dim: u32) -> Result<Option<String>> {
   tokio::task::spawn_blocking(move || geometric::ai_crop_base64(&path, dim).ok())
     .await
     .map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// Retoque de região facial (acne/olhos/dentes/cabelo) dentro da bbox do rosto.
+/// Detecta o rosto via SCRFD e aplica o ajuste direcionado.
+#[napi]
+pub async fn retouch_face_photo(
+  id: i64,
+  region: String,
+  intensity: f64,
+  max_dim: u32,
+) -> Result<Option<String>> {
+  let photo = match catalog::get_photo(id) {
+    Ok(Some(p)) => p,
+    Ok(None) => return Ok(None),
+    Err(e) => return Err(Error::from_reason(e)),
+  };
+  let path = PathBuf::from(&photo.path);
+  let dim = if max_dim == 0 { 512 } else { max_dim };
+  let region_name = region;
+  tokio::task::spawn_blocking(move || {
+    let img = crate::imageproc::read_embedded_jpeg(&path)
+      .or_else(|| None);
+    let rgb_result = if let Some(jpeg) = img {
+      image::ImageReader::new(std::io::Cursor::new(jpeg))
+        .with_guessed_format()
+        .ok()
+        .and_then(|r| r.decode().ok())
+        .map(|d| d.to_rgb8())
+    } else {
+      image::ImageReader::open(&path)
+        .ok()
+        .and_then(|r| r.decode().ok())
+        .map(|d| d.to_rgb8())
+    };
+    let img = match rgb_result {
+      Some(i) => i,
+      None => return None,
+    };
+    let (w, h) = img.dimensions();
+    let rgb = img.as_raw();
+    // Detecta o primeiro rosto (se modelos disponíveis).
+    let bbox = if crate::ml::models_available() {
+      crate::ml::detect_faces(rgb, w, h, 0.5)
+        .ok()
+        .and_then(|f| f.into_iter().next())
+        .unwrap_or([0.0, 0.0, 1.0, 1.0])
+    } else {
+      [0.0, 0.0, 1.0, 1.0]
+    };
+    let out = retouch::retouch_face_region(rgb, w, h, bbox, &region_name, intensity as f32);
+    let img_out = image::RgbImage::from_raw(w, h, out)?;
+    let dynimg = image::DynamicImage::ImageRgb8(img_out);
+    let thumb = dynimg.thumbnail(dim, dim);
+    let mut buf = std::io::Cursor::new(Vec::new());
+    thumb.write_to(&mut buf, image::ImageFormat::Jpeg).ok()?;
+    Some(format!(
+      "data:image/jpeg;base64,{}",
+      base64::engine::general_purpose::STANDARD.encode(buf.into_inner())
+    ))
+  })
+  .await
+  .map_err(|e| Error::from_reason(e.to_string()))
 }
 
 // ---------------- Fase 6: captions locais ----------------
