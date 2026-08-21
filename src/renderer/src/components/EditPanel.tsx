@@ -11,6 +11,10 @@ export interface EditValues {
   shadows: number | null
   highlights: number | null
   brightness: number | null
+  toneHighlights: number | null
+  toneLights: number | null
+  toneDarks: number | null
+  toneShadows: number | null
 }
 
 const EMPTY: EditValues = {
@@ -21,7 +25,11 @@ const EMPTY: EditValues = {
   saturation: null,
   shadows: null,
   highlights: null,
-  brightness: null
+  brightness: null,
+  toneHighlights: null,
+  toneLights: null,
+  toneDarks: null,
+  toneShadows: null
 }
 
 interface SliderDef {
@@ -44,14 +52,28 @@ const SLIDERS: SliderDef[] = [
   { key: 'brightness', labelKey: 'edit.brilho', min: -100, max: 100, step: 1, unit: '' }
 ]
 
+const TONE_SLIDERS: Array<{ key: keyof EditValues; labelKey: string }> = [
+  { key: 'toneHighlights', labelKey: 'edit.curvaDestaques' },
+  { key: 'toneLights', labelKey: 'edit.curvaLuzes' },
+  { key: 'toneDarks', labelKey: 'edit.curvaEscuros' },
+  { key: 'toneShadows', labelKey: 'edit.curvaSombras' }
+]
+
 function toJson(values: EditValues): string {
-  const o: Record<string, number> = {}
+  const o: Record<string, number | number[]> = {}
   for (const s of SLIDERS) {
     const v = values[s.key]
     if (v == null) continue
     const neutral = s.key === 'temperature' ? 6500 : 0
     if (v !== neutral) o[s.key] = v
   }
+  const curve = [
+    values.toneHighlights ?? 0,
+    values.toneLights ?? 0,
+    values.toneDarks ?? 0,
+    values.toneShadows ?? 0
+  ]
+  if (curve.some((v) => v !== 0)) o.tone_curve = curve
   return JSON.stringify(o)
 }
 
@@ -91,6 +113,7 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
     (recipe: string) => {
       try {
         const p = JSON.parse(recipe)
+        const c = p.tone_curve as number[] | undefined
         const next: EditValues = {
           exposure: p.exposure ?? null,
           temperature: p.temperature ?? null,
@@ -99,7 +122,11 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
           saturation: p.saturation ?? null,
           shadows: p.shadows ?? null,
           highlights: p.highlights ?? null,
-          brightness: p.brightness ?? null
+          brightness: p.brightness ?? null,
+          toneHighlights: c?.[0] ?? null,
+          toneLights: c?.[1] ?? null,
+          toneDarks: c?.[2] ?? null,
+          toneShadows: c?.[3] ?? null
         }
         setValues(next)
         if (photo) updatePreview(next)
@@ -142,6 +169,7 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
       if (!json) return
       try {
         const p = JSON.parse(json)
+        const c = p.tone_curve as number[] | undefined
         setValues({
           exposure: p.exposure ?? null,
           temperature: p.temperature ?? null,
@@ -150,7 +178,11 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
           saturation: p.saturation ?? null,
           shadows: p.shadows ?? null,
           highlights: p.highlights ?? null,
-          brightness: p.brightness ?? null
+          brightness: p.brightness ?? null,
+          toneHighlights: c?.[0] ?? null,
+          toneLights: c?.[1] ?? null,
+          toneDarks: c?.[2] ?? null,
+          toneShadows: c?.[3] ?? null
         })
       } catch {
         /* ignore */
@@ -174,6 +206,13 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
 
   const onSlider = (key: keyof EditValues, val: number, neutral: number) => {
     const next = { ...values, [key]: val === neutral ? null : val }
+    setValues(next)
+    if (debounce.current) clearTimeout(debounce.current)
+    debounce.current = setTimeout(() => updatePreview(next), 200)
+  }
+
+  const onToneSlider = (key: keyof EditValues, val: number) => {
+    const next = { ...values, [key]: val === 0 ? null : val }
     setValues(next)
     if (debounce.current) clearTimeout(debounce.current)
     debounce.current = setTimeout(() => updatePreview(next), 200)
@@ -243,6 +282,29 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
                 step={s.step}
                 value={v}
                 onChange={(e) => onSlider(s.key, Number(e.target.value), neutral)}
+              />
+            </label>
+          )
+        })}
+      </div>
+
+      <div className="edit-tonecurve">
+        <h4>{t('edit.curvaTitulo')}</h4>
+        {TONE_SLIDERS.map((s) => {
+          const v = values[s.key] ?? 0
+          return (
+            <label key={s.key} className="edit-slider">
+              <span>
+                {t(s.labelKey)}
+                <em>{v}</em>
+              </span>
+              <input
+                type="range"
+                min={-100}
+                max={100}
+                step={1}
+                value={v}
+                onChange={(e) => onToneSlider(s.key, Number(e.target.value))}
               />
             </label>
           )

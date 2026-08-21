@@ -24,6 +24,10 @@ pub struct EditParams {
   pub highlights: Option<f32>,
   /// Brilho (-100..100): deslocamento de luminância.
   pub brightness: Option<f32>,
+  /// Curva de tom: [destaques, luzes, escuros, sombras] (-100..100 cada).
+  /// Segue a curva paramétrica do AfterShoot/Lightroom: pontos de controle
+  /// aplicados por faixa de luminância com interpolação suave.
+  pub tone_curve: Option<[f32; 4]>,
 }
 
 impl EditParams {
@@ -110,8 +114,39 @@ impl EditParams {
       b -= amt;
     }
 
+    // Curva de tom: [destaques, luzes, escuros, sombras].
+    // Cada ponto desloca a luminância numa faixa com falloff gaussiano.
+    if let Some(curve) = self.tone_curve {
+      let dt = tone_curve_adjust(luma, curve);
+      if dt != 0.0 {
+        r += dt;
+        g += dt;
+        b += dt;
+      }
+    }
+
     [r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0)]
   }
+}
+
+/// Deslocamento de luminância da curva de tom para um luma dado.
+/// curve = [destaques, luzes, escuros, sombras] em -100..100.
+/// Centros das faixas: 0.85 (destaques), 0.7 (luzes), 0.3 (escuros), 0.15 (sombras).
+fn tone_curve_adjust(luma: f32, curve: [f32; 4]) -> f32 {
+  let centers = [0.85f32, 0.7, 0.3, 0.15];
+  let widths = [0.18f32, 0.22, 0.22, 0.18];
+  let mut dt = 0.0f32;
+  for i in 0..4 {
+    let v = curve[i] / 100.0;
+    if v == 0.0 {
+      continue;
+    }
+    // Peso gaussiano pela distância ao centro da faixa.
+    let d = (luma - centers[i]).abs() / widths[i];
+    let w = (-(d * d) * 3.0).exp(); // 1 no centro, cai suavemente
+    dt += v * w * 0.25;
+  }
+  dt
 }
 
 /// Aplica a receita a uma imagem RGB8 (HxWx3) e retorna a imagem editada.
@@ -221,5 +256,30 @@ mod tests {
   #[test]
   fn default_is_empty() {
     assert!(EditParams::default().is_empty());
+  }
+
+  #[test]
+  fn tone_curve_darkens_shadows() {
+    // Escurecer sombras: curva[3] = -80 → escuros ficam mais escuros.
+    let p = EditParams {
+      tone_curve: Some([0.0, 0.0, 0.0, -80.0]),
+      ..Default::default()
+    };
+    let dark = p.apply_pixel([0.15, 0.15, 0.15]);
+    let bright = p.apply_pixel([0.9, 0.9, 0.9]);
+    assert!(dark[0] < 0.15, "sombra deve escurecer, ficou {}", dark[0]);
+    // Região clara pouco afetada.
+    assert!((bright[0] - 0.9).abs() < 0.05);
+  }
+
+  #[test]
+  fn tone_curve_lifts_highlights() {
+    // Elevar destaques: curve[0] = 60 → claros ficam mais claros.
+    let p = EditParams {
+      tone_curve: Some([60.0, 0.0, 0.0, 0.0]),
+      ..Default::default()
+    };
+    let bright = p.apply_pixel([0.85, 0.85, 0.85]);
+    assert!(bright[0] > 0.85, "destaque deve clarear, ficou {}", bright[0]);
   }
 }
