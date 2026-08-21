@@ -27,6 +27,18 @@ type Filter =
 
 type DeleteDialogState = 'none' | 'catalog' | 'trash'
 
+const SESSION_TYPES = [
+  { id: 'wedding', labelKey: 'import.wedding' },
+  { id: 'portrait', labelKey: 'import.portrait' },
+  { id: 'family', labelKey: 'import.family' },
+  { id: 'school', labelKey: 'import.school' },
+  { id: 'newborn', labelKey: 'import.newborn' },
+  { id: 'sports', labelKey: 'import.sports' },
+  { id: 'event', labelKey: 'import.event' },
+  { id: 'boudoir', labelKey: 'import.boudoir' },
+  { id: 'other', labelKey: 'import.other' }
+]
+
 export default function App() {
   const { t } = useT()
   const [photos, setPhotos] = useState<PhotoMeta[]>([])
@@ -50,6 +62,7 @@ export default function App() {
     dir: string
     includeSubdirs: boolean
     types: string
+    sessionType: string
   } | null>(null)
   const photosRef = useRef<PhotoMeta[]>([])
   const selectedRef = useRef<Set<number>>(new Set())
@@ -285,11 +298,11 @@ export default function App() {
     const dir = await window.openshoot.pickFolder()
     if (!dir) return
     // Passo 2: modal de opções de importação.
-    setPendingImport({ dir, includeSubdirs: true, types: 'all' })
+    setPendingImport({ dir, includeSubdirs: true, types: 'all', sessionType: '' })
   }, [])
 
   const confirmImport = useCallback(
-    async (opts: { dir: string; includeSubdirs: boolean; types: string }) => {
+    async (opts: { dir: string; includeSubdirs: boolean; types: string; sessionType: string }) => {
       setPendingImport(null)
       setScanning(true)
       setScanProgress({ processed: 0, total: 0 })
@@ -307,6 +320,10 @@ export default function App() {
           r = JSON.parse(res)
         } catch {
           r = { scanned: 0, added: 0, updated: 0, errors: 0 }
+        }
+        // Registra o tipo de sessão (gênero) nas fotos recém-importadas.
+        if (opts.sessionType) {
+          await window.openshoot.setSessionType(opts.dir, opts.sessionType)
         }
         setScanMsg(
           t('app.scanMsg', {
@@ -849,6 +866,23 @@ export default function App() {
                   </button>
                 ))}
               </div>
+            </div>
+            <div className="import-option">
+              <span>{t('import.tipoSessao')}</span>
+              <select
+                className="import-session"
+                value={pendingImport.sessionType}
+                onChange={(e) =>
+                  setPendingImport({ ...pendingImport, sessionType: e.target.value })
+                }
+              >
+                <option value="">{t('import.sessaoNenhum')}</option>
+                {SESSION_TYPES.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {t(s.labelKey)}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="import-actions">
               <button onClick={() => setPendingImport(null)} className="ghost">

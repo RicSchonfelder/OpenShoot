@@ -286,6 +286,13 @@ app.whenReady().then(() => {
       return { ok: false, error: String(e) }
     }
   })
+  ipcMain.handle('core:setSessionType', async (_e, pathPrefix: string, sessionType: string) => {
+    try {
+      return await getCore().setSessionType(pathPrefix, sessionType)
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
   ipcMain.handle(
     'core:scanFolderProgress',
     async (

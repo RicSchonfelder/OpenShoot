@@ -127,5 +127,16 @@
   "import.incluirSubpastas": "Include subfolders",
   "import.tipoFotos": "Photo type",
   "import.todos": "All",
-  "import.iniciar": "Import"
+  "import.iniciar": "Import",
+  "import.tipoSessao": "Session type",
+  "import.sessaoNenhum": "None",
+  "import.wedding": "Weddings & engagements",
+  "import.portrait": "Portrait & headshots",
+  "import.family": "Family portraits",
+  "import.school": "School portraits",
+  "import.newborn": "Newborns",
+  "import.sports": "Sports",
+  "import.event": "Events",
+  "import.boudoir": "Boudoir",
+  "import.other": "Something different"
 }

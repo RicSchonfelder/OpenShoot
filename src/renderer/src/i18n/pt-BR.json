@@ -127,5 +127,16 @@
   "import.incluirSubpastas": "Incluir subpastas",
   "import.tipoFotos": "Tipo de fotos",
   "import.todos": "Todos",
-  "import.iniciar": "Importar"
+  "import.iniciar": "Importar",
+  "import.tipoSessao": "Tipo de sessão",
+  "import.sessaoNenhum": "Nenhum",
+  "import.wedding": "Casamentos e noivados",
+  "import.portrait": "Retrato e fotos de cabeça",
+  "import.family": "Retratos de família",
+  "import.school": "Retrato escolar",
+  "import.newborn": "Recém-nascidos",
+  "import.sports": "Esportes",
+  "import.event": "Eventos",
+  "import.boudoir": "Boudoir",
+  "import.other": "Algo diferente"
 }

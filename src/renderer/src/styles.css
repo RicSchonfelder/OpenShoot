@@ -1245,3 +1245,14 @@ button.danger {
 .toolbar-learn:hover {
   background: #2a1e3d;
 }
+
+/* ------- Tipo de sessão no import ------- */
+.import-session {
+  flex: 1;
+  background: #0f1115;
+  border: 1px solid #2c3442;
+  color: #e6e9ef;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+}

@@ -21,6 +21,8 @@ const api = {
   pickPresetFile: (): Promise<string | null> => ipcRenderer.invoke('core:pickPresetFile'),
   importLightroomPreset: (path: string, name?: string): Promise<{ ok: boolean; name?: string; recipe?: string; error?: string }> =>
     ipcRenderer.invoke('core:importLightroomPreset', path, name),
+  setSessionType: (pathPrefix: string, sessionType: string): Promise<{ ok: boolean; updated?: number; error?: string }> =>
+    ipcRenderer.invoke('core:setSessionType', pathPrefix, sessionType),
   // Fase 2
   cullPhotos: (targetPicks?: number): Promise<{ processed: number; errors: number; avgScore: number; picks: number; review: number }> =>
     ipcRenderer.invoke('core:cullPhotos', targetPicks),

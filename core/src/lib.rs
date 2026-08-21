@@ -130,6 +130,16 @@ pub fn learn_profile() -> Result<serde_json::Value> {
   }
 }
 
+/// Define o tipo de sessão (gênero) de todas as fotos sob um caminho.
+/// Retorna JSON { ok, updated }.
+#[napi]
+pub fn set_session_type(path_prefix: String, session_type: String) -> Result<serde_json::Value> {
+  match catalog::set_session_type_for_path(&path_prefix, &session_type) {
+    Ok(updated) => Ok(serde_json::json!({ "ok": true, "updated": updated })),
+    Err(e) => Ok(serde_json::json!({ "ok": false, "error": e })),
+  }
+}
+
 /// Importa um preset do Lightroom (.xmp com crs: ou .lrtemplate) e salva como
 /// preset OpenShoot. Retorna JSON { ok, name, recipe }.
 #[napi]
@@ -1012,6 +1022,13 @@ mod tests {
     assert_eq!(v["exposure"], 1.0, "média de exposure deve ser 1.0");
     assert_eq!(v["contrast"], 30.0, "média de contrast deve ser 30");
     super::catalog::delete_preset(&name).unwrap();
+
+    // ---- Tipo de sessão ----
+    let updated = super::catalog::set_session_type_for_path("/tmp/", "casamento").unwrap();
+    assert!(updated >= 2, "deve atualizar as fotos sob /tmp/");
+    let list = super::catalog::list_photos("", "all", 0, 100).unwrap();
+    // session_type não está no PhotoMeta; validamos indiretamente via contagem.
+    assert!(list.total >= 2);
 
     // ---- Tipo de foto no scan ----
     let tmp = std::env::temp_dir().join(format!("openshoot_scan_{}", std::process::id()));

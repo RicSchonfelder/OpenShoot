@@ -122,6 +122,18 @@ fn ensure_schema(conn: &Connection) -> Result<(), String> {
       .execute("ALTER TABLE photos ADD COLUMN ai_pick INTEGER DEFAULT 0", [])
       .map_err(|e| e.to_string())?;
   }
+  let has_session: bool = conn
+    .query_row(
+      "SELECT COUNT(*) FROM pragma_table_info('photos') WHERE name='session_type'",
+      [],
+      |r| Ok(r.get::<_, i64>(0)? != 0),
+    )
+    .map_err(|e| e.to_string())?;
+  if !has_session {
+    conn
+      .execute("ALTER TABLE photos ADD COLUMN session_type TEXT DEFAULT ''", [])
+      .map_err(|e| e.to_string())?;
+  }
   Ok(())
 }
 
@@ -435,6 +447,19 @@ pub fn set_photo_ai_pick(id: i64, ai_pick: bool) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
   Ok(())
+}
+
+/// Define o tipo de sessão (gênero) das fotos de uma pasta (ex: 'wedding').
+pub fn set_session_type_for_path(path_prefix: &str, session_type: &str) -> Result<i64, String> {
+  let conn = open()?;
+  let like = format!("{}%", path_prefix);
+  let n = conn
+    .execute(
+      "UPDATE photos SET session_type=?2 WHERE path LIKE ?1",
+      rusqlite::params![like, session_type],
+    )
+    .map_err(|e| e.to_string())?;
+  Ok(n as i64)
 }
 
 /// Contagens por bucket (para painel de filtros com números vivos).
