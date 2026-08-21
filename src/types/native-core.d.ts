@@ -69,6 +69,8 @@ declare module '*.node' {
   export function savePreset(name: string, recipe: string): void
   export function listPresets(): Array<{ name: string; recipe: string }>
   export function deletePreset(name: string): boolean
+  export function autoLevelPhoto(id: number, maxDim: number): Promise<{ preview: string; angle: number } | { error: string }>
+  export function aiCropPhoto(id: number, maxDim: number): Promise<string | null>
   export function scanFolderProgress(
     dir: string,
     onProgress: (p: { processed: number; total: number; currentFile: string }) => void

@@ -285,6 +285,28 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
       .finally(() => setBusy(false))
   }
 
+  const autoLevel = () => {
+    if (!photo) return
+    setBusy(true)
+    window.openshoot
+      .autoLevelPhoto(photo.id, 400)
+      .then((res) => {
+        if ('preview' in res) setPreview(res.preview)
+      })
+      .catch(() => {})
+      .finally(() => setBusy(false))
+  }
+
+  const aiCrop = () => {
+    if (!photo) return
+    setBusy(true)
+    window.openshoot
+      .aiCropPhoto(photo.id, 400)
+      .then((t) => t && setPreview(t))
+      .catch(() => {})
+      .finally(() => setBusy(false))
+  }
+
   if (!photo) {
     return (
       <aside className="edit-panel">
@@ -459,6 +481,25 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
       <button onClick={removeDistraction} disabled={busy} className="ghost full">
         {t('edit.removerDistracao')}
       </button>
+
+      <div className="edit-geo">
+        <button
+          onClick={autoLevel}
+          disabled={busy}
+          className="ghost full"
+          title={t('edit.autoLevelHint')}
+        >
+          {t('edit.autoLevel')}
+        </button>
+        <button
+          onClick={aiCrop}
+          disabled={busy}
+          className="ghost full"
+          title={t('edit.aiCropHint')}
+        >
+          {t('edit.aiCrop')}
+        </button>
+      </div>
 
       <div className="edit-presets">
         <h4>{t('edit.presets')}</h4>

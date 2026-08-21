@@ -6,6 +6,7 @@ mod captions;
 mod cr3;
 mod culling;
 mod edit;
+mod geometric;
 mod imageproc;
 mod ml;
 mod retouch;
@@ -522,6 +523,43 @@ pub async fn inpaint_photo(
   let rect = [mask_rect[0] as f32, mask_rect[1] as f32, mask_rect[2] as f32, mask_rect[3] as f32];
   let dim = if max_dim == 0 { 256 } else { max_dim };
   tokio::task::spawn_blocking(move || retouch::inpaint_thumbnail_base64(&path, rect, dim).ok())
+    .await
+    .map_err(|e| Error::from_reason(e.to_string()))
+}
+
+// ---------------- Fase 4b: ajuste de horizonte + recorte IA ----------------
+
+/// Ajuste de horizonte automático (Hough). Retorna { preview, angle }.
+#[napi]
+pub async fn auto_level_photo(id: i64, max_dim: u32) -> Result<serde_json::Value> {
+  let photo = match catalog::get_photo(id) {
+    Ok(Some(p)) => p,
+    Ok(None) => return Err(Error::from_reason(format!("foto {id} nao encontrada"))),
+    Err(e) => return Err(Error::from_reason(e)),
+  };
+  let path = PathBuf::from(&photo.path);
+  let dim = if max_dim == 0 { 512 } else { max_dim };
+  tokio::task::spawn_blocking(move || {
+    match geometric::auto_level_base64(&path, dim) {
+      Ok((preview, angle)) => serde_json::json!({ "preview": preview, "angle": angle }),
+      Err(e) => serde_json::json!({ "error": e }),
+    }
+  })
+  .await
+  .map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// Recorte automático com IA (centraliza no sujeito/faces). Retorna preview.
+#[napi]
+pub async fn ai_crop_photo(id: i64, max_dim: u32) -> Result<Option<String>> {
+  let photo = match catalog::get_photo(id) {
+    Ok(Some(p)) => p,
+    Ok(None) => return Ok(None),
+    Err(e) => return Err(Error::from_reason(e)),
+  };
+  let path = PathBuf::from(&photo.path);
+  let dim = if max_dim == 0 { 512 } else { max_dim };
+  tokio::task::spawn_blocking(move || geometric::ai_crop_base64(&path, dim).ok())
     .await
     .map_err(|e| Error::from_reason(e.to_string()))
 }

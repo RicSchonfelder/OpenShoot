@@ -237,6 +237,20 @@ app.whenReady().then(() => {
       return false
     }
   })
+  ipcMain.handle('core:autoLevelPhoto', async (_e, id: number, maxDim: number) => {
+    try {
+      return await getCore().autoLevelPhoto(id, maxDim)
+    } catch (e) {
+      return { error: String(e) }
+    }
+  })
+  ipcMain.handle('core:aiCropPhoto', async (_e, id: number, maxDim: number) => {
+    try {
+      return await getCore().aiCropPhoto(id, maxDim)
+    } catch (e) {
+      return null
+    }
+  })
   ipcMain.handle(
     'core:scanFolderProgress',
     async (_event, dir: string, onProgress: (p: any) => void) => {

@@ -61,6 +61,10 @@ const api = {
     ipcRenderer.invoke('core:listPresets'),
   deletePreset: (name: string): Promise<boolean> =>
     ipcRenderer.invoke('core:deletePreset', name),
+  autoLevelPhoto: (id: number, maxDim: number): Promise<{ preview: string; angle: number } | { error: string }> =>
+    ipcRenderer.invoke('core:autoLevelPhoto', id, maxDim),
+  aiCropPhoto: (id: number, maxDim: number): Promise<string | null> =>
+    ipcRenderer.invoke('core:aiCropPhoto', id, maxDim),
   scanFolderProgress: (
     dir: string,
     onProgress: (p: { processed: number; total: number; currentFile: string }) => void

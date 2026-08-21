@@ -1129,3 +1129,16 @@ button.danger {
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
+
+/* ------- Horizonte / Recorte IA ------- */
+.edit-geo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.edit-geo button {
+  font-size: 12px;
+  padding: 8px 12px;
+}
