@@ -69,8 +69,26 @@
 | Remover distração (inpainting) | difusão, bbox central | ✅ |
 | **Patch com seleção por arrasto** | arrasto no loupe + overlay | ✅ |
 | **Sliders faciais** (acne, olhos, dentes, cabelo) | `retouch_face_region` + NAPI | ✅ |
-| **Mostrar moldura do rosto** | ✅ toggle no loupe (overlay de bbox SCRFD) |
-| **Modos SUJEITO/FUNDO/PATCH** | ✅ máscara de sujeito (face+pele nítido, fundo desfocado) |
+| **Mostrar moldura do rosto** | toggle no loupe (overlay de bbox SCRFD) | ✅ |
+| **Modos SUJEITO/FUNDO/PATCH** | máscara de sujeito (face+pele nítido, fundo desfocado) | ✅ |
+| **Colar / Redefinir** (retoque em lote) | "Aplicar retoque em lote (Colar)" → grava cópias retocadas das fotos selecionadas | ✅ |
+
+## Tranche F — Exportação (teste comparativo 2026-08-21)
+
+Auditoria do diálogo de exportação do AfterShoot (álbum Editadas, 459 fotos) e
+implementação equivalente no OpenShoot:
+
+| AfterShoot | OpenShoot | Status |
+|---|---|---|
+| Diálogo Exportar N Foto(s) com aba Pasta/Outros Apps | diálogo com destino/tipo/qualidade | ✅ |
+| Destino + arquivos em conflito (sufixo automático) | `export_photos` com sufixo _1/_2 | ✅ |
+| Tipo de imagem JPEG / Quality slider LOW→BEST | JPEG/PNG + slider 1-100 | ✅ |
+| Exporta com edição aplicada | aplica edit_json + orientação EXIF, resolução nativa (6960x4640 validado) | ✅ |
+| Dica "⌘A para selecionar todas" | dica no diálogo | ✅ |
+| Retoque gravado na exportação | applyRetouchAll (pele+faces) grava cópias retocadas | ✅ |
+| Espaço de cor (sRGB) | ⬜ pendente menor |
+| Nomeação de ficheiros (templates) | ⬜ pendente menor |
+| Aba "Outros Apps" (LR/C1/PS) | ⬜ via XMP sidecars (fluxo existente) |
 
 ## Tranche E — Perfis de IA (o mais pesado)
 
