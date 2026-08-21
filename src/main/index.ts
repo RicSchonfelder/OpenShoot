@@ -293,6 +293,13 @@ app.whenReady().then(() => {
       return { ok: false, error: String(e) }
     }
   })
+  ipcMain.handle('core:detectFacesInPhoto', async (_e, id: number) => {
+    try {
+      return await getCore().detectFacesInPhoto(id)
+    } catch (e) {
+      return { count: 0, faces: [] }
+    }
+  })
   ipcMain.handle(
     'core:scanFolderProgress',
     async (

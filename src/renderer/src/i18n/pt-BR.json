@@ -117,6 +117,7 @@
   "loupe.atalhos": "<b>← →</b> navegar · <b>P</b> pick · <b>X</b> reject · <b>U</b> limpar · <b>1-5</b> ★ · <b>Esc</b> fechar",
   "loupe.patch": "Remover região (arraste)",
   "loupe.patchHint": "Arraste sobre a imagem para selecionar e remova a distração",
+  "loupe.mostrarRostos": "Moldura do rosto",
   "dialog.deleteTitle": "O que deseja fazer com {n} foto(s)?",
   "dialog.deleteRemoveCatalog": "Remover só do catálogo",
   "dialog.deleteRemoveCatalogDesc": "Remove do OpenShoot, arquivo intocado",

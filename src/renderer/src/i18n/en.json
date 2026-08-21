@@ -117,6 +117,7 @@
   "loupe.atalhos": "<b>← →</b> navigate · <b>P</b> pick · <b>X</b> reject · <b>U</b> clear · <b>1-5</b> ★ · <b>Esc</b> close",
   "loupe.patch": "Remove region (drag)",
   "loupe.patchHint": "Drag over the image to select and remove the distraction",
+  "loupe.mostrarRostos": "Face frame",
   "dialog.deleteTitle": "What do you want to do with {n} photo(s)?",
   "dialog.deleteRemoveCatalog": "Remove from catalog only",
   "dialog.deleteRemoveCatalogDesc": "Removes from OpenShoot, file untouched",

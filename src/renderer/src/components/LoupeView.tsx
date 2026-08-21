@@ -35,10 +35,30 @@ export default function LoupeView({
   const [preview, setPreview] = useState<string | null>(null)
   const [sel, setSel] = useState<SelRect | null>(null)
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null)
+  const [showFaces, setShowFaces] = useState(false)
+  const [faces, setFaces] = useState<number[][]>([])
   const stageRef = useRef<HTMLDivElement | null>(null)
   const imgRef = useRef<HTMLImageElement | null>(null)
   const photo = photos[currentIndex]
   const total = photos.length
+
+  // Carrega faces (moldura) quando ativado.
+  useEffect(() => {
+    if (!showFaces || !photo) {
+      setFaces([])
+      return
+    }
+    let active = true
+    window.openshoot
+      .detectFacesInPhoto(photo.id)
+      .then((res) => {
+        if (active) setFaces(res.faces ?? [])
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [showFaces, photo?.id])
 
   // Carrega a foto atual em alta resolução (preview grande).
   useEffect(() => {
@@ -202,6 +222,12 @@ export default function LoupeView({
           </div>
         </div>
         <button className="loupe-close" onClick={onClose}>✕ {t('loupe.fechar')} (Esc)</button>
+        <button
+          className={`loupe-faces ${showFaces ? 'active' : ''}`}
+          onClick={() => setShowFaces((v) => !v)}
+        >
+          {t('loupe.mostrarRostos')}
+        </button>
       </div>
 
       <div
@@ -236,6 +262,19 @@ export default function LoupeView({
             }}
           />
         )}
+        {showFaces &&
+          faces.map((f, i) => (
+            <div
+              key={i}
+              className="loupe-facebox"
+              style={{
+                left: `${f[0] * 100}%`,
+                top: `${f[1] * 100}%`,
+                width: `${(f[2] - f[0]) * 100}%`,
+                height: `${(f[3] - f[1]) * 100}%`
+              }}
+            />
+          ))}
         {photo.cullScore != null && (
           <span className="loupe-score">score {Math.round(photo.cullScore)}</span>
         )}

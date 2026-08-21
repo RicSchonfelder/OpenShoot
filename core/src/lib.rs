@@ -399,6 +399,27 @@ pub fn detect_faces_in_path(path: String) -> Result<serde_json::Value> {
   .map_err(|e| Error::from_reason(format!("json: {e}")))
 }
 
+/// Detecta faces de uma foto do catálogo (por id). Retorna { faces: [[x0,y0,x1,y1]...] }.
+#[napi]
+pub fn detect_faces_in_photo(id: i64) -> Result<serde_json::Value> {
+  let photo = match catalog::get_photo(id) {
+    Ok(Some(p)) => p,
+    Ok(None) => return Err(Error::from_reason(format!("foto {id} nao encontrada"))),
+    Err(e) => return Err(Error::from_reason(e)),
+  };
+  let pb = PathBuf::from(&photo.path);
+  let (rgb, w, h) = ml::load_rgb(&pb, 640).map_err(|e| Error::from_reason(e))?;
+  let faces = ml::detect_faces(&rgb, w, h, 0.5).map_err(|e| Error::from_reason(e))?;
+  serde_json::json!({
+    "count": faces.len(),
+    "faces": faces,
+    "width": w,
+    "height": h,
+  })
+  .try_into()
+  .map_err(|e| Error::from_reason(format!("json: {e}")))
+}
+
 /// Exporta sidecars XMP em massa para todas as fotos com rating > 0.
 /// Retorna { exported, errors }.
 #[napi(object)]
@@ -585,8 +606,7 @@ pub async fn inpaint_photo(
 
 /// Ajuste de horizonte automático (Hough). Retorna { preview, angle }.
 #[napi]
-pub async fn auto_level_photo(id: i64, max_dim: u32) -> Result<serde_json::Value> {
-  let photo = match catalog::get_photo(id) {
+pub async fn auto_level_photo(id: i64, max_dim: u32) -> Result<serde_json::Value> {  let photo = match catalog::get_photo(id) {
     Ok(Some(p)) => p,
     Ok(None) => return Err(Error::from_reason(format!("foto {id} nao encontrada"))),
     Err(e) => return Err(Error::from_reason(e)),
