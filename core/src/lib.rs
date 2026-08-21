@@ -240,14 +240,25 @@ pub async fn cull_photos(target_picks: Option<i64>) -> Result<CullSummary> {
     let count = target.min(n as i64) as usize;
     for (i, (id, _)) in scores.iter().enumerate() {
       // scores está em ordem crescente → top-N são os últimos.
-      let rating = if i >= n - count { 5 } else { 0 };
+      let is_pick = i >= n - count;
+      let rating = if is_pick { 5 } else { 0 };
       if let Err(e) = catalog::set_photo_rating(*id, rating, scores[i].1) {
         crate::catalog::log_debug(&format!("falha ao salvar rating {}: {e}", id));
         errors += 1;
       }
+      // Destaque IA: marca ai_pick só nas fotos escolhidas pela IA.
+      if let Err(e) = catalog::set_photo_ai_pick(*id, is_pick) {
+        crate::catalog::log_debug(&format!("falha ao salvar ai_pick {}: {e}", id));
+      }
     }
     picks = count as i64;
   } else {
+    for (id, s) in &scores {
+      let is_pick = *s >= 70.0;
+      if let Err(e) = catalog::set_photo_ai_pick(*id, is_pick) {
+        crate::catalog::log_debug(&format!("falha ao salvar ai_pick {}: {e}", id));
+      }
+    }
     picks = scores.iter().filter(|(_, s)| *s >= 70.0).count() as i64;
   }
 
@@ -778,6 +789,15 @@ mod tests {
     assert_eq!(jpeg.total, 3);
     let raw = super::catalog::list_photos("", "raw", 0, 100).expect("list raw");
     assert_eq!(raw.total, 0);
+
+    // ---- Destaques IA vs Selecionado manual ----
+    super::catalog::set_photo_ai_pick(id_a, true).unwrap();
+    let destaques = super::catalog::list_photos("", "destaques", 0, 100).expect("list destaques");
+    assert_eq!(destaques.total, 1);
+    assert_eq!(destaques.photos[0].id, id_a);
+    // "Selecionado" = rating>=4 sem ser ai_pick → zera (rating ainda 0).
+    let selecionado = super::catalog::list_photos("", "selecionado", 0, 100).expect("list selecionado");
+    assert_eq!(selecionado.total, 0);
 
     // Limpeza.
     conn.execute("DELETE FROM photos", []).unwrap();

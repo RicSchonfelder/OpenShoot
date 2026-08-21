@@ -19,6 +19,7 @@ pub struct PhotoMeta {
   pub hash: String,
   pub has_face: bool,
   pub review: bool,
+  pub ai_pick: bool,
 }
 
 #[napi(object)]

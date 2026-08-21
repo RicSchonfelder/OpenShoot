@@ -18,6 +18,7 @@ declare module '*.node' {
     hash: string
     hasFace: boolean
     review: boolean
+    aiPick: boolean
   }
   export interface NativeScanResult {
     scanned: number

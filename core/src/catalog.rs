@@ -104,6 +104,18 @@ fn ensure_schema(conn: &Connection) -> Result<(), String> {
       .execute("ALTER TABLE photos ADD COLUMN review INTEGER DEFAULT 0", [])
       .map_err(|e| e.to_string())?;
   }
+  let has_ai_pick: bool = conn
+    .query_row(
+      "SELECT COUNT(*) FROM pragma_table_info('photos') WHERE name='ai_pick'",
+      [],
+      |r| Ok(r.get::<_, i64>(0)? != 0),
+    )
+    .map_err(|e| e.to_string())?;
+  if !has_ai_pick {
+    conn
+      .execute("ALTER TABLE photos ADD COLUMN ai_pick INTEGER DEFAULT 0", [])
+      .map_err(|e| e.to_string())?;
+  }
   Ok(())
 }
 
@@ -191,6 +203,7 @@ fn row_to_photo(row: &rusqlite::Row) -> rusqlite::Result<PhotoMeta> {
     hash: row.get::<_, String>(13).unwrap_or_default(),
     has_face: row.get::<_, i64>(14).unwrap_or(0) != 0,
     review: row.get::<_, i64>(15).unwrap_or(0) != 0,
+    ai_pick: row.get::<_, i64>(16).unwrap_or(0) != 0,
   })
 }
 
@@ -237,6 +250,14 @@ pub fn list_photos(
     "review" => {
       conds.push("review = 1".to_string());
     }
+    "destaques" => {
+      // Picks da IA (top-N marcados pelo culling).
+      conds.push("ai_pick = 1".to_string());
+    }
+    "selecionado" => {
+      // Picks manuais: rating alto sem ter sido pick da IA.
+      conds.push("rating >= 4 AND ai_pick = 0".to_string());
+    }
     "portrait" => {
       conds.push("width > 0 AND height > 0 AND height > width".to_string());
     }
@@ -273,7 +294,7 @@ pub fn list_photos(
 
   // SELECT com paginação. Parâmetros de busca/filtro vêm antes de LIMIT/OFFSET.
   let list_sql = format!(
-    "SELECT id, path, file_name, ext, file_size, width, height, camera, taken_at, rating, has_xmp, preview_available, cull_score, sha256, has_face, review
+    "SELECT id, path, file_name, ext, file_size, width, height, camera, taken_at, rating, has_xmp, preview_available, cull_score, sha256, has_face, review, ai_pick
      FROM photos {} ORDER BY rating DESC, cull_score DESC, id DESC LIMIT ? OFFSET ?",
     where_clause
   );
@@ -297,7 +318,7 @@ pub fn get_photo(id: i64) -> Result<Option<PhotoMeta>, String> {
   let conn = open()?;
   conn
     .query_row(
-      "SELECT id, path, file_name, ext, file_size, width, height, camera, taken_at, rating, has_xmp, preview_available, cull_score, sha256, has_face, review
+      "SELECT id, path, file_name, ext, file_size, width, height, camera, taken_at, rating, has_xmp, preview_available, cull_score, sha256, has_face, review, ai_pick
        FROM photos WHERE id=?1",
       [id],
       row_to_photo,
@@ -385,6 +406,19 @@ pub fn set_photo_review(id: i64, review: bool) -> Result<(), String> {
     .execute(
       "UPDATE photos SET review=?2 WHERE id=?1",
       rusqlite::params![id, if review { 1 } else { 0 }],
+    )
+    .map_err(|e| e.to_string())?;
+  Ok(())
+}
+
+/// Registra se a foto foi marcada como pick pela IA ("Destaque").
+/// Fotos marcadas manualmente (rating via atalho) mantêm ai_pick=0.
+pub fn set_photo_ai_pick(id: i64, ai_pick: bool) -> Result<(), String> {
+  let conn = open()?;
+  conn
+    .execute(
+      "UPDATE photos SET ai_pick=?2 WHERE id=?1",
+      rusqlite::params![id, if ai_pick { 1 } else { 0 }],
     )
     .map_err(|e| e.to_string())?;
   Ok(())

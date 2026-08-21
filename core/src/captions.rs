@@ -119,6 +119,7 @@ mod tests {
       hash: String::new(),
       has_face: false,
       review: false,
+      ai_pick: false,
     }
   }
 

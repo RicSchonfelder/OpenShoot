@@ -19,6 +19,8 @@ type Filter =
   | 'landscape'
   | 'raw'
   | 'jpeg'
+  | 'destaques'
+  | 'selecionado'
 
 type DeleteDialogState = 'none' | 'catalog' | 'trash'
 
@@ -377,6 +379,8 @@ export default function App() {
   const rejectsCount = photos.filter((p) => p.rating >= 1 && p.rating <= 2).length
   const unratedCount = photos.filter((p) => p.rating === 0).length
   const reviewCount = photos.filter((p) => p.review).length
+  const destaquesCount = photos.filter((p) => p.aiPick).length
+  const selecionadoCount = photos.filter((p) => p.rating >= 4 && !p.aiPick).length
 
   const FILTER_LABELS: Record<Filter, string> = {
     all: t('app.todos'),
@@ -389,7 +393,9 @@ export default function App() {
     portrait: t('app.retrato'),
     landscape: t('app.paisagem'),
     raw: t('app.raw'),
-    jpeg: t('app.jpeg')
+    jpeg: t('app.jpeg'),
+    destaques: t('app.destaques'),
+    selecionado: t('app.selecionado')
   }
 
   const MAIN_FILTERS: Filter[] = ['all', 'picks', 'rejects', 'unrated']
@@ -490,6 +496,12 @@ export default function App() {
         <span className={`toolbar-count review ${filter === 'review' ? 'active' : ''}`}>
           <b>?</b> {reviewCount}
         </span>
+        <span className={`toolbar-count destaques ${filter === 'destaques' ? 'active' : ''}`}>
+          <b>★IA</b> {destaquesCount}
+        </span>
+        <span className={`toolbar-count selecionado ${filter === 'selecionado' ? 'active' : ''}`}>
+          <b>✔</b> {selecionadoCount}
+        </span>
         <span className={`toolbar-count unrated ${filter === 'unrated' ? 'active' : ''}`}>
           <b>U</b> {unratedCount}
         </span>
@@ -528,6 +540,27 @@ export default function App() {
           </button>
           {moreOpen && (
             <div className="more-dropdown">
+              <div className="more-section">
+                <span className="more-section-title">{t('app.outrosSelecoesIA')}</span>
+                <button
+                  className={`${filter === 'destaques' ? 'active' : ''}`}
+                  onClick={() => {
+                    setFilter('destaques')
+                    setMoreOpen(false)
+                  }}
+                >
+                  {t('app.destaques')} ({destaquesCount})
+                </button>
+                <button
+                  className={`${filter === 'selecionado' ? 'active' : ''}`}
+                  onClick={() => {
+                    setFilter('selecionado')
+                    setMoreOpen(false)
+                  }}
+                >
+                  {t('app.selecionado')} ({selecionadoCount})
+                </button>
+              </div>
               <div className="more-section">
                 <span className="more-section-title">{t('app.outrosDuplicatas')}</span>
                 <button

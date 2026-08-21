@@ -15,6 +15,7 @@ export interface PhotoMeta {
   hash: string
   hasFace: boolean
   review: boolean
+  aiPick: boolean
 }
 
 export interface ScanResultData {
