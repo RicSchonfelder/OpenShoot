@@ -399,6 +399,23 @@ app.whenReady().then(() => {
       return []
     }
   })
+  ipcMain.handle('core:exportPhotos', async (_e, ids: number[], destDir: string, format: string, quality: number) => {
+    try {
+      return await getCore().exportPhotos(ids, destDir, format, quality)
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+  ipcMain.handle('core:pickExportFolder', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return null
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Escolha a pasta de exportação',
+      properties: ['openDirectory', 'createDirectory']
+    })
+    if (result.canceled || !result.filePaths.length) return null
+    return result.filePaths[0]
+  })
   ipcMain.handle(
     'core:scanFolderProgress',
     async (

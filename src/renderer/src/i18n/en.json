@@ -159,5 +159,19 @@
   "home.criar": "Create",
   "home.semAlbuns": "No albums yet",
   "home.semAlbunsHint": "Create an album to organize your photo sessions.",
-  "home.deletarAlbum": "Delete album"
+  "home.deletarAlbum": "Delete album",
+  "export.exportarBtn": "Export",
+  "export.hint": "Export the selected photos with edits applied",
+  "export.titulo": "Export {n} photo(s)",
+  "export.dica1": "Only 1 photo was selected. To export the whole album, press ⌘A to select all before exporting.",
+  "export.dicaN": "Exporting {n} photos with edits applied.",
+  "export.local": "Export location",
+  "export.semDestino": "No folder selected",
+  "export.escolher": "Choose folder",
+  "export.config": "File settings",
+  "export.tipoImagem": "Image type",
+  "export.qualidade": "Quality",
+  "export.exportando": "Exporting…",
+  "export.exportar": "Export {n} photo(s)",
+  "export.feito": "{n} photo(s) exported"
 }

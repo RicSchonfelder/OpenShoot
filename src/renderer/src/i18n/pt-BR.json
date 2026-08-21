@@ -159,5 +159,19 @@
   "home.criar": "Criar",
   "home.semAlbuns": "Nenhum álbum ainda",
   "home.semAlbunsHint": "Crie um álbum para organizar suas sessões de fotos.",
-  "home.deletarAlbum": "Excluir álbum"
+  "home.deletarAlbum": "Excluir álbum",
+  "export.exportarBtn": "Exportar",
+  "export.hint": "Exportar as fotos selecionadas com a edição aplicada",
+  "export.titulo": "Exportar {n} foto(s)",
+  "export.dica1": "Foi selecionada apenas 1 fotografia. Para exportar o álbum completo, pressione ⌘A para selecionar todas antes de exportar.",
+  "export.dicaN": "Exportando {n} fotografias com a edição aplicada.",
+  "export.local": "Local de exportação",
+  "export.semDestino": "Nenhuma pasta selecionada",
+  "export.escolher": "Escolher pasta",
+  "export.config": "Configurações de arquivo",
+  "export.tipoImagem": "Tipo de imagem",
+  "export.qualidade": "Qualidade",
+  "export.exportando": "Exportando…",
+  "export.exportar": "Exportar {n} foto(s)",
+  "export.feito": "{n} foto(s) exportada(s)"
 }

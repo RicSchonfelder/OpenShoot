@@ -1571,3 +1571,62 @@ button.danger {
   color: #9aa3b2;
   font-size: 13px;
 }
+
+/* ------- Diálogo de exportação ------- */
+.export-dialog {
+  width: 460px;
+}
+
+.export-section {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid #252b37;
+}
+
+.export-section h4 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: #93c5fd;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.export-dest {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.export-dest-path {
+  flex: 1;
+  font-size: 12px;
+  color: #9aa3b2;
+  background: #0f1115;
+  border: 1px solid #2c3442;
+  border-radius: 6px;
+  padding: 8px 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.export-formats {
+  display: flex;
+  gap: 6px;
+}
+
+.export-formats button {
+  background: transparent;
+  border: 1px solid #2c3442;
+  color: #9aa3b2;
+  padding: 4px 14px;
+  font-size: 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.export-formats button.active {
+  border-color: #3b82f6;
+  color: #93c5fd;
+  background: #1e293b;
+}

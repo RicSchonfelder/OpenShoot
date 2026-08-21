@@ -628,6 +628,74 @@ pub fn export_all_xmp() -> Result<XmpExportResult> {
   })
 }
 
+/// Exporta fotos (com edição aplicada) para uma pasta de destino.
+/// `ids`: fotos a exportar; `dest_dir`: pasta destino; `format`: "jpeg"|"png";
+/// `quality`: 1..100. Retorna { ok, exported, errors, files }.
+#[napi]
+pub fn export_photos(
+  ids: Vec<i64>,
+  dest_dir: String,
+  format: String,
+  quality: i64,
+) -> Result<serde_json::Value> {
+  let dest = PathBuf::from(&dest_dir);
+  if let Err(e) = std::fs::create_dir_all(&dest) {
+    return Ok(serde_json::json!({ "ok": false, "error": format!("criar pasta: {e}") }));
+  }
+  let fmt = if format.eq_ignore_ascii_case("png") { "png" } else { "jpeg" };
+  let ext = if fmt == "png" { "png" } else { "jpg" };
+  let q = quality.clamp(1, 100) as u8;
+
+  let mut exported = 0i64;
+  let mut errors = 0i64;
+  let mut files: Vec<String> = Vec::new();
+  for id in ids {
+    let photo = match catalog::get_photo(id) {
+      Ok(Some(p)) => p,
+      _ => {
+        errors += 1;
+        continue;
+      }
+    };
+    // Carrega a receita de edição salva (se houver).
+    let params = match catalog::get_photo_edit(id) {
+      Ok(json) if !json.is_empty() => {
+        serde_json::from_str::<edit::EditParams>(&json).unwrap_or_default()
+      }
+      _ => edit::EditParams::default(),
+    };
+    let src = PathBuf::from(&photo.path);
+    // Nome do arquivo com sufixo se já existir (conflito).
+    let stem = src
+      .file_stem()
+      .map(|s| s.to_string_lossy().to_string())
+      .unwrap_or_else(|| format!("foto_{id}"));
+    let mut dest_path = dest.join(format!("{stem}.{ext}"));
+    let mut counter = 1;
+    while dest_path.exists() {
+      dest_path = dest.join(format!("{stem}_{counter}.{ext}"));
+      counter += 1;
+    }
+    match edit::export_photo_to_file(&src, &params, &dest_path, fmt, q) {
+      Ok(()) => {
+        exported += 1;
+        files.push(dest_path.display().to_string());
+      }
+      Err(e) => {
+        crate::catalog::log_debug(&format!("[export] {}: {e}", photo.path));
+        errors += 1;
+      }
+    }
+  }
+  Ok(serde_json::json!({
+    "ok": true,
+    "exported": exported,
+    "errors": errors,
+    "files": files,
+    "dest_dir": dest.display().to_string(),
+  }))
+}
+
 // ---------------- Fase 3: edição em lote ----------------
 
 fn parse_edit_params(json: &str) -> std::result::Result<edit::EditParams, String> {

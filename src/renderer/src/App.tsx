@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Gallery from './components/Gallery'
 import EditPanel from './components/EditPanel'
 import EditViewPhoto from './components/EditViewPhoto'
+import ExportDialog from './components/ExportDialog'
 import LoupeView from './components/LoupeView'
 import FilterPanel from './components/FilterPanel'
 import HomeView from './components/HomeView'
@@ -60,6 +61,7 @@ export default function App() {
   const [currentAlbum, setCurrentAlbum] = useState<number | null>(null)
   const [albumPhotoIds, setAlbumPhotoIds] = useState<Set<number> | null>(null)
   const [mode, setMode] = useState<'import' | 'cull' | 'edit' | 'retouch'>('import')
+  const [exportOpen, setExportOpen] = useState(false)
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>('none')
   const [moreOpen, setMoreOpen] = useState(false)
   const moreRef = useRef<HTMLDivElement | null>(null)
@@ -652,6 +654,14 @@ export default function App() {
               {t('app.deletar')} ({selectedIds.size})
             </button>
           )}
+          <button
+            onClick={() => setExportOpen(true)}
+            disabled={selectedIds.size === 0}
+            className="ghost"
+            title={t('export.hint')}
+          >
+            {t('export.exportarBtn')}
+          </button>
           <button onClick={exportXmp} disabled={exporting || photos.length === 0} className="ghost">
             {exporting ? t('app.exportando') : t('app.exportarXmp')}
           </button>
@@ -1028,6 +1038,14 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {exportOpen && (
+        <ExportDialog
+          ids={Array.from(selectedIds)}
+          onClose={() => setExportOpen(false)}
+          onDone={(msg) => setScanMsg(msg)}
+        />
       )}
     </div>
   )

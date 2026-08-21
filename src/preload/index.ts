@@ -46,6 +46,9 @@ const api = {
   setAlbumSessionType: (albumId: number, sessionType: string): Promise<boolean> =>
     ipcRenderer.invoke('core:setAlbumSessionType', albumId, sessionType),
   albumPhotoIds: (albumId: number): Promise<number[]> => ipcRenderer.invoke('core:albumPhotoIds', albumId),
+  exportPhotos: (ids: number[], destDir: string, format: string, quality: number): Promise<{ ok: boolean; exported?: number; errors?: number; files?: string[]; dest_dir?: string; error?: string }> =>
+    ipcRenderer.invoke('core:exportPhotos', ids, destDir, format, quality),
+  pickExportFolder: (): Promise<string | null> => ipcRenderer.invoke('core:pickExportFolder'),
   // Fase 2
   cullPhotos: (targetPicks?: number): Promise<{ processed: number; errors: number; avgScore: number; picks: number; review: number }> =>
     ipcRenderer.invoke('core:cullPhotos', targetPicks),

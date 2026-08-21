@@ -383,6 +383,60 @@ pub fn edit_thumbnail_base64(
   ))
 }
 
+/// Exporta uma foto com a edição aplicada para um arquivo no destino.
+/// `format`: "jpeg" | "png". `quality`: 1..100 (JPEG apenas).
+/// Não-destrutivo: lê o original, aplica a receita, grava uma cópia.
+pub fn export_photo_to_file(
+  path: &Path,
+  params: &EditParams,
+  dest: &Path,
+  format: &str,
+  quality: u8,
+) -> Result<(), String> {
+  let img = match crate::imageproc::read_embedded_jpeg(path) {
+    Some(jpeg) => image::ImageReader::new(std::io::Cursor::new(jpeg))
+      .with_guessed_format()
+      .map_err(|e| e.to_string())?
+      .decode()
+      .map_err(|e| e.to_string())?,
+    None => image::ImageReader::open(path)
+      .map_err(|e| e.to_string())?
+      .decode()
+      .map_err(|e| e.to_string())?,
+  };
+  // Aplica a orientação EXIF antes de exportar.
+  let ori = crate::imageproc::buffer_orientation(
+    &crate::imageproc::read_embedded_jpeg(path).unwrap_or_default(),
+  );
+  let img = if ori > 1 {
+    let dynimg = image::DynamicImage::ImageRgb8(img.to_rgb8());
+    crate::imageproc::apply_exif_orientation(dynimg, ori)
+  } else {
+    image::DynamicImage::ImageRgb8(img.to_rgb8())
+  };
+
+  let rgb = img.to_rgb8();
+  let (w, h) = rgb.dimensions();
+  let edited = apply_to_rgb8(params, rgb.as_raw(), w, h);
+  let out_img = image::RgbImage::from_raw(w, h, edited).ok_or("falha ao reconstruir")?;
+  let dynout = image::DynamicImage::ImageRgb8(out_img);
+
+  match format {
+    "png" => dynout
+      .save_with_format(dest, image::ImageFormat::Png)
+      .map_err(|e| format!("salvar PNG: {e}")),
+    _ => {
+      let q = quality.clamp(1, 100);
+      let mut out = std::io::Cursor::new(Vec::new());
+      let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, q);
+      dynout
+        .write_with_encoder(encoder)
+        .map_err(|e| format!("codificar JPEG: {e}"))?;
+      std::fs::write(dest, out.into_inner()).map_err(|e| format!("gravar JPEG: {e}"))
+    }
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -459,6 +513,52 @@ mod tests {
     };
     let bright = p.apply_pixel([0.85, 0.85, 0.85]);
     assert!(bright[0] > 0.85, "destaque deve clarear, ficou {}", bright[0]);
+  }
+
+  #[test]
+  fn export_writes_jpeg_file() {
+    // Gera uma imagem sintética, exporta como JPEG e valida o arquivo.
+    let tmp = std::env::temp_dir().join("openshoot_export_test");
+    std::fs::create_dir_all(&tmp).unwrap();
+    let src = tmp.join("src.png");
+    let img = image::RgbImage::from_pixel(8, 8, image::Rgb([120u8, 80, 200]));
+    img.save(&src).unwrap();
+    let dest = tmp.join("out.jpg");
+    let params = EditParams::default();
+    export_photo_to_file(&src, &params, &dest, "jpeg", 90).unwrap();
+    assert!(dest.exists(), "JPEG deve ser criado");
+    let size = std::fs::metadata(&dest).unwrap().len();
+    assert!(size > 0, "arquivo não pode ser vazio");
+    let _ = std::fs::remove_dir_all(&tmp);
+  }
+
+  #[test]
+  fn export_applies_edits() {
+    let tmp = std::env::temp_dir().join("openshoot_export_edit_test");
+    std::fs::create_dir_all(&tmp).unwrap();
+    let src = tmp.join("src2.png");
+    let img = image::RgbImage::from_pixel(4, 4, image::Rgb([200u8, 200, 200]));
+    img.save(&src).unwrap();
+    let dest = tmp.join("out2.jpg");
+    // Exposição -2 deve escurecer bastante.
+    let params = EditParams {
+      exposure: Some(-2.0),
+      ..Default::default()
+    };
+    export_photo_to_file(&src, &params, &dest, "jpeg", 90).unwrap();
+    // Re-decoda e verifica que escureceu.
+    let decoded = image::ImageReader::open(&dest)
+      .unwrap()
+      .decode()
+      .unwrap()
+      .to_rgb8();
+    let px = decoded.get_pixel(2, 2);
+    assert!(
+      px[0] < 100,
+      "exposição -2 deve escurecer o pixel, ficou {}",
+      px[0]
+    );
+    let _ = std::fs::remove_dir_all(&tmp);
   }
 
   #[test]

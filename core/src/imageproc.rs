@@ -257,7 +257,7 @@ fn extract_preview_bytes_sync(path: &Path) -> Result<Vec<u8>, String> {
 }
 
 /// Lê a orientação EXIF (0x0112) de um buffer JPEG/TIFF (1..8).
-fn buffer_orientation(bytes: &[u8]) -> u16 {
+pub fn buffer_orientation(bytes: &[u8]) -> u16 {
   let mut cursor = std::io::Cursor::new(bytes);
   exif::Reader::new()
     .read_from_container(&mut cursor)
@@ -271,7 +271,7 @@ fn buffer_orientation(bytes: &[u8]) -> u16 {
 }
 
 /// Aplica a orientação EXIF (1..8) a uma imagem dinâmica.
-fn apply_exif_orientation(img: image::DynamicImage, ori: u16) -> image::DynamicImage {
+pub fn apply_exif_orientation(img: image::DynamicImage, ori: u16) -> image::DynamicImage {
   match ori {
     2 => img.fliph(),
     3 => img.rotate180(),
