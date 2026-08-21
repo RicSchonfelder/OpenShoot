@@ -59,6 +59,7 @@ export default function App() {
   const [editViewId, setEditViewId] = useState<number | null>(null)
   const [currentAlbum, setCurrentAlbum] = useState<number | null>(null)
   const [albumPhotoIds, setAlbumPhotoIds] = useState<Set<number> | null>(null)
+  const [mode, setMode] = useState<'import' | 'cull' | 'edit' | 'retouch'>('import')
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>('none')
   const [moreOpen, setMoreOpen] = useState(false)
   const moreRef = useRef<HTMLDivElement | null>(null)
@@ -616,6 +617,24 @@ export default function App() {
         <button onClick={closeAlbum} className="ghost back-albums">
           ← {t('app.meusAlbums')}
         </button>
+        <div className="mode-tabs">
+          {(
+            [
+              ['import', t('app.modeImport')],
+              ['cull', t('app.modeCull')],
+              ['edit', t('app.modeEdit')],
+              ['retouch', t('app.modeRetouch')]
+            ] as Array<['import' | 'cull' | 'edit' | 'retouch', string]>
+          ).map(([m, label]) => (
+            <button
+              key={m}
+              className={`mode-tab ${mode === m ? 'active' : ''}`}
+              onClick={() => setMode(m)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="topbar-filters">
           {MAIN_FILTERS.map((f) => (
             <button
@@ -684,6 +703,19 @@ export default function App() {
       )}
       {error && <div className="toast error">{error}</div>}
 
+      {mode === 'import' && (
+        <div className="import-banner">
+          <div>
+            <strong>{t('import.bannerTitulo')}</strong>
+            <p>{t('import.bannerTexto')}</p>
+          </div>
+          <button onClick={importFolder} disabled={scanning} className="primary">
+            {scanning ? t('app.importando') : t('app.importar')}
+          </button>
+        </div>
+      )}
+
+      {mode === 'cull' && (
       <div className="cull-toolbar">
         <span className={`toolbar-count picks ${filter === 'picks' ? 'active' : ''}`}>
           <b>P</b> {picksCount}
@@ -881,13 +913,16 @@ export default function App() {
           )}
         </div>
       </div>
+      )}
 
       <main className="content">
         <div className="main-gallery">
-          <FilterPanel
-            active={filter}
-            onSelect={(f) => setFilter(f as Filter)}
-          />
+          {mode === 'cull' && (
+            <FilterPanel
+              active={filter}
+              onSelect={(f) => setFilter(f as Filter)}
+            />
+          )}
           <Gallery
             photos={photos}
             onRefresh={loadPhotos}
@@ -898,7 +933,9 @@ export default function App() {
             onRate={handleRate}
           />
         </div>
-        <EditPanel photo={selectedPhoto} onApplyAll={handleApplyAll} />
+        {(mode === 'edit' || mode === 'retouch') && (
+          <EditPanel photo={selectedPhoto} onApplyAll={handleApplyAll} />
+        )}
       </main>
 
       <div className="shortcuts-bar">

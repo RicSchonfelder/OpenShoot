@@ -1520,3 +1520,54 @@ button.danger {
   font-size: 14px;
   margin-bottom: 14px;
 }
+
+/* ------- Abas de modo (IMPORT/CULL/EDIT/RETOUCH) ------- */
+.mode-tabs {
+  display: flex;
+  gap: 4px;
+  background: #1e2430;
+  border: 1px solid #2c3442;
+  border-radius: 10px;
+  padding: 3px;
+}
+
+.mode-tab {
+  background: transparent;
+  border: 0;
+  color: #9aa3b2;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.mode-tab.active {
+  background: #3b82f6;
+  color: #fff;
+}
+
+/* ------- Banner de importação (modo IMPORT) ------- */
+.import-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 12px 20px 0;
+  padding: 16px 20px;
+  background: #1e293b;
+  border: 1px solid #3b82f6;
+  border-radius: 10px;
+}
+
+.import-banner strong {
+  color: #93c5fd;
+  font-size: 15px;
+}
+
+.import-banner p {
+  margin: 4px 0 0;
+  color: #9aa3b2;
+  font-size: 13px;
+}
