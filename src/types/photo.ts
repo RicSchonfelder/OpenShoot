@@ -13,6 +13,8 @@ export interface PhotoMeta {
   previewAvailable: boolean
   cullScore: number | null
   hash: string
+  hasFace: boolean
+  review: boolean
 }
 
 export interface ScanResultData {

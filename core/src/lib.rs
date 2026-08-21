@@ -151,9 +151,10 @@ pub struct CullSummary {
   pub errors: i64,
   pub avg_score: f64,
   pub picks: i64,
+  pub review: i64,
 }
 #[napi]
-pub async fn cull_photos() -> Result<CullSummary> {
+pub async fn cull_photos(target_picks: Option<i64>) -> Result<CullSummary> {
   let paths = match catalog::all_photo_paths() {
     Ok(p) => p,
     Err(e) => return Err(Error::from_reason(e)),
@@ -220,6 +221,8 @@ pub async fn cull_photos() -> Result<CullSummary> {
   // Normaliza scores 0..100 -> rating 1..5 pela distribuição (quantis simples).
   scores.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
   let n = scores.len();
+
+  // Quantis → rating 1-5 (distribuição).
   for (i, (id, s)) in scores.iter().enumerate() {
     let q = if n <= 1 { 1.0 } else { i as f64 / (n - 1) as f64 };
     let rating = if q < 0.2 { 1 } else if q < 0.4 { 2 } else if q < 0.6 { 3 } else if q < 0.8 { 4 } else { 5 };
@@ -228,13 +231,45 @@ pub async fn cull_photos() -> Result<CullSummary> {
       errors += 1;
     }
   }
-  let picks = scores.iter().filter(|(_, s)| *s >= 70.0).count() as i64;
+
+  // Meta de picks: se o usuário pedir N fotos, as top-N viram ★5 (pick).
+  // Caso contrário, usa o limiar de score >= 70.
+  let picks: i64;
+  let target = target_picks.unwrap_or(0);
+  if target > 0 && n > 0 {
+    let count = target.min(n as i64) as usize;
+    for (i, (id, _)) in scores.iter().enumerate() {
+      // scores está em ordem crescente → top-N são os últimos.
+      let rating = if i >= n - count { 5 } else { 0 };
+      if let Err(e) = catalog::set_photo_rating(*id, rating, scores[i].1) {
+        crate::catalog::log_debug(&format!("falha ao salvar rating {}: {e}", id));
+        errors += 1;
+      }
+    }
+    picks = count as i64;
+  } else {
+    picks = scores.iter().filter(|(_, s)| *s >= 70.0).count() as i64;
+  }
+
+  // Bucket "Para revisão": fotos com score ambíguo (entre 55 e 70) — nem óbvias
+  // picks, nem rejeições claras. Marcadas na coluna `review` para filtro na UI.
+  let mut review = 0i64;
+  for (id, s) in &scores {
+    let ambiguous = *s >= 55.0 && *s < 70.0;
+    if let Err(e) = catalog::set_photo_review(*id, ambiguous) {
+      crate::catalog::log_debug(&format!("falha ao salvar review {}: {e}", id));
+    }
+    if ambiguous {
+      review += 1;
+    }
+  }
 
   Ok(CullSummary {
     processed: processed as i64,
     errors,
     avg_score: if processed > 0 { sum / processed as f64 } else { 0.0 },
     picks: picks.max(0),
+    review,
   })
 }
 
@@ -696,8 +731,14 @@ mod tests {
   fn duplicates_grouped_by_sha256() {
     let dir = std::env::temp_dir().join(format!("openshoot_test_{}", std::process::id()));
     std::fs::create_dir_all(&dir).ok();
-    super::catalog::init(dir.to_str().unwrap()).expect("init catalog");
+    if let Err(e) = super::catalog::init(dir.to_str().unwrap()) {
+      eprintln!("init reutilizado: {e}");
+    }
     let conn = super::catalog::open().expect("open catalog");
+    // Limpa resíduos de execuções anteriores.
+    conn
+      .execute("DELETE FROM photos", [])
+      .unwrap();
     // Duas fotos com o MESMO sha256 e uma única.
     let sql = "INSERT INTO photos (path, file_name, ext, file_size, sha256, indexed_at)
                VALUES (?1, ?2, 'jpg', 100, ?3, datetime('now'))";
@@ -717,7 +758,29 @@ mod tests {
     // Filtro "duplicates" deve retornar apenas as 2 duplicatas.
     let list = super::catalog::list_photos("", "duplicates", 0, 100).expect("list duplicates");
     assert_eq!(list.total, 2);
+
+    // ---- Bucket "Para revisão" ----
+    let id_a: i64 = conn
+      .query_row("SELECT id FROM photos WHERE file_name='dup_a.jpg'", [], |r| r.get(0))
+      .unwrap();
+    super::catalog::set_photo_review(id_a, true).unwrap();
+    let rev = super::catalog::list_photos("", "review", 0, 100).expect("list review");
+    assert_eq!(rev.total, 1);
+    assert_eq!(rev.photos[0].id, id_a);
+    // Filtro de orientação retrato.
+    conn
+      .execute("UPDATE photos SET width=100, height=200 WHERE id=?1", [id_a])
+      .unwrap();
+    let portrait = super::catalog::list_photos("", "portrait", 0, 100).expect("list portrait");
+    assert_eq!(portrait.total, 1);
+    // Filtro RAW vs JPEG (dup_a.jpg é 'jpg').
+    let jpeg = super::catalog::list_photos("", "jpeg", 0, 100).expect("list jpeg");
+    assert_eq!(jpeg.total, 3);
+    let raw = super::catalog::list_photos("", "raw", 0, 100).expect("list raw");
+    assert_eq!(raw.total, 0);
+
     // Limpeza.
+    conn.execute("DELETE FROM photos", []).unwrap();
     let _ = std::fs::remove_dir_all(&dir);
   }
 }

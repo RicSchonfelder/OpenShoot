@@ -7,7 +7,18 @@ import type { PhotoMeta } from '../../types/photo'
 
 const PAGE_SIZE = 1000
 
-type Filter = 'all' | 'picks' | 'rejects' | 'unrated' | 'duplicates' | 'faces'
+type Filter =
+  | 'all'
+  | 'picks'
+  | 'rejects'
+  | 'unrated'
+  | 'duplicates'
+  | 'faces'
+  | 'review'
+  | 'portrait'
+  | 'landscape'
+  | 'raw'
+  | 'jpeg'
 
 type DeleteDialogState = 'none' | 'catalog' | 'trash'
 
@@ -29,6 +40,7 @@ export default function App() {
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>('none')
   const [moreOpen, setMoreOpen] = useState(false)
   const moreRef = useRef<HTMLDivElement | null>(null)
+  const [targetPicks, setTargetPicks] = useState(0)
   const photosRef = useRef<PhotoMeta[]>([])
   const selectedRef = useRef<Set<number>>(new Set())
   const anchorRef = useRef<number | null>(null)
@@ -296,7 +308,7 @@ export default function App() {
     setError(null)
     setCulling(true)
     try {
-      const res = await window.openshoot.cullPhotos()
+      const res = await window.openshoot.cullPhotos(targetPicks > 0 ? targetPicks : undefined)
       if ('error' in res) {
         setError(String(res.error))
       } else {
@@ -314,7 +326,7 @@ export default function App() {
     } finally {
       setCulling(false)
     }
-  }, [loadPhotos, t])
+  }, [loadPhotos, t, targetPicks])
 
   const exportXmp = useCallback(async () => {
     setError(null)
@@ -364,6 +376,7 @@ export default function App() {
   const picksCount = photos.filter((p) => p.rating >= 4).length
   const rejectsCount = photos.filter((p) => p.rating >= 1 && p.rating <= 2).length
   const unratedCount = photos.filter((p) => p.rating === 0).length
+  const reviewCount = photos.filter((p) => p.review).length
 
   const FILTER_LABELS: Record<Filter, string> = {
     all: t('app.todos'),
@@ -371,7 +384,12 @@ export default function App() {
     rejects: t('app.rejects'),
     unrated: t('app.unrated'),
     duplicates: t('app.duplicatas'),
-    faces: t('app.comRosto')
+    faces: t('app.comRosto'),
+    review: t('app.paraRevisao'),
+    portrait: t('app.retrato'),
+    landscape: t('app.paisagem'),
+    raw: t('app.raw'),
+    jpeg: t('app.jpeg')
   }
 
   const MAIN_FILTERS: Filter[] = ['all', 'picks', 'rejects', 'unrated']
@@ -469,12 +487,27 @@ export default function App() {
         <span className={`toolbar-count rejects ${filter === 'rejects' ? 'active' : ''}`}>
           <b>X</b> {rejectsCount}
         </span>
+        <span className={`toolbar-count review ${filter === 'review' ? 'active' : ''}`}>
+          <b>?</b> {reviewCount}
+        </span>
         <span className={`toolbar-count unrated ${filter === 'unrated' ? 'active' : ''}`}>
           <b>U</b> {unratedCount}
         </span>
         <span className="toolbar-count total">
           {t('app.fotos', { n: photos.length })}
         </span>
+        <label className="target-picks">
+          {t('app.targetPicks')}
+          <input
+            type="range"
+            min={0}
+            max={Math.max(1, photos.length)}
+            step={1}
+            value={targetPicks}
+            onChange={(e) => setTargetPicks(Number(e.target.value))}
+          />
+          <em>{targetPicks === 0 ? '∞' : targetPicks}</em>
+        </label>
         <button
           className="toolbar-select-all"
           onClick={() => {
@@ -517,6 +550,71 @@ export default function App() {
                   }}
                 >
                   {t('app.comRosto')}
+                </button>
+              </div>
+              <div className="more-section">
+                <span className="more-section-title">{t('app.outrosRevisao')}</span>
+                <button
+                  className={`${filter === 'review' ? 'active' : ''}`}
+                  onClick={() => {
+                    setFilter('review')
+                    setMoreOpen(false)
+                  }}
+                >
+                  {t('app.paraRevisao')}
+                </button>
+              </div>
+              <div className="more-section">
+                <span className="more-section-title">{t('app.outrosOrientacao')}</span>
+                <button
+                  className={`${filter === 'portrait' ? 'active' : ''}`}
+                  onClick={() => {
+                    setFilter('portrait')
+                    setMoreOpen(false)
+                  }}
+                >
+                  {t('app.retrato')}
+                </button>
+                <button
+                  className={`${filter === 'landscape' ? 'active' : ''}`}
+                  onClick={() => {
+                    setFilter('landscape')
+                    setMoreOpen(false)
+                  }}
+                >
+                  {t('app.paisagem')}
+                </button>
+              </div>
+              <div className="more-section">
+                <span className="more-section-title">{t('app.outrosTipoArquivo')}</span>
+                <button
+                  className={`${filter === 'raw' ? 'active' : ''}`}
+                  onClick={() => {
+                    setFilter('raw')
+                    setMoreOpen(false)
+                  }}
+                >
+                  {t('app.raw')}
+                </button>
+                <button
+                  className={`${filter === 'jpeg' ? 'active' : ''}`}
+                  onClick={() => {
+                    setFilter('jpeg')
+                    setMoreOpen(false)
+                  }}
+                >
+                  {t('app.jpeg')}
+                </button>
+              </div>
+              <div className="more-section more-reset">
+                <button
+                  className="more-reset-btn"
+                  onClick={() => {
+                    setFilter('all')
+                    setMoreOpen(false)
+                  }}
+                >
+                  {t('app.reiniciar')}
                 </button>
               </div>
             </div>

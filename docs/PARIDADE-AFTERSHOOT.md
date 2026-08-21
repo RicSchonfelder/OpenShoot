@@ -1,0 +1,96 @@
+# OpenShoot — Roadmap de Paridade com o AfterShoot
+
+> **Objetivo:** deixar o OpenShoot com o mesmo conjunto de features/UX do AfterShoot
+> (v2.21.4, auditado em 2026-08-18/20). Cada item = feature do AfterShoot → plano de
+> implementação no OpenShoot, com prioridade e esforço.
+> **Fonte:** `docs/AUDITORIA-AFTERSHOOT.md` (mapa completo + gap analysis).
+> **Atualizado:** 2026-08-21
+
+**Legenda de status:** ✅ feito · 🟡 em andamento · ⬜ pendente
+
+---
+
+## Tranche A — Culling & Seleção (núcleo, alto valor / baixo custo)
+
+| AfterShoot | OpenShoot | Status |
+|---|---|---|
+| Culling IA (score + rating ★1-5) | NIMA + SCRFD + heurística → quantis ★1-5 | ✅ |
+| ★1-5 clicável por foto no grid | `cell-stars` (5 botões, clique zera) | ✅ |
+| Atalhos P/X/U/1-5 (culling rápido) | `p`/`x`/`u`/`1-5` aplicam e avançam | ✅ |
+| Loupe / revisão (foto grande) | `LoupeView` (duplo clique/Enter, setas, Esc) | ✅ |
+| Flags P verde / X vermelho | `flag-pick`/`flag-reject` no grid | ✅ |
+| Toolbar com contadores P/X/U | `cull-toolbar` | ✅ |
+| Filtro "Sem classificação" | filtro `unrated` | ✅ |
+| Filtros "Duplicatas" | filtro `duplicates` (sha256) + `findDuplicates()` | ✅ |
+| Filtros "Com/Sem rosto" | filtro `faces` (`has_face` via SCRFD) | ✅ |
+| Dropdown "Outros" (filtros avançados) | dropdown no App.tsx | ✅ |
+| Deleção (catálogo vs lixeira) | diálogo 3 opções | ✅ |
+| **Meta de nº de picks** ("quantas selecionar") | `cullPhotos(targetPicks)` + slider na toolbar | ✅ |
+| **Bucket "Para revisão"** (fotos ambíguas) | coluna `review` (score 55-70) + filtro + contador | ✅ |
+| **Filtro Tipo de Arquivo** (RAW / JPEG-TIFF) | filtros `raw`/`jpeg` no dropdown | ✅ |
+| **Filtro Orientação** (retrato/paisagem) | filtros `portrait`/`landscape` no dropdown | ✅ |
+| **Reiniciar filtros** | botão reset no dropdown | ✅ |
+| **"Destaques IA" vs "Selecionado manual"** | ⬜ separar origem do rating (IA vs manual) |
+| **Filtro "Editar status"** | ⬜ coluna `edited` + filtro |
+| **Contadores vivos no painel de filtros** | ⬜ painel lateral com contagens por bucket |
+
+## Tranche B — Edição (expansão tonal)
+
+| AfterShoot | OpenShoot | Status |
+|---|---|---|
+| 8 sliders básicos (exposição, WB, contraste, sat, sombras, realces, brilho) | `edit.rs` + `EditPanel` | ✅ |
+| Aplicar em lote + preview | `applyEditAll`/`applyEditOne` | ✅ |
+| **Presets nomeados** (salvar/carregar receita JSON) | ⬜ biblioteca de presets |
+| **Curva de tom** (destaques/luzes/escuros/sombras) | ⬜ curva spline no `edit.rs` |
+| **HSL** (8 cores × matiz/sat/lum) | ⬜ matriz de cor |
+| **Nitidez** (quantidade/raio/detalhe) | ⬜ unsharp mask |
+| **Redução de ruído** (luminância/cor) | ⬜ denoise wavelet |
+| **Recorte por IA** (suave/padrão) | ⬜ saliency → crop |
+| **Ajuste de horizonte com IA** | ⬜ line detection → rotate |
+| **Máscara de IA** (sujeito/fundo) | ⬜ SelfieSegmentation ONNX |
+| **Perfil de IA por álbum** (estilo aprendido) | ⬜ v1: média de tom de amostras |
+
+## Tranche C — Importação (wizard)
+
+| AfterShoot | OpenShoot | Status |
+|---|---|---|
+| Import via drag-and-drop + navegar + recentes | `pickFolder` (dialog nativo) | 🟡 |
+| **Wizard: tipo de fotos** (CULL/EDIT/RETOUCH, RAW, JPEG/TIFF) | ⬜ seletor de tipo |
+| **Incluir subpastas** (toggle) | ⬜ flag no scan |
+| **Tipo de sessão** (casamento, retrato, família...) | ⬜ seletor de gênero |
+| **"Começar" one-click** (cull+edit) | ⬜ pipeline encadeado |
+| Progresso + contador "X/Y" | `scanFolderProgress` | ✅ |
+
+## Tranche D — Retoque (expansão)
+
+| AfterShoot | OpenShoot | Status |
+|---|---|---|
+| Suavização de pele | YCbCr + blur seletivo | ✅ |
+| Remover distração (inpainting) | difusão, bbox central | ✅ |
+| **Patch com seleção por arrasto** | ⬜ seleção manual de bbox no loupe |
+| **Sliders faciais** (acne, olhos, dentes, cabelo, corpo) | ⬜ segmentação facial + sliders |
+| **Mostrar moldura do rosto** | ⬜ overlay de landmarks |
+| **Modos SUJEITO/FUNDO/PATCH** | ⬜ segmentação sujeito |
+
+## Tranche E — Perfis de IA (o mais pesado)
+
+| AfterShoot | OpenShoot | Status |
+|---|---|---|
+| Perfil Profissional (treinar com 2.500 fotos editadas LR/C1) | ⬜ v1: "aprender" estilo via média de parâmetros de XMPs carregados |
+| Perfil Instantâneo (preset Lightroom) | ⬜ importar preset .xmp/.lrtemplate → receita |
+| Mercado de perfis | ⬜ pasta local de estilos compartilháveis |
+| Regras (um tipo de arquivo/cor/catálogo por perfil) | ⬜ metadados do perfil |
+
+---
+
+## Priorização sugerida (execução)
+
+1. **Tranche A** — meta de picks, "Para revisão", "Destaques" vs "Selecionado", painel de
+   filtros com contadores + Reiniciar, filtros Tipo de Arquivo/Orientação/Câmera.
+2. **Tranche B** — presets nomeados (rápido), depois curva de tom e HSL.
+3. **Tranche C** — wizard de importação.
+4. **Tranche D** — seleção por arrasto no patch, sliders faciais.
+5. **Tranche E** — perfil v1 (aprender de XMPs), depois importar preset.
+
+> Cada item novo segue as regras do AGENTS.md: typecheck + cargo test verdes,
+> DESIGN.md atualizado, novo código Rust com teste.

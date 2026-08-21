@@ -16,6 +16,8 @@ declare module '*.node' {
     previewAvailable: boolean
     cullScore: number | null
     hash: string
+    hasFace: boolean
+    review: boolean
   }
   export interface NativeScanResult {
     scanned: number
@@ -33,6 +35,7 @@ declare module '*.node' {
     errors: number
     avgScore: number
     picks: number
+    review: number
   }
   export function setup(dataDir: string): string
   export function add(a: number, b: number): number
@@ -44,7 +47,7 @@ declare module '*.node' {
   export function photoCount(): number
   export function thumbForPhoto(id: number, maxDim: number): Promise<string | null>
   export function thumbForPath(path: string, maxDim: number): Promise<string | null>
-  export function cullPhotos(): Promise<NativeCullSummary>
+  export function cullPhotos(targetPicks?: number): Promise<NativeCullSummary>
   export function writeXmpForPhoto(id: number): string
   export function exportAllXmp(): { exported: number; errors: number; total: number }
   export function detectFacesInPath(path: string): unknown

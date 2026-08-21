@@ -18,8 +18,8 @@ const api = {
     ipcRenderer.invoke('core:thumbForPhoto', id, maxDim),
   pickFolder: (): Promise<string | null> => ipcRenderer.invoke('core:pickFolder'),
   // Fase 2
-  cullPhotos: (): Promise<{ processed: number; errors: number; avgScore: number; picks: number }> =>
-    ipcRenderer.invoke('core:cullPhotos'),
+  cullPhotos: (targetPicks?: number): Promise<{ processed: number; errors: number; avgScore: number; picks: number; review: number }> =>
+    ipcRenderer.invoke('core:cullPhotos', targetPicks),
   writeXmpForPhoto: (id: number): Promise<string> =>
     ipcRenderer.invoke('core:writeXmpForPhoto', id),
   exportAllXmp: (): Promise<{ exported: number; errors: number; total: number }> =>

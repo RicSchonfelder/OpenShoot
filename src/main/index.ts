@@ -96,11 +96,11 @@ app.whenReady().then(() => {
   })
 
   // ---- Fase 2: culling + XMP ----
-  ipcMain.handle('core:cullPhotos', async () => {
+  ipcMain.handle('core:cullPhotos', async (_e, targetPicks?: number) => {
     try {
-      return await getCore().cullPhotos()
+      return await getCore().cullPhotos(targetPicks)
     } catch (e) {
-      return { processed: 0, errors: 1, avgScore: 0, picks: 0, error: String(e) }
+      return { processed: 0, errors: 1, avgScore: 0, picks: 0, review: 0, error: String(e) }
     }
   })
   ipcMain.handle('core:writeXmpForPhoto', (_e, id: number) => {

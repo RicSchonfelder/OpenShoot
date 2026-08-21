@@ -92,6 +92,18 @@ fn ensure_schema(conn: &Connection) -> Result<(), String> {
       .execute("ALTER TABLE photos ADD COLUMN has_face INTEGER DEFAULT 0", [])
       .map_err(|e| e.to_string())?;
   }
+  let has_review: bool = conn
+    .query_row(
+      "SELECT COUNT(*) FROM pragma_table_info('photos') WHERE name='review'",
+      [],
+      |r| Ok(r.get::<_, i64>(0)? != 0),
+    )
+    .map_err(|e| e.to_string())?;
+  if !has_review {
+    conn
+      .execute("ALTER TABLE photos ADD COLUMN review INTEGER DEFAULT 0", [])
+      .map_err(|e| e.to_string())?;
+  }
   Ok(())
 }
 
@@ -177,6 +189,8 @@ fn row_to_photo(row: &rusqlite::Row) -> rusqlite::Result<PhotoMeta> {
     preview_available: row.get::<_, i64>(11).unwrap_or(0) != 0,
     cull_score: row.get(12).unwrap_or(None),
     hash: row.get::<_, String>(13).unwrap_or_default(),
+    has_face: row.get::<_, i64>(14).unwrap_or(0) != 0,
+    review: row.get::<_, i64>(15).unwrap_or(0) != 0,
   })
 }
 
@@ -220,6 +234,23 @@ pub fn list_photos(
     "faces" => {
       conds.push("has_face = 1".to_string());
     }
+    "review" => {
+      conds.push("review = 1".to_string());
+    }
+    "portrait" => {
+      conds.push("width > 0 AND height > 0 AND height > width".to_string());
+    }
+    "landscape" => {
+      conds.push("width > 0 AND height > 0 AND width >= height".to_string());
+    }
+    "raw" => {
+      conds.push(
+        "ext IN ('nef','arw','dng','cr2','cr3','orf','raf','rw2','pef','srw','raw')".to_string(),
+      );
+    }
+    "jpeg" => {
+      conds.push("ext IN ('jpg','jpeg','tiff','tif','png','webp','heic','heif')".to_string());
+    }
     _ => {}
   }
   let where_clause = if conds.is_empty() {
@@ -242,7 +273,7 @@ pub fn list_photos(
 
   // SELECT com paginação. Parâmetros de busca/filtro vêm antes de LIMIT/OFFSET.
   let list_sql = format!(
-    "SELECT id, path, file_name, ext, file_size, width, height, camera, taken_at, rating, has_xmp, preview_available, cull_score, sha256
+    "SELECT id, path, file_name, ext, file_size, width, height, camera, taken_at, rating, has_xmp, preview_available, cull_score, sha256, has_face, review
      FROM photos {} ORDER BY rating DESC, cull_score DESC, id DESC LIMIT ? OFFSET ?",
     where_clause
   );
@@ -266,7 +297,7 @@ pub fn get_photo(id: i64) -> Result<Option<PhotoMeta>, String> {
   let conn = open()?;
   conn
     .query_row(
-      "SELECT id, path, file_name, ext, file_size, width, height, camera, taken_at, rating, has_xmp, preview_available, cull_score
+      "SELECT id, path, file_name, ext, file_size, width, height, camera, taken_at, rating, has_xmp, preview_available, cull_score, sha256, has_face, review
        FROM photos WHERE id=?1",
       [id],
       row_to_photo,
@@ -342,6 +373,18 @@ pub fn set_photo_has_face(id: i64, has_face: bool) -> Result<(), String> {
     .execute(
       "UPDATE photos SET has_face=?2 WHERE id=?1",
       rusqlite::params![id, if has_face { 1 } else { 0 }],
+    )
+    .map_err(|e| e.to_string())?;
+  Ok(())
+}
+
+/// Registra se a foto está no bucket "Para revisão" (score ambíguo).
+pub fn set_photo_review(id: i64, review: bool) -> Result<(), String> {
+  let conn = open()?;
+  conn
+    .execute(
+      "UPDATE photos SET review=?2 WHERE id=?1",
+      rusqlite::params![id, if review { 1 } else { 0 }],
     )
     .map_err(|e| e.to_string())?;
   Ok(())

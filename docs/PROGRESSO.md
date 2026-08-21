@@ -35,8 +35,12 @@
   - **Diálogo de deletar 3 opções**: remover só do catálogo / mover p/ Lixeira /
     cancelar (`removePhotoFromCatalog` / `deletePhoto` com `move_to_trash` manual).
   - **⌘A/Ctrl+A** seleciona todas.
-  - **Filtros avançados** (dropdown "Outros"): **Duplicatas** (sha256 agrupado) e
-    **Com rosto** (`has_face` populado no culling via SCRFD).
+  - **Filtros avançados** (dropdown "Outros"): **Duplicatas** (sha256 agrupado),
+    **Com rosto** (`has_face` via SCRFD), **Para revisão** (`review`, score 55-70),
+    **Orientação** (retrato/paisagem), **Tipo de Arquivo** (RAW/JPEG-TIFF) +
+    botão **Reiniciar filtros**.
+  - **Meta de nº de picks**: `cullPhotos(targetPicks)` marca as top-N fotos como
+    ★5 + slider "Meta de seleção" na toolbar (0 = sem meta/limiar 70).
 - **Core** ✅ — 33 testes Rust passando; typecheck limpo (main/preload/renderer).
 
 ### Failures / pontos de atenção

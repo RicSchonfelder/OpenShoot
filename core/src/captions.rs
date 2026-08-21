@@ -117,6 +117,8 @@ mod tests {
       preview_available: true,
       cull_score: Some(50.0),
       hash: String::new(),
+      has_face: false,
+      review: false,
     }
   }
 
