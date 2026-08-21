@@ -165,6 +165,24 @@ pub fn import_lightroom_preset(
   }
 }
 
+/// Exporta um preset para um arquivo JSON (estilo compartilhável).
+#[napi]
+pub fn export_preset_to_file(name: String, dest: String) -> Result<serde_json::Value> {
+  match catalog::export_preset_to_file(&name, &PathBuf::from(&dest)) {
+    Ok(()) => Ok(serde_json::json!({ "ok": true, "name": name })),
+    Err(e) => Ok(serde_json::json!({ "ok": false, "error": e })),
+  }
+}
+
+/// Importa um preset de um arquivo JSON (estilo compartilhável).
+#[napi]
+pub fn import_preset_from_file(path: String) -> Result<serde_json::Value> {
+  match catalog::import_preset_from_file(&PathBuf::from(&path)) {
+    Ok(name) => Ok(serde_json::json!({ "ok": true, "name": name })),
+    Err(e) => Ok(serde_json::json!({ "ok": false, "error": e })),
+  }
+}
+
 /// Total de fotos no catálogo.
 #[napi]
 pub fn photo_count() -> Result<i64> {
@@ -1049,6 +1067,16 @@ mod tests {
     let list = super::catalog::list_photos("", "all", 0, 100).unwrap();
     // session_type não está no PhotoMeta; validamos indiretamente via contagem.
     assert!(list.total >= 2);
+
+    // ---- Exportar/importar preset como arquivo (mercado) ----
+    super::catalog::save_preset("Estilo", r#"{"exposure":0.5}"#).unwrap();
+    let dest = std::env::temp_dir().join("openshoot_preset_export.json");
+    super::catalog::export_preset_to_file("Estilo", &dest).unwrap();
+    let name = super::catalog::import_preset_from_file(&dest).unwrap();
+    assert_eq!(name, "openshoot_preset_export");
+    super::catalog::delete_preset("Estilo").unwrap();
+    super::catalog::delete_preset(&name).unwrap();
+    let _ = std::fs::remove_file(&dest);
 
     // ---- Tipo de foto no scan ----
     let tmp = std::env::temp_dir().join(format!("openshoot_scan_{}", std::process::id()));

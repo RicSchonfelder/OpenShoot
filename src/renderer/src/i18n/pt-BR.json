@@ -78,6 +78,8 @@
   "edit.salvarPreset": "Salvar",
   "edit.semPresets": "Nenhum preset salvo.",
   "edit.importLr": "Importar preset do Lightroom (.xmp/.lrtemplate)",
+  "edit.importJson": "Importar JSON",
+  "edit.exportJson": "Exportar JSON",
   "edit.curvaTitulo": "Curva de tom",
   "edit.curvaDestaques": "Destaques",
   "edit.curvaLuzes": "Luzes",

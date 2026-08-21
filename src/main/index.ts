@@ -108,6 +108,28 @@ app.whenReady().then(() => {
     if (result.canceled || !result.filePaths.length) return null
     return result.filePaths[0]
   })
+  ipcMain.handle('core:pickPresetJson', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return null
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Escolha um preset OpenShoot (.json)',
+      properties: ['openFile'],
+      filters: [{ name: 'Presets OpenShoot', extensions: ['json'] }]
+    })
+    if (result.canceled || !result.filePaths.length) return null
+    return result.filePaths[0]
+  })
+  ipcMain.handle('core:savePresetAs', async (event, _defaultName: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return null
+    const result = await dialog.showSaveDialog(win, {
+      title: 'Exportar preset',
+      defaultPath: `${_defaultName || 'preset'}.json`,
+      filters: [{ name: 'Presets OpenShoot', extensions: ['json'] }]
+    })
+    if (result.canceled || !result.filePath) return null
+    return result.filePath
+  })
 
   // ---- Fase 2: culling + XMP ----
   ipcMain.handle('core:cullPhotos', async (_e, targetPicks?: number) => {
@@ -298,6 +320,20 @@ app.whenReady().then(() => {
       return await getCore().detectFacesInPhoto(id)
     } catch (e) {
       return { count: 0, faces: [] }
+    }
+  })
+  ipcMain.handle('core:exportPresetToFile', async (_e, name: string, dest: string) => {
+    try {
+      return await getCore().exportPresetToFile(name, dest)
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+  ipcMain.handle('core:importPresetFromFile', async (_e, path: string) => {
+    try {
+      return await getCore().importPresetFromFile(path)
+    } catch (e) {
+      return { ok: false, error: String(e) }
     }
   })
   ipcMain.handle(

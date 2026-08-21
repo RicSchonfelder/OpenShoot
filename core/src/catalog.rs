@@ -591,6 +591,38 @@ pub fn delete_preset(name: &str) -> Result<bool, String> {
   Ok(n > 0)
 }
 
+/// Exporta um preset para um arquivo JSON (estilo compartilhável).
+pub fn export_preset_to_file(name: &str, dest: &Path) -> Result<(), String> {
+  let conn = open()?;
+  let recipe: Option<String> = conn
+    .query_row(
+      "SELECT recipe FROM presets WHERE name=?1",
+      rusqlite::params![name.trim()],
+      |r| r.get(0),
+    )
+    .optional()
+    .map_err(|e| e.to_string())?;
+  let recipe = recipe.ok_or_else(|| format!("preset '{name}' não existe"))?;
+  std::fs::create_dir_all(dest.parent().unwrap_or(Path::new(".")))
+    .map_err(|e| format!("criar pasta: {e}"))?;
+  std::fs::write(dest, recipe).map_err(|e| format!("escrever arquivo: {e}"))?;
+  Ok(())
+}
+
+/// Importa um preset de um arquivo JSON (estilo compartilhável).
+pub fn import_preset_from_file(path: &Path) -> Result<String, String> {
+  let recipe = std::fs::read_to_string(path).map_err(|e| format!("leitura: {e}"))?;
+  // Valida que é JSON.
+  serde_json::from_str::<serde_json::Value>(&recipe)
+    .map_err(|e| format!("JSON inválido: {e}"))?;
+  let name = path
+    .file_stem()
+    .map(|s| s.to_string_lossy().to_string())
+    .unwrap_or_else(|| "Preset importado".to_string());
+  save_preset(&name, &recipe)?;
+  Ok(name)
+}
+
 /// "Aprende" um perfil de estilo: calcula a MÉDIA dos parâmetros de edição
 /// aplicados às fotos (via `edit_json`), e salva como preset nomeado.
 /// Retorna o nome do preset criado e quantas fotos foram usadas.

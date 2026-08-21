@@ -197,6 +197,28 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
     })
   }, [applyRecipe, loadPresets])
 
+  const exportJson = useCallback(
+    (name: string) => {
+      window.openshoot.savePresetAs(name).then((dest) => {
+        if (!dest) return
+        window.openshoot.exportPresetToFile(name, dest).then((res) => {
+          if (!res.ok) window.alert(res.error ?? 'erro')
+        })
+      })
+    },
+    []
+  )
+
+  const importJson = useCallback(() => {
+    window.openshoot.pickPresetJson().then((path) => {
+      if (!path) return
+      window.openshoot.importPresetFromFile(path).then((res) => {
+        if (res.ok) loadPresets()
+        else window.alert(res.error ?? 'erro')
+      })
+    })
+  }, [loadPresets])
+
   // Ao trocar de foto, carrega a receita salva (se houver).
   useEffect(() => {
     setValues(EMPTY)
@@ -571,6 +593,16 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
         <button onClick={importLr} className="ghost full">
           {t('edit.importLr')}
         </button>
+        <div className="edit-preset-file-actions">
+          <button onClick={importJson} className="ghost">
+            {t('edit.importJson')}
+          </button>
+          {presets.length > 0 && (
+            <button onClick={() => exportJson(presets[0].name)} className="ghost">
+              {t('edit.exportJson')}
+            </button>
+          )}
+        </div>
         {presets.length === 0 ? (
           <p className="edit-hint">{t('edit.semPresets')}</p>
         ) : (

@@ -76,6 +76,8 @@ declare module '*.node' {
   export function importLightroomPreset(path: string, name?: string): { ok: boolean; name?: string; recipe?: string; error?: string }
   export function setSessionType(pathPrefix: string, sessionType: string): { ok: boolean; updated?: number; error?: string }
   export function detectFacesInPhoto(id: number): { count: number; faces: number[][]; width: number; height: number }
+  export function exportPresetToFile(name: string, dest: string): { ok: boolean; name?: string; error?: string }
+  export function importPresetFromFile(path: string): { ok: boolean; name?: string; error?: string }
   export function scanFolderProgress(
     dir: string,
     includeSubdirs: boolean,

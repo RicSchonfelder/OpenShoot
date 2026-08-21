@@ -25,6 +25,12 @@ const api = {
     ipcRenderer.invoke('core:setSessionType', pathPrefix, sessionType),
   detectFacesInPhoto: (id: number): Promise<{ count: number; faces: number[][]; width: number; height: number }> =>
     ipcRenderer.invoke('core:detectFacesInPhoto', id),
+  pickPresetJson: (): Promise<string | null> => ipcRenderer.invoke('core:pickPresetJson'),
+  savePresetAs: (defaultName: string): Promise<string | null> => ipcRenderer.invoke('core:savePresetAs', defaultName),
+  exportPresetToFile: (name: string, dest: string): Promise<{ ok: boolean; name?: string; error?: string }> =>
+    ipcRenderer.invoke('core:exportPresetToFile', name, dest),
+  importPresetFromFile: (path: string): Promise<{ ok: boolean; name?: string; error?: string }> =>
+    ipcRenderer.invoke('core:importPresetFromFile', path),
   // Fase 2
   cullPhotos: (targetPicks?: number): Promise<{ processed: number; errors: number; avgScore: number; picks: number; review: number }> =>
     ipcRenderer.invoke('core:cullPhotos', targetPicks),

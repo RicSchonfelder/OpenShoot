@@ -1280,3 +1280,16 @@ button.danger {
   pointer-events: none;
   z-index: 4;
 }
+
+/* ------- Mercado de presets (exportar/importar JSON) ------- */
+.edit-preset-file-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.edit-preset-file-actions button {
+  flex: 1;
+  padding: 6px 8px;
+  font-size: 11px;
+}
