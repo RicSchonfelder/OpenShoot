@@ -21,7 +21,7 @@ use std::path::PathBuf;
 
 use base64::Engine;
 
-use types::{DuplicateGroup, FilterCounts, PhotoList, PhotoMeta, Preset, ScanResult};
+use types::{Album, DuplicateGroup, FilterCounts, PhotoList, PhotoMeta, Preset, ScanResult};
 
 /// Inicializa o core: diretório de dados + catálogo SQLite.
 /// data_dir: caminho absoluto. Retorna o caminho do banco criado.
@@ -177,11 +177,55 @@ pub fn export_preset_to_file(name: String, dest: String) -> Result<serde_json::V
 
 /// Importa um preset de um arquivo JSON (estilo compartilhável).
 #[napi]
-pub fn import_preset_from_file(path: String) -> Result<serde_json::Value> {
+ pub fn import_preset_from_file(path: String) -> Result<serde_json::Value> {
   match catalog::import_preset_from_file(&PathBuf::from(&path)) {
     Ok(name) => Ok(serde_json::json!({ "ok": true, "name": name })),
     Err(e) => Ok(serde_json::json!({ "ok": false, "error": e })),
   }
+}
+
+// ---------------- Álbuns ----------------
+
+/// Cria um álbum. Retorna o id.
+#[napi]
+pub fn create_album(name: String) -> Result<i64> {
+  catalog::create_album(&name).map_err(|e| Error::from_reason(e))
+}
+
+/// Lista álbuns (com contagem e capa).
+#[napi]
+pub fn list_albums() -> Result<Vec<Album>> {
+  catalog::list_albums().map_err(|e| Error::from_reason(e))
+}
+
+/// Remove um álbum (não toca nas fotos).
+#[napi]
+pub fn delete_album(id: i64) -> Result<bool> {
+  catalog::delete_album(id).map_err(|e| Error::from_reason(e))
+}
+
+/// Associa fotos (por id) a um álbum.
+#[napi]
+pub fn add_photos_to_album(album_id: i64, photo_ids: Vec<i64>) -> Result<i64> {
+  catalog::add_photos_to_album(album_id, &photo_ids).map_err(|e| Error::from_reason(e))
+}
+
+/// Associa todas as fotos de um diretório a um álbum.
+#[napi]
+pub fn add_folder_to_album(album_id: i64, dir: String) -> Result<i64> {
+  catalog::add_folder_to_album(album_id, &dir).map_err(|e| Error::from_reason(e))
+}
+
+/// Define o tipo de sessão de um álbum.
+#[napi]
+pub fn set_album_session_type(album_id: i64, session_type: String) -> Result<()> {
+  catalog::set_album_session_type(album_id, &session_type).map_err(|e| Error::from_reason(e))
+}
+
+/// Retorna os ids de fotos de um álbum.
+#[napi]
+pub fn album_photo_ids(album_id: i64) -> Result<Vec<i64>> {
+  catalog::album_photo_ids(album_id).map_err(|e| Error::from_reason(e))
 }
 
 /// Máscara de sujeito: desfoca o fundo mantendo o sujeito (face + pele) nítido.
@@ -1174,6 +1218,19 @@ mod tests {
     super::catalog::delete_preset("Estilo").unwrap();
     super::catalog::delete_preset(&name).unwrap();
     let _ = std::fs::remove_file(&dest);
+
+    // ---- Álbuns ----
+    let album_id = super::catalog::create_album("Teste Album").unwrap();
+    let ids = [id_a, id_b];
+    let added = super::catalog::add_photos_to_album(album_id, &ids).unwrap();
+    assert_eq!(added, 2, "deve associar 2 fotos");
+    let albums = super::catalog::list_albums().unwrap();
+    let a = albums.iter().find(|a| a.id == album_id).unwrap();
+    assert_eq!(a.photo_count, 2, "contagem de fotos do álbum");
+    let photo_ids = super::catalog::album_photo_ids(album_id).unwrap();
+    assert_eq!(photo_ids.len(), 2);
+    super::catalog::delete_album(album_id).unwrap();
+    assert!(super::catalog::album_photo_ids(album_id).unwrap().is_empty());
 
     // ---- Tipo de foto no scan ----
     let tmp = std::env::temp_dir().join(format!("openshoot_scan_{}", std::process::id()));

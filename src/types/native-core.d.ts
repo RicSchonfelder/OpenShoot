@@ -79,6 +79,13 @@ declare module '*.node' {
   export function exportPresetToFile(name: string, dest: string): { ok: boolean; name?: string; error?: string }
   export function importPresetFromFile(path: string): { ok: boolean; name?: string; error?: string }
   export function subjectMaskPhoto(id: number, blur: number, maxDim: number): Promise<string | null>
+  export function createAlbum(name: string): number
+  export function listAlbums(): Array<{ id: number; name: string; session_type: string; cover_photo_id: number | null; created_at: string; photo_count: number; cover_path: string | null }>
+  export function deleteAlbum(id: number): boolean
+  export function addPhotosToAlbum(albumId: number, photoIds: number[]): number
+  export function addFolderToAlbum(albumId: number, dir: string): number
+  export function setAlbumSessionType(albumId: number, sessionType: string): void
+  export function albumPhotoIds(albumId: number): number[]
   export function scanFolderProgress(
     dir: string,
     includeSubdirs: boolean,

@@ -17,6 +17,8 @@ const api = {
   photoCount: (): Promise<number> => ipcRenderer.invoke('core:photoCount'),
   thumbForPhoto: (id: number, maxDim: number): Promise<string | null> =>
     ipcRenderer.invoke('core:thumbForPhoto', id, maxDim),
+  thumbForPath: (path: string, maxDim: number): Promise<string | null> =>
+    ipcRenderer.invoke('core:thumbForPath', path, maxDim),
   pickFolder: (): Promise<string | null> => ipcRenderer.invoke('core:pickFolder'),
   pickPresetFile: (): Promise<string | null> => ipcRenderer.invoke('core:pickPresetFile'),
   importLightroomPreset: (path: string, name?: string): Promise<{ ok: boolean; name?: string; recipe?: string; error?: string }> =>
@@ -33,6 +35,17 @@ const api = {
     ipcRenderer.invoke('core:importPresetFromFile', path),
   subjectMaskPhoto: (id: number, blur: number, maxDim: number): Promise<string | null> =>
     ipcRenderer.invoke('core:subjectMaskPhoto', id, blur, maxDim),
+  createAlbum: (name: string): Promise<number> => ipcRenderer.invoke('core:createAlbum', name),
+  listAlbums: (): Promise<Array<{ id: number; name: string; sessionType: string; coverPhotoId: number | null; createdAt: string; photoCount: number; coverPath: string | null }>> =>
+    ipcRenderer.invoke('core:listAlbums'),
+  deleteAlbum: (id: number): Promise<boolean> => ipcRenderer.invoke('core:deleteAlbum', id),
+  addPhotosToAlbum: (albumId: number, photoIds: number[]): Promise<number> =>
+    ipcRenderer.invoke('core:addPhotosToAlbum', albumId, photoIds),
+  addFolderToAlbum: (albumId: number, dir: string): Promise<number> =>
+    ipcRenderer.invoke('core:addFolderToAlbum', albumId, dir),
+  setAlbumSessionType: (albumId: number, sessionType: string): Promise<boolean> =>
+    ipcRenderer.invoke('core:setAlbumSessionType', albumId, sessionType),
+  albumPhotoIds: (albumId: number): Promise<number[]> => ipcRenderer.invoke('core:albumPhotoIds', albumId),
   // Fase 2
   cullPhotos: (targetPicks?: number): Promise<{ processed: number; errors: number; avgScore: number; picks: number; review: number }> =>
     ipcRenderer.invoke('core:cullPhotos', targetPicks),

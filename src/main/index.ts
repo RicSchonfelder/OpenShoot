@@ -79,7 +79,14 @@ app.whenReady().then(() => {
   ipcMain.handle('core:thumbForPhoto', async (_e, id: number, maxDim: number) => {
     try {
       return (await getCore().thumbForPhoto(id, maxDim)) ?? null
-    } catch {
+    } catch (e) {
+      return null
+    }
+  })
+  ipcMain.handle('core:thumbForPath', async (_e, path: string, maxDim: number) => {
+    try {
+      return (await getCore().thumbForPath(path, maxDim)) ?? null
+    } catch (e) {
       return null
     }
   })
@@ -341,6 +348,55 @@ app.whenReady().then(() => {
       return await getCore().subjectMaskPhoto(id, blur, maxDim)
     } catch (e) {
       return null
+    }
+  })
+  ipcMain.handle('core:createAlbum', async (_e, name: string) => {
+    try {
+      return await getCore().createAlbum(name)
+    } catch (e) {
+      return -1
+    }
+  })
+  ipcMain.handle('core:listAlbums', async () => {
+    try {
+      return await getCore().listAlbums()
+    } catch (e) {
+      return []
+    }
+  })
+  ipcMain.handle('core:deleteAlbum', async (_e, id: number) => {
+    try {
+      return await getCore().deleteAlbum(id)
+    } catch (e) {
+      return false
+    }
+  })
+  ipcMain.handle('core:addPhotosToAlbum', async (_e, albumId: number, photoIds: number[]) => {
+    try {
+      return await getCore().addPhotosToAlbum(albumId, photoIds)
+    } catch (e) {
+      return 0
+    }
+  })
+  ipcMain.handle('core:addFolderToAlbum', async (_e, albumId: number, dir: string) => {
+    try {
+      return await getCore().addFolderToAlbum(albumId, dir)
+    } catch (e) {
+      return 0
+    }
+  })
+  ipcMain.handle('core:setAlbumSessionType', async (_e, albumId: number, sessionType: string) => {
+    try {
+      return await getCore().setAlbumSessionType(albumId, sessionType)
+    } catch (e) {
+      return false
+    }
+  })
+  ipcMain.handle('core:albumPhotoIds', async (_e, albumId: number) => {
+    try {
+      return await getCore().albumPhotoIds(albumId)
+    } catch (e) {
+      return []
     }
   })
   ipcMain.handle(

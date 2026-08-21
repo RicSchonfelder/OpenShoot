@@ -17,6 +17,7 @@ pub struct FileMeta {
   pub has_xmp: bool,
   pub preview_available: bool,
   pub indexed_at: String,
+  pub orientation: u16,
 }
 
 const RAIL_EXTENSIONS: &[&str] = &[
@@ -60,6 +61,7 @@ pub fn inspect_file(path: &Path) -> Result<FileMeta, String> {
     has_xmp,
     preview_available: false,
     indexed_at,
+    orientation: 1,
   };
 
   // Try to extract dimensions + camera from EXIF (fast, no full decode).
@@ -255,25 +257,30 @@ fn extract_preview_bytes_sync(path: &Path) -> Result<Vec<u8>, String> {
 }
 
 /// Lê a orientação EXIF (0x0112) de um buffer JPEG/TIFF (1..8).
-fn buffer_orientation(bytes: &[u8]) -> image::metadata::Orientation {
+fn buffer_orientation(bytes: &[u8]) -> u16 {
   let mut cursor = std::io::Cursor::new(bytes);
-  let ori = exif::Reader::new()
+  exif::Reader::new()
     .read_from_container(&mut cursor)
     .ok()
     .and_then(|exif| {
       exif.get_field(exif::Tag::Orientation, exif::In::PRIMARY)
         .and_then(|f| f.value.get_uint(0))
     })
-    .unwrap_or(1);
+    .unwrap_or(1)
+    .clamp(1, 8) as u16
+}
+
+/// Aplica a orientação EXIF (1..8) a uma imagem dinâmica.
+fn apply_exif_orientation(img: image::DynamicImage, ori: u16) -> image::DynamicImage {
   match ori {
-    2 => image::metadata::Orientation::FlipHorizontal,
-    3 => image::metadata::Orientation::Rotate180,
-    4 => image::metadata::Orientation::FlipVertical,
-    5 => image::metadata::Orientation::Rotate90AndFlipHorizontal,
-    6 => image::metadata::Orientation::Rotate90,
-    7 => image::metadata::Orientation::Rotate90AndFlipVertical,
-    8 => image::metadata::Orientation::Rotate270,
-    _ => image::metadata::Orientation::Normal,
+    2 => img.fliph(),
+    3 => img.rotate180(),
+    4 => img.flipv(),
+    5 => img.rotate90().fliph(),
+    6 => img.rotate90(),
+    7 => img.rotate90().flipv(),
+    8 => img.rotate270(),
+    _ => img,
   }
 }
 
@@ -285,7 +292,7 @@ fn thumbnail_from_jpeg(bytes: &[u8], max_dim: u32) -> Result<Vec<u8>, String> {
     .map_err(|e| e.to_string())?
     .decode()
     .map_err(|e| e.to_string())?;
-  let img = img.apply_orientation(ori);
+  let img = apply_exif_orientation(img, ori);
   let thumb = img.thumbnail(max_dim, max_dim);
   let mut out = std::io::Cursor::new(Vec::new());
   thumb

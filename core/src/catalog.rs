@@ -55,6 +55,20 @@ fn ensure_schema(conn: &Connection) -> Result<(), String> {
       recipe TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS albums (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      session_type TEXT DEFAULT '',
+      cover_photo_id INTEGER,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS album_photos (
+      album_id INTEGER NOT NULL,
+      photo_id INTEGER NOT NULL,
+      added_at TEXT NOT NULL,
+      PRIMARY KEY (album_id, photo_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_album_photos_photo ON album_photos(photo_id);
     CREATE INDEX IF NOT EXISTS idx_photos_ext ON photos(ext);
     CREATE INDEX IF NOT EXISTS idx_photos_sha ON photos(sha256);
     CREATE INDEX IF NOT EXISTS idx_photos_taken ON photos(taken_at);
@@ -685,6 +699,126 @@ pub fn learn_profile() -> Result<(String, i64), String> {
   let name = "Perfil aprendido";
   save_preset(name, &recipe_json)?;
   Ok((name.to_string(), photos_used))
+}
+
+// ---------------- Álbuns ----------------
+
+/// Cria um álbum. Retorna o id do novo álbum.
+pub fn create_album(name: &str) -> Result<i64, String> {
+  let conn = open()?;
+  conn
+    .execute(
+      "INSERT INTO albums (name, created_at) VALUES (?1, datetime('now'))",
+      rusqlite::params![name.trim()],
+    )
+    .map_err(|e| e.to_string())?;
+  Ok(conn.last_insert_rowid())
+}
+
+/// Lista álbuns com contagem de fotos e thumbnail (caminho da capa).
+pub fn list_albums() -> Result<Vec<crate::types::Album>, String> {
+  let conn = open()?;
+  let mut stmt = conn
+    .prepare(
+      "SELECT a.id, a.name, a.session_type, a.cover_photo_id, a.created_at,
+              (SELECT COUNT(*) FROM album_photos ap WHERE ap.album_id = a.id) AS cnt,
+              (SELECT p.path FROM album_photos ap JOIN photos p ON p.id = ap.photo_id
+                WHERE ap.album_id = a.id ORDER BY ap.added_at LIMIT 1) AS cover_path
+       FROM albums a ORDER BY a.created_at DESC",
+    )
+    .map_err(|e| e.to_string())?;
+  let rows = stmt
+    .query_map([], |r| {
+      Ok(crate::types::Album {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        session_type: r.get(2).unwrap_or_default(),
+        cover_photo_id: r.get(3).unwrap_or(None),
+        created_at: r.get(4)?,
+        photo_count: r.get(5).unwrap_or(0),
+        cover_path: r.get(6).unwrap_or(None),
+      })
+    })
+    .map_err(|e| e.to_string())?;
+  let mut out = Vec::new();
+  for r in rows {
+    out.push(r.map_err(|e| e.to_string())?);
+  }
+  Ok(out)
+}
+
+/// Remove um álbum e suas associações (não toca nas fotos).
+pub fn delete_album(id: i64) -> Result<bool, String> {
+  let conn = open()?;
+  conn
+    .execute("DELETE FROM album_photos WHERE album_id=?1", [id])
+    .map_err(|e| e.to_string())?;
+  let n = conn
+    .execute("DELETE FROM albums WHERE id=?1", [id])
+    .map_err(|e| e.to_string())?;
+  Ok(n > 0)
+}
+
+/// Associa fotos a um álbum. Recebe ids de fotos já no catálogo.
+pub fn add_photos_to_album(album_id: i64, photo_ids: &[i64]) -> Result<i64, String> {
+  let conn = open()?;
+  let mut added = 0i64;
+  for id in photo_ids {
+    let n = conn
+      .execute(
+        "INSERT OR IGNORE INTO album_photos (album_id, photo_id, added_at)
+         VALUES (?1, ?2, datetime('now'))",
+        rusqlite::params![album_id, id],
+      )
+      .map_err(|e| e.to_string())?;
+    added += n as i64;
+  }
+  Ok(added)
+}
+
+/// Associa fotos de um diretório a um álbum (após importar uma pasta).
+pub fn add_folder_to_album(album_id: i64, dir: &str) -> Result<i64, String> {
+  let conn = open()?;
+  let like = format!("{}%", dir);
+  let mut stmt = conn
+    .prepare("SELECT id FROM photos WHERE path LIKE ?1")
+    .map_err(|e| e.to_string())?;
+  let rows = stmt
+    .query_map(rusqlite::params![like], |r| r.get::<_, i64>(0))
+    .map_err(|e| e.to_string())?;
+  let mut ids: Vec<i64> = Vec::new();
+  for r in rows {
+    ids.push(r.map_err(|e| e.to_string())?);
+  }
+  add_photos_to_album(album_id, &ids)
+}
+
+/// Define o tipo de sessão (gênero) de um álbum.
+pub fn set_album_session_type(album_id: i64, session_type: &str) -> Result<(), String> {
+  let conn = open()?;
+  conn
+    .execute(
+      "UPDATE albums SET session_type=?2 WHERE id=?1",
+      rusqlite::params![album_id, session_type],
+    )
+    .map_err(|e| e.to_string())?;
+  Ok(())
+}
+
+/// Lista os ids de fotos de um álbum (para filtrar a galeria).
+pub fn album_photo_ids(album_id: i64) -> Result<Vec<i64>, String> {
+  let conn = open()?;
+  let mut stmt = conn
+    .prepare("SELECT photo_id FROM album_photos WHERE album_id=?1 ORDER BY added_at")
+    .map_err(|e| e.to_string())?;
+  let rows = stmt
+    .query_map(rusqlite::params![album_id], |r| r.get::<_, i64>(0))
+    .map_err(|e| e.to_string())?;
+  let mut out = Vec::new();
+  for r in rows {
+    out.push(r.map_err(|e| e.to_string())?);
+  }
+  Ok(out)
 }
 
 pub fn scan_folder(

@@ -69,3 +69,15 @@ pub struct Preset {
   pub name: String,
   pub recipe: String,
 }
+
+#[napi(object)]
+#[derive(serde::Serialize)]
+pub struct Album {
+  pub id: i64,
+  pub name: String,
+  pub session_type: String,
+  pub cover_photo_id: Option<i64>,
+  pub created_at: String,
+  pub photo_count: i64,
+  pub cover_path: Option<String>,
+}

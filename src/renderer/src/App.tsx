@@ -4,6 +4,7 @@ import EditPanel from './components/EditPanel'
 import EditViewPhoto from './components/EditViewPhoto'
 import LoupeView from './components/LoupeView'
 import FilterPanel from './components/FilterPanel'
+import HomeView from './components/HomeView'
 import { useT } from './i18n/I18nContext'
 import type { PhotoMeta } from '../../types/photo'
 
@@ -56,6 +57,8 @@ export default function App() {
   const [loupeOpen, setLoupeOpen] = useState(false)
   const [loupeIndex, setLoupeIndex] = useState(0)
   const [editViewId, setEditViewId] = useState<number | null>(null)
+  const [currentAlbum, setCurrentAlbum] = useState<number | null>(null)
+  const [albumPhotoIds, setAlbumPhotoIds] = useState<Set<number> | null>(null)
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>('none')
   const [moreOpen, setMoreOpen] = useState(false)
   const moreRef = useRef<HTMLDivElement | null>(null)
@@ -78,19 +81,41 @@ export default function App() {
     async (f: Filter = filter) => {
       try {
         const list = await window.openshoot.listPhotos('', f, 0, PAGE_SIZE)
-        setPhotos(list.photos)
+        // Se estiver num álbum, filtra pelas fotos do álbum.
+        if (currentAlbum != null && albumPhotoIds) {
+          const inAlbum = list.photos.filter((p) => albumPhotoIds.has(p.id))
+          setPhotos(inAlbum)
+        } else {
+          setPhotos(list.photos)
+        }
         setSelectedIds(new Set())
         setAnchorId(null)
       } catch (e) {
         setError(String(e))
       }
     },
-    [filter]
+    [filter, currentAlbum, albumPhotoIds]
   )
 
   useEffect(() => {
     loadPhotos()
   }, [loadPhotos, filter])
+
+  // Abre um álbum: carrega os ids e volta para a galeria filtrada.
+  const openAlbum = useCallback(async (albumId: number) => {
+    const ids = await window.openshoot.albumPhotoIds(albumId)
+    setAlbumPhotoIds(new Set(ids))
+    setCurrentAlbum(albumId)
+    setEditViewId(null)
+  }, [])
+
+  const closeAlbum = useCallback(() => {
+    setCurrentAlbum(null)
+    setAlbumPhotoIds(null)
+    setSelectedIds(new Set())
+    setAnchorId(null)
+    loadPhotos()
+  }, [loadPhotos])
 
   const selectedPhoto = photos.find((p) => p.id === anchorId) ?? null
 
@@ -330,6 +355,12 @@ export default function App() {
         if (opts.sessionType) {
           await window.openshoot.setSessionType(opts.dir, opts.sessionType)
         }
+        // Se está num álbum, associa as fotos importadas ao álbum.
+        if (currentAlbum != null) {
+          await window.openshoot.addFolderToAlbum(currentAlbum, opts.dir)
+          const ids = await window.openshoot.albumPhotoIds(currentAlbum)
+          setAlbumPhotoIds(new Set(ids))
+        }
         setScanMsg(
           t('app.scanMsg', {
             dir: opts.dir,
@@ -347,7 +378,7 @@ export default function App() {
         setScanProgress(null)
       }
     },
-    [loadPhotos, t]
+    [loadPhotos, t, currentAlbum]
   )
 
   const runCull = useCallback(async () => {
@@ -532,6 +563,11 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [editViewId])
 
+  // Tela Lar (álbuns) quando não há álbum aberto.
+  if (currentAlbum == null) {
+    return <HomeView onOpenAlbum={openAlbum} />
+  }
+
   if (loupeOpen) {
     return (
       <LoupeView
@@ -577,6 +613,9 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <span className="logo">OpenShoot</span>
+        <button onClick={closeAlbum} className="ghost back-albums">
+          ← {t('app.meusAlbums')}
+        </button>
         <div className="topbar-filters">
           {MAIN_FILTERS.map((f) => (
             <button

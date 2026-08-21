@@ -46,6 +46,7 @@
   "app.filtrosTitulo": "Filtros de seleção",
   "app.voltarGaleria": "← Voltar à galeria",
   "app.editViewShortcuts": "<b>Esc</b> ou <b>←</b> voltar · <b>←→</b> foto anterior/próxima",
+  "app.meusAlbums": "Meus Álbuns",
   "app.importProgress": "Importando… {processed}/{total} arquivos",
   "app.scanErrors": "{n} erro(s) ao importar",
   "app.shortcuts": "<b>P</b> pick · <b>X</b> reject · <b>U</b> limpar · <b>1-5</b> ★ · <b>←→↑↓</b> navegar · <b>Shift</b> intervalo · <b>⌘</b> múltiplos · <b>Del</b> lixeira · <b>↵</b> loupe",
@@ -145,5 +146,12 @@
   "import.sports": "Esportes",
   "import.event": "Eventos",
   "import.boudoir": "Boudoir",
-  "import.other": "Algo diferente"
+  "import.other": "Algo diferente",
+  "home.novoAlbum": "Criar álbum",
+  "home.criarAlbum": "Criar novo álbum",
+  "home.nomeAlbum": "Nome do álbum…",
+  "home.criar": "Criar",
+  "home.semAlbuns": "Nenhum álbum ainda",
+  "home.semAlbunsHint": "Crie um álbum para organizar suas sessões de fotos.",
+  "home.deletarAlbum": "Excluir álbum"
 }
