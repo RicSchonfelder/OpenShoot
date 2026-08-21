@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 
 use rusqlite::{Connection, OptionalExtension};
 
-use crate::types::{PhotoList, PhotoMeta, ScanResult};
+use crate::types::{DuplicateGroup, PhotoList, PhotoMeta, ScanResult};
 
 static DB_PATH: OnceLock<PathBuf> = OnceLock::new();
 
@@ -78,6 +78,18 @@ fn ensure_schema(conn: &Connection) -> Result<(), String> {
   if !has_edit {
     conn
       .execute("ALTER TABLE photos ADD COLUMN edit_json TEXT", [])
+      .map_err(|e| e.to_string())?;
+  }
+  let has_face: bool = conn
+    .query_row(
+      "SELECT COUNT(*) FROM pragma_table_info('photos') WHERE name='has_face'",
+      [],
+      |r| Ok(r.get::<_, i64>(0)? != 0),
+    )
+    .map_err(|e| e.to_string())?;
+  if !has_face {
+    conn
+      .execute("ALTER TABLE photos ADD COLUMN has_face INTEGER DEFAULT 0", [])
       .map_err(|e| e.to_string())?;
   }
   Ok(())
@@ -164,12 +176,13 @@ fn row_to_photo(row: &rusqlite::Row) -> rusqlite::Result<PhotoMeta> {
     has_xmp: row.get::<_, i64>(10).unwrap_or(0) != 0,
     preview_available: row.get::<_, i64>(11).unwrap_or(0) != 0,
     cull_score: row.get(12).unwrap_or(None),
-    hash: String::new(),
+    hash: row.get::<_, String>(13).unwrap_or_default(),
   })
 }
 
 /// Lista fotos com paginação, busca e filtro de rating.
-/// filter: "all" | "picks" (>=4) | "rejects" (<=1, >0) | "unrated" (==0)
+/// filter: "all" | "picks" (>=4) | "rejects" (<=1, >0) | "unrated" (==0) |
+///         "duplicates" (sha256 repetido) | "faces" (fotos com rosto)
 pub fn list_photos(
   search: &str,
   filter: &str,
@@ -183,7 +196,7 @@ pub fn list_photos(
   let mut params: Vec<rusqlite::types::Value> = Vec::new();
   if !search.trim().is_empty() {
     let like = format!("%{}%", search.trim());
-    conds.push("(file_name LIKE ? || camera LIKE ?)".to_string());
+    conds.push("(file_name LIKE ? OR camera LIKE ?)".to_string());
     params.push(rusqlite::types::Value::Text(like.clone()));
     params.push(rusqlite::types::Value::Text(like));
   }
@@ -196,6 +209,16 @@ pub fn list_photos(
     }
     "unrated" => {
       conds.push("rating = 0".to_string());
+    }
+    "duplicates" => {
+      // Fotos cujo sha256 aparece em mais de um registro (duplicatas/semelhantes).
+      conds.push(
+        "sha256 IN (SELECT sha256 FROM photos WHERE sha256 <> '' GROUP BY sha256 HAVING COUNT(*) > 1)"
+          .to_string(),
+      );
+    }
+    "faces" => {
+      conds.push("has_face = 1".to_string());
     }
     _ => {}
   }
@@ -219,7 +242,7 @@ pub fn list_photos(
 
   // SELECT com paginação. Parâmetros de busca/filtro vêm antes de LIMIT/OFFSET.
   let list_sql = format!(
-    "SELECT id, path, file_name, ext, file_size, width, height, camera, taken_at, rating, has_xmp, preview_available, cull_score
+    "SELECT id, path, file_name, ext, file_size, width, height, camera, taken_at, rating, has_xmp, preview_available, cull_score, sha256
      FROM photos {} ORDER BY rating DESC, cull_score DESC, id DESC LIMIT ? OFFSET ?",
     where_clause
   );
@@ -297,6 +320,91 @@ pub fn set_photo_rating(id: i64, rating: i64, cull_score: f64) -> Result<(), Str
     rusqlite::params![id, rating, cull_score],
   )
   .map_err(|e| e.to_string())?;
+  Ok(())
+}
+
+/// Define apenas o rating (manual, via atalho de teclado). Não mexe no score.
+pub fn set_photo_rating_manual(id: i64, rating: i64) -> Result<(), String> {
+  let conn = open()?;
+  conn
+    .execute(
+      "UPDATE photos SET rating=?2 WHERE id=?1",
+      rusqlite::params![id, rating.clamp(0, 5)],
+    )
+    .map_err(|e| e.to_string())?;
+  Ok(())
+}
+
+/// Registra se a foto tem rosto detectado (filtro "faces").
+pub fn set_photo_has_face(id: i64, has_face: bool) -> Result<(), String> {
+  let conn = open()?;
+  conn
+    .execute(
+      "UPDATE photos SET has_face=?2 WHERE id=?1",
+      rusqlite::params![id, if has_face { 1 } else { 0 }],
+    )
+    .map_err(|e| e.to_string())?;
+  Ok(())
+}
+
+/// Agrupa fotos duplicadas por sha256. Retorna lista de grupos (2+ fotos).
+pub fn find_duplicates() -> Result<Vec<DuplicateGroup>, String> {
+  let conn = open()?;
+  let mut stmt = conn
+    .prepare(
+      "SELECT sha256, id, file_name, path
+       FROM photos
+       WHERE sha256 IN (
+         SELECT sha256 FROM photos WHERE sha256 <> '' GROUP BY sha256 HAVING COUNT(*) > 1
+       )
+       ORDER BY sha256, id",
+    )
+    .map_err(|e| e.to_string())?;
+  let mut groups: Vec<DuplicateGroup> = Vec::new();
+  let mut current: Option<DuplicateGroup> = None;
+  let rows = stmt
+    .query_map([], |row| {
+      Ok((
+        row.get::<_, String>(0)?,
+        row.get::<_, i64>(1)?,
+        row.get::<_, String>(2)?,
+        row.get::<_, String>(3)?,
+      ))
+    })
+    .map_err(|e| e.to_string())?;
+  for row in rows {
+    let (hash, id, file_name, path) = row.map_err(|e| e.to_string())?;
+    match &mut current {
+      Some(g) if g.hash == hash => g.photo_ids.push(id),
+      _ => {
+        if let Some(g) = current.take() {
+          if g.photo_ids.len() > 1 {
+            groups.push(g);
+          }
+        }
+        current = Some(DuplicateGroup {
+          hash,
+          photo_ids: vec![id],
+          photo_names: vec![file_name],
+          photo_paths: vec![path],
+        });
+      }
+    }
+  }
+  if let Some(g) = current {
+    if g.photo_ids.len() > 1 {
+      groups.push(g);
+    }
+  }
+  Ok(groups)
+}
+
+/// Remove uma foto do catálogo (não apaga o arquivo — o chamador decide).
+pub fn remove_photo(id: i64) -> Result<(), String> {
+  let conn = open()?;
+  conn
+    .execute("DELETE FROM photos WHERE id=?1", [id])
+    .map_err(|e| e.to_string())?;
   Ok(())
 }
 

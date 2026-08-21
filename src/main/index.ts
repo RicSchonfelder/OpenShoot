@@ -172,6 +172,60 @@ app.whenReady().then(() => {
     }
   })
 
+  // ---- Fase 6 + UX ----
+  ipcMain.handle('core:generateCaption', async (_e, id: number) => {
+    try {
+      return await getCore().generateCaption(id)
+    } catch (e) {
+      return JSON.stringify({ error: String(e) })
+    }
+  })
+  ipcMain.handle('core:setRating', (_e, id: number, rating: number) => {
+    try {
+      return getCore().setRating(id, rating)
+    } catch (e) {
+      return { error: String(e) }
+    }
+  })
+  ipcMain.handle('core:deletePhoto', async (_e, id: number) => {
+    try {
+      return await getCore().deletePhoto(id)
+    } catch (e) {
+      return false
+    }
+  })
+  ipcMain.handle('core:removePhotoFromCatalog', async (_e, id: number) => {
+    try {
+      return await getCore().removePhotoFromCatalog(id)
+    } catch (e) {
+      return false
+    }
+  })
+  ipcMain.handle('core:findDuplicates', async () => {
+    try {
+      return await getCore().findDuplicates()
+    } catch (e) {
+      return []
+    }
+  })
+  ipcMain.handle(
+    'core:scanFolderProgress',
+    async (_event, dir: string, onProgress: (p: any) => void) => {
+      try {
+        return await getCore().scanFolderProgress(dir, onProgress)
+      } catch (e) {
+        return JSON.stringify({ error: String(e), scanned: 0, added: 0, updated: 0 })
+      }
+    }
+  )
+  ipcMain.handle('core:clearThumbCache', () => {
+    try {
+      return getCore().clearThumbCache()
+    } catch (e) {
+      return 0
+    }
+  })
+
   createWindow()
 
   app.on('activate', () => {

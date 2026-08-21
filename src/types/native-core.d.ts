@@ -56,4 +56,14 @@ declare module '*.node' {
   export function retouchSkinPhoto(id: number, intensity: number, maxDim: number): Promise<string | null>
   export function applyRetouch(id: number, intensity: number, maxDim: number): Promise<string | null>
   export function inpaintPhoto(id: number, maskRect: number[], maxDim: number): Promise<string | null>
+  export function generateCaption(id: number): Promise<string>
+  export function setRating(id: number, rating: number): void
+  export function deletePhoto(id: number): boolean
+  export function removePhotoFromCatalog(id: number): boolean
+  export function findDuplicates(): Array<{ hash: string; photo_ids: number[]; photo_names: string[]; photo_paths: string[] }>
+  export function scanFolderProgress(
+    dir: string,
+    onProgress: (p: { processed: number; total: number; currentFile: string }) => void
+  ): Promise<string>
+  export function clearThumbCache(): number
 }

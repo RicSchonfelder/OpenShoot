@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PhotoMeta } from '../../../types/photo'
+import { useT } from '../i18n/I18nContext'
 
 export interface EditValues {
   exposure: number | null
@@ -25,7 +26,7 @@ const EMPTY: EditValues = {
 
 interface SliderDef {
   key: keyof EditValues
-  label: string
+  labelKey: string
   min: number
   max: number
   step: number
@@ -33,14 +34,14 @@ interface SliderDef {
 }
 
 const SLIDERS: SliderDef[] = [
-  { key: 'exposure', label: 'Exposição', min: -3, max: 3, step: 0.05, unit: 'EV' },
-  { key: 'temperature', label: 'Temperatura', min: 2000, max: 12000, step: 50, unit: 'K' },
-  { key: 'tint', label: 'Tint', min: -100, max: 100, step: 1, unit: '' },
-  { key: 'contrast', label: 'Contraste', min: -100, max: 100, step: 1, unit: '' },
-  { key: 'saturation', label: 'Saturação', min: -100, max: 100, step: 1, unit: '' },
-  { key: 'shadows', label: 'Sombras', min: -100, max: 100, step: 1, unit: '' },
-  { key: 'highlights', label: 'Realces', min: -100, max: 100, step: 1, unit: '' },
-  { key: 'brightness', label: 'Brilho', min: -100, max: 100, step: 1, unit: '' }
+  { key: 'exposure', labelKey: 'edit.exposicao', min: -3, max: 3, step: 0.05, unit: 'EV' },
+  { key: 'temperature', labelKey: 'edit.temperatura', min: 2000, max: 12000, step: 50, unit: 'K' },
+  { key: 'tint', labelKey: 'edit.tint', min: -100, max: 100, step: 1, unit: '' },
+  { key: 'contrast', labelKey: 'edit.contraste', min: -100, max: 100, step: 1, unit: '' },
+  { key: 'saturation', labelKey: 'edit.saturacao', min: -100, max: 100, step: 1, unit: '' },
+  { key: 'shadows', labelKey: 'edit.sombras', min: -100, max: 100, step: 1, unit: '' },
+  { key: 'highlights', labelKey: 'edit.realces', min: -100, max: 100, step: 1, unit: '' },
+  { key: 'brightness', labelKey: 'edit.brilho', min: -100, max: 100, step: 1, unit: '' }
 ]
 
 function toJson(values: EditValues): string {
@@ -60,6 +61,7 @@ interface EditPanelProps {
 }
 
 export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
+  const { t } = useT()
   const [values, setValues] = useState<EditValues>(EMPTY)
   const [skinIntensity, setSkinIntensity] = useState(0)
   const [preview, setPreview] = useState<string | null>(null)
@@ -138,20 +140,22 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
   if (!photo) {
     return (
       <aside className="edit-panel">
-        <h3>Edição</h3>
-        <p className="edit-hint">Selecione uma foto para editar.</p>
+        <h3>{t('edit.titulo')}</h3>
+        <p className="edit-hint">{t('edit.hint')}</p>
       </aside>
     )
   }
 
   return (
     <aside className="edit-panel">
-      <h3>Edição — {photo.fileName}</h3>
+      <h3>{t('edit.tituloFoto', { name: photo.fileName })}</h3>
       <div className="edit-preview">
         {preview ? (
           <img src={preview} alt="preview editado" />
         ) : (
-          <div className="edit-preview-empty">{busy ? 'Processando…' : 'Ajuste os controles'}</div>
+          <div className="edit-preview-empty">
+            {busy ? t('edit.processando') : t('edit.ajusteControles')}
+          </div>
         )}
       </div>
       <div className="edit-sliders">
@@ -161,7 +165,7 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
           return (
             <label key={s.key} className="edit-slider">
               <span>
-                {s.label}
+                {t(s.labelKey)}
                 <em>
                   {v}
                   {s.unit}
@@ -181,10 +185,10 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
       </div>
 
       <div className="edit-retouch">
-        <h4>Retoque</h4>
+        <h4>{t('edit.retoque')}</h4>
         <label className="edit-slider">
           <span>
-            Suavização de pele
+            {t('edit.suavizacaoPele')}
             <em>{Math.round(skinIntensity * 100)}%</em>
           </span>
           <input
@@ -211,10 +215,10 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
       </div>
 
       <button onClick={applyCurrent} disabled={busy}>
-        Aplicar em lote
+        {t('edit.aplicarLote')}
       </button>
       <button onClick={removeDistraction} disabled={busy} className="ghost full">
-        Remover distração (centro)
+        {t('edit.removerDistracao')}
       </button>
     </aside>
   )

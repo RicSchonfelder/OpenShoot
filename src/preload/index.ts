@@ -41,7 +41,24 @@ const api = {
   applyRetouch: (id: number, intensity: number, maxDim: number): Promise<string | null> =>
     ipcRenderer.invoke('core:applyRetouch', id, intensity, maxDim),
   inpaintPhoto: (id: number, maskRect: number[], maxDim: number): Promise<string | null> =>
-    ipcRenderer.invoke('core:inpaintPhoto', id, maskRect, maxDim)
+    ipcRenderer.invoke('core:inpaintPhoto', id, maskRect, maxDim),
+  // Fase 6 + UX
+  generateCaption: (id: number): Promise<string> =>
+    ipcRenderer.invoke('core:generateCaption', id),
+  setRating: (id: number, rating: number): Promise<void> =>
+    ipcRenderer.invoke('core:setRating', id, rating),
+  deletePhoto: (id: number): Promise<boolean> =>
+    ipcRenderer.invoke('core:deletePhoto', id),
+  removePhotoFromCatalog: (id: number): Promise<boolean> =>
+    ipcRenderer.invoke('core:removePhotoFromCatalog', id),
+  findDuplicates: (): Promise<Array<{ hash: string; photo_ids: number[]; photo_names: string[]; photo_paths: string[] }>> =>
+    ipcRenderer.invoke('core:findDuplicates'),
+  scanFolderProgress: (
+    dir: string,
+    onProgress: (p: { processed: number; total: number; currentFile: string }) => void
+  ): Promise<string> =>
+    ipcRenderer.invoke('core:scanFolderProgress', dir, onProgress),
+  clearThumbCache: (): Promise<number> => ipcRenderer.invoke('core:clearThumbCache')
 }
 
 contextBridge.exposeInMainWorld('openshoot', api)

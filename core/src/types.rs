@@ -35,3 +35,12 @@ pub struct PhotoList {
   pub photos: Vec<PhotoMeta>,
   pub total: i64,
 }
+
+#[napi(object)]
+#[derive(serde::Serialize)]
+pub struct DuplicateGroup {
+  pub hash: String,
+  pub photo_ids: Vec<i64>,
+  pub photo_names: Vec<String>,
+  pub photo_paths: Vec<String>,
+}

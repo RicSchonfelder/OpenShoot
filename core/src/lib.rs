@@ -16,7 +16,7 @@ use napi::bindgen_prelude::*;
 use rayon::prelude::*;
 use std::path::PathBuf;
 
-use types::{PhotoList, PhotoMeta, ScanResult};
+use types::{DuplicateGroup, PhotoList, PhotoMeta, ScanResult};
 
 /// Inicializa o core: diretório de dados + catálogo SQLite.
 /// data_dir: caminho absoluto. Retorna o caminho do banco criado.
@@ -78,15 +78,27 @@ pub fn get_photo(id: i64) -> Result<Option<PhotoMeta>> {
   catalog::get_photo(id).map_err(|e| Error::from_reason(e))
 }
 
+/// Agrupa fotos duplicadas por sha256 (2+ por grupo).
+#[napi]
+pub fn find_duplicates() -> Result<Vec<DuplicateGroup>> {
+  catalog::find_duplicates().map_err(|e| Error::from_reason(e))
+}
+
 /// Total de fotos no catálogo.
 #[napi]
 pub fn photo_count() -> Result<i64> {
   catalog::count_photos().map_err(|e| Error::from_reason(e))
 }
 
+/// Diretório de cache de thumbnails (liberável — pode apagar para liberar espaço).
+fn thumb_cache_dir() -> PathBuf {
+  dirs::home_dir()
+    .unwrap_or_else(|| PathBuf::from("."))
+    .join("Library/Caches/OpenShoot/thumbs")
+}
+
 /// Gera um thumbnail JPEG (base64 data-uri) para uma foto do catálogo por id.
-/// Async para não travar o event-loop; uses tokio + rayon-style thread pool via
-/// napi-rs async. max_dim default 256.
+/// Com cache em disco (~/Library/Caches/OpenShoot/thumbs) para não re-decodificar.
 #[napi]
 pub async fn thumb_for_photo(id: i64, max_dim: u32) -> Result<Option<String>> {
   let photo = match catalog::get_photo(id) {
@@ -95,11 +107,30 @@ pub async fn thumb_for_photo(id: i64, max_dim: u32) -> Result<Option<String>> {
     Err(e) => return Err(Error::from_reason(e)),
   };
   let path = PathBuf::from(&photo.path);
-  // Run blocking decode off the async thread.
   let dim = if max_dim == 0 { 256 } else { max_dim };
-  tokio::task::spawn_blocking(move || imageproc::thumbnail_base64(&path, dim).ok())
+
+  // Cache em disco: <cache_dir>/<id>.jpg (base64 data-uri).
+  let cache_dir = thumb_cache_dir();
+  let cache_file = cache_dir.join(format!("{id}.jpg"));
+  if let Ok(text) = std::fs::read_to_string(&cache_file) {
+    if text.starts_with("data:image/jpeg;base64,") {
+      return Ok(Some(text));
+    }
+  }
+
+  // Gera e salva no cache.
+  let gen = tokio::task::spawn_blocking(move || imageproc::thumbnail_base64(&path, dim).ok())
     .await
-    .map_err(|e| Error::from_reason(e.to_string()))
+    .map_err(|e| Error::from_reason(e.to_string()))?;
+
+  if let Some(base64) = &gen {
+    if let Err(e) = std::fs::create_dir_all(&cache_dir) {
+      crate::catalog::log_debug(&format!("[cache] erro criar dir: {e}"));
+    } else if let Err(e) = std::fs::write(&cache_file, base64) {
+      crate::catalog::log_debug(&format!("[cache] erro gravar: {e}"));
+    }
+  }
+  Ok(gen)
 }
 
 /// Gera thumbnail a partir de um caminho absoluto (independente do catálogo).
@@ -134,10 +165,19 @@ pub async fn cull_photos() -> Result<CullSummary> {
     crate::catalog::log_debug("[cull] ML indisponivel, usando heuristica apenas");
   }
 
-  let results: Vec<(i64, std::result::Result<f64, String>)> = paths
+  let results: Vec<(i64, bool, std::result::Result<f64, String>)> = paths
     .into_par_iter()
-    .map(|p: catalog::PhotoPath| -> (i64, std::result::Result<f64, String>) {
+    .map(|p: catalog::PhotoPath| -> (i64, bool, std::result::Result<f64, String>) {
       let path = PathBuf::from(&p.path);
+      // Detecção de rosto (SCRFD) para preencher has_face (usado no filtro "faces").
+      let has_face = if ml_ok {
+        ml::load_rgb(&path, 640)
+          .and_then(|(rgb, w, h)| ml::detect_faces(&rgb, w, h, 0.5))
+          .map(|faces| !faces.is_empty())
+          .unwrap_or(false)
+      } else {
+        false
+      };
       let score = if ml_ok {
         // IA: heurística + ML combinados
         let heur = culling::heuristic_score(&path, 320);
@@ -154,7 +194,7 @@ pub async fn cull_photos() -> Result<CullSummary> {
       } else {
         culling::heuristic_score(&path, 320)
       };
-      (p.id, score)
+      (p.id, has_face, score)
     })
     .collect();
 
@@ -162,7 +202,11 @@ pub async fn cull_photos() -> Result<CullSummary> {
   let mut errors = 0;
   let mut sum = 0.0;
   let mut scores: Vec<(i64, f64)> = Vec::new();
-  for (id, r) in results {
+  for (id, has_face, r) in results {
+    // Persiste has_face independentemente do score.
+    if let Err(e) = catalog::set_photo_has_face(id, has_face) {
+      crate::catalog::log_debug(&format!("falha ao salvar has_face {}: {e}", id));
+    }
     match r {
       Ok(s) => {
         processed += 1;
@@ -440,6 +484,188 @@ pub async fn generate_caption(id: i64) -> Result<String> {
   .to_string())
 }
 
+// ---------------- UX: atalhos de teclado / rating manual / deletar ----------------
+
+/// Define o rating manual de uma foto (via atalho de teclado P/X/1-5).
+#[napi]
+pub fn set_rating(id: i64, rating: i64) -> Result<()> {
+  catalog::set_photo_rating_manual(id, rating).map_err(Error::from_reason)
+}
+
+/// Move uma foto para a LIXEIRA do sistema (não-destrutivo) e remove do catálogo.
+/// Retorna true se moveu, false se a foto não existia.
+/// Move um arquivo para a Lixeira do macOS sem disparar permissão de Automação
+/// do Finder. Usa a pasta ~/.Trash diretamente (100% nativo, sem AppleScript).
+/// Retorna o destino ou erro.
+fn move_to_trash(src: &std::path::Path) -> std::result::Result<(), String> {
+  let trash_dir = dirs::home_dir()
+    .ok_or_else(|| "sem home dir".to_string())?
+    .join(".Trash");
+  std::fs::create_dir_all(&trash_dir).map_err(|e| e.to_string())?;
+  let name = src
+    .file_name()
+    .ok_or_else(|| "arquivo sem nome".to_string())?
+    .to_string_lossy()
+    .to_string();
+  // Nome único na Lixeira (evita sobrescrever).
+  let mut dest = trash_dir.join(&name);
+  if dest.exists() {
+    let stem = src.file_stem().unwrap_or_default().to_string_lossy().to_string();
+    let ext = src.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
+    let mut i = 1;
+    loop {
+      let candidate = if ext.is_empty() {
+        trash_dir.join(format!("{stem} ({i})"))
+      } else {
+        trash_dir.join(format!("{stem} ({i}).{ext}"))
+      };
+      if !candidate.exists() {
+        dest = candidate;
+        break;
+      }
+      i += 1;
+    }
+  }
+  std::fs::rename(src, &dest).map_err(|e| format!("falha ao mover p/ lixeira: {e}"))?;
+  Ok(())
+}
+
+#[napi]
+pub fn delete_photo(id: i64) -> Result<bool> {
+  let photo = match catalog::get_photo(id) {
+    Ok(Some(p)) => p,
+    Ok(None) => return Ok(false),
+    Err(e) => return Err(Error::from_reason(e)),
+  };
+  let path = PathBuf::from(&photo.path);
+  // Move para a lixeira do sistema (sem permissão Finder).
+  move_to_trash(&path).map_err(Error::from_reason)?;
+  // Remove do cache de thumbnails em disco.
+  let _ = std::fs::remove_file(thumb_cache_dir().join(format!("{id}.jpg")));
+  // Se havia sidecar XMP, move junto.
+  let xmp_path = path.with_extension("xmp");
+  if xmp_path.exists() {
+    let _ = move_to_trash(&xmp_path);
+  }
+  catalog::remove_photo(id).map_err(Error::from_reason)?;
+  Ok(true)
+}
+
+/// Remove todos os thumbnails em cache do disco (libera espaço).
+/// Retorna quantos arquivos foram removidos.
+#[napi]
+pub fn clear_thumb_cache() -> Result<i64> {
+  let dir = thumb_cache_dir();
+  if !dir.exists() {
+    return Ok(0);
+  }
+  let mut removed = 0i64;
+  if let Ok(entries) = std::fs::read_dir(&dir) {
+    for e in entries.flatten() {
+      let p = e.path();
+      if p.is_file() {
+        if std::fs::remove_file(&p).is_ok() {
+          removed += 1;
+        }
+      }
+    }
+  }
+  Ok(removed)
+}
+
+/// Remove uma foto APENAS do catálogo do OpenShoot — o arquivo original
+/// permanece intocado no disco. Retorna true se removida, false se não existia.
+#[napi]
+pub fn remove_photo_from_catalog(id: i64) -> Result<bool> {
+  // Verifica se existe antes de remover.
+  match catalog::get_photo(id) {
+    Ok(Some(_)) => {}
+    Ok(None) => return Ok(false),
+    Err(e) => return Err(Error::from_reason(e)),
+  }
+  // Remove do catálogo e do cache de thumbnails (sem tocar no arquivo).
+  let _ = std::fs::remove_file(thumb_cache_dir().join(format!("{id}.jpg")));
+  catalog::remove_photo(id).map_err(Error::from_reason)?;
+  Ok(true)
+}
+
+/// Progresso de varredura emitido ao callback.
+#[napi(object)]
+pub struct ScanProgress {
+  pub processed: i64,
+  pub total: i64,
+  pub current_file: String,
+}
+
+/// Varre uma pasta recursivamente emitindo progresso ao callback (async).
+/// callback recebe { processed, total, current_file }.
+#[napi]
+pub async fn scan_folder_progress(
+  dir: String,
+  callback: napi::threadsafe_function::ThreadsafeFunction<
+    ScanProgress,
+    napi::threadsafe_function::ErrorStrategy::Fatal,
+  >,
+) -> Result<String> {
+  // Coleta os caminhos primeiro (rápido) para ter o total.
+  let paths: Vec<std::path::PathBuf> = walkdir::WalkDir::new(&dir)
+    .follow_links(false)
+    .into_iter()
+    .filter_map(|e| e.ok())
+    .filter(|e| e.file_type().is_file())
+    .map(|e| e.path().to_path_buf())
+    .filter(|p| crate::imageproc::is_photo_path(p))
+    .collect();
+  let total = paths.len() as i64;
+
+  let conn = catalog::open().map_err(Error::from_reason)?;
+  let mut result = crate::types::ScanResult {
+    scanned: 0,
+    added: 0,
+    updated: 0,
+    skipped: 0,
+    errors: Vec::new(),
+  };
+
+  for (i, path) in paths.into_iter().enumerate() {
+    result.scanned += 1;
+    let file_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+    match crate::imageproc::inspect_file(&path) {
+      Ok(meta) => {
+        let is_new = catalog::upsert_scan_photo(&conn, &meta).unwrap_or(false);
+        if is_new {
+          result.added += 1;
+        } else {
+          result.updated += 1;
+        }
+      }
+      Err(e) => {
+        result.errors.push(format!("{}: {}", path.display(), e));
+      }
+    }
+    // Emite progresso (a cada arquivo).
+    let prog = ScanProgress {
+      processed: (i + 1) as i64,
+      total,
+      current_file: file_name,
+    };
+    let _ = callback.call(
+      prog,
+      napi::threadsafe_function::ThreadsafeFunctionCallMode::NonBlocking,
+    );
+  }
+
+  let summary = serde_json::json!({
+    "scanned": result.scanned,
+    "added": result.added,
+    "updated": result.updated,
+    "skipped": result.skipped,
+    "errors": result.errors.len(),
+  })
+  .to_string();
+  Ok(summary)
+}
+
 #[cfg(test)]
 mod tests {
   #[test]
@@ -464,5 +690,34 @@ mod tests {
     assert!(super::imageproc::is_photo_path(std::path::Path::new("a.jpg")));
     assert!(super::imageproc::is_photo_path(std::path::Path::new("a.CR3")));
     assert!(!super::imageproc::is_photo_path(std::path::Path::new("a.txt")));
+  }
+
+  #[test]
+  fn duplicates_grouped_by_sha256() {
+    let dir = std::env::temp_dir().join(format!("openshoot_test_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).ok();
+    super::catalog::init(dir.to_str().unwrap()).expect("init catalog");
+    let conn = super::catalog::open().expect("open catalog");
+    // Duas fotos com o MESMO sha256 e uma única.
+    let sql = "INSERT INTO photos (path, file_name, ext, file_size, sha256, indexed_at)
+               VALUES (?1, ?2, 'jpg', 100, ?3, datetime('now'))";
+    conn
+      .execute(sql, rusqlite::params!["/tmp/dup_a.jpg", "dup_a.jpg", "AAAA"])
+      .unwrap();
+    conn
+      .execute(sql, rusqlite::params!["/tmp/dup_b.jpg", "dup_b.jpg", "AAAA"])
+      .unwrap();
+    conn
+      .execute(sql, rusqlite::params!["/tmp/uniq.jpg", "uniq.jpg", "BBBB"])
+      .unwrap();
+    let groups = super::catalog::find_duplicates().expect("find_duplicates");
+    assert_eq!(groups.len(), 1, "deve haver 1 grupo de duplicatas");
+    assert_eq!(groups[0].photo_ids.len(), 2, "grupo com 2 fotos");
+    assert_eq!(groups[0].hash, "AAAA");
+    // Filtro "duplicates" deve retornar apenas as 2 duplicatas.
+    let list = super::catalog::list_photos("", "duplicates", 0, 100).expect("list duplicates");
+    assert_eq!(list.total, 2);
+    // Limpeza.
+    let _ = std::fs::remove_dir_all(&dir);
   }
 }
