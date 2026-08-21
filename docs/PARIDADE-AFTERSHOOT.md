@@ -69,8 +69,8 @@
 | Remover distração (inpainting) | difusão, bbox central | ✅ |
 | **Patch com seleção por arrasto** | arrasto no loupe + overlay | ✅ |
 | **Sliders faciais** (acne, olhos, dentes, cabelo) | `retouch_face_region` + NAPI | ✅ |
-| **Mostrar moldura do rosto** | ⬜ overlay de landmarks |
-| **Modos SUJEITO/FUNDO/PATCH** | ⬜ segmentação sujeito |
+| **Mostrar moldura do rosto** | ✅ toggle no loupe (overlay de bbox SCRFD) |
+| **Modos SUJEITO/FUNDO/PATCH** | ✅ máscara de sujeito (face+pele nítido, fundo desfocado) |
 
 ## Tranche E — Perfis de IA (o mais pesado)
 
@@ -78,8 +78,8 @@
 |---|---|---|
 | Perfil Profissional (treinar com 2.500 fotos editadas LR/C1) | ✅ v1: **Aprender perfil** (média dos parâmetros de edição das fotos → preset "Perfil aprendido") |
 | Perfil Instantâneo (preset Lightroom) | ✅ **Importar preset LR** (.xmp crs: / .lrtemplate → receita) |
+| **Mercado de perfis** | ✅ exportar/importar estilo como JSON (estilos compartilháveis) |
 | Regras (um tipo de arquivo/cor/catálogo por perfil) | ⬜ metadados do perfil |
-| Mercado de perfis | ⬜ pasta local de estilos compartilháveis |
 
 ---
 
