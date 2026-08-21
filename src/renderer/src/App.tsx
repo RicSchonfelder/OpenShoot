@@ -352,6 +352,41 @@ export default function App() {
     }
   }, [loadPhotos, t, targetPicks])
 
+  const runOneClick = useCallback(async () => {
+    setError(null)
+    setScanMsg(null)
+    setCulling(true)
+    try {
+      // 1) Cull com meta (se definida) — seleção automática.
+      const res = await window.openshoot.cullPhotos(targetPicks > 0 ? targetPicks : undefined)
+      if ('error' in res) {
+        setError(String(res.error))
+        return
+      }
+      // 2) Aplica um preset (se houver um selecionado).
+      const presets = await window.openshoot.listPresets()
+      if (presets.length > 0) {
+        const applied = await window.openshoot.applyEditAll(presets[0].recipe)
+        let n = 0
+        try {
+          n = JSON.parse(applied).applied ?? 0
+        } catch {
+          /* ignore */
+        }
+        setScanMsg(
+          t('app.oneClickMsg', { picks: res.picks, editadas: n, preset: presets[0].name })
+        )
+      } else {
+        setScanMsg(t('app.oneClickMsgSemPreset', { picks: res.picks }))
+      }
+      await loadPhotos()
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setCulling(false)
+    }
+  }, [loadPhotos, t, targetPicks])
+
   const exportXmp = useCallback(async () => {
     setError(null)
     setExporting(true)
@@ -469,6 +504,14 @@ export default function App() {
           )}
           <button onClick={exportXmp} disabled={exporting || photos.length === 0} className="ghost">
             {exporting ? t('app.exportando') : t('app.exportarXmp')}
+          </button>
+          <button
+            onClick={runOneClick}
+            disabled={culling || photos.length === 0}
+            className="ghost"
+            title={t('app.oneClickHint')}
+          >
+            {culling ? t('app.importando') : t('app.oneClick')}
           </button>
           <button onClick={runCull} disabled={culling || photos.length === 0} className="primary">
             {culling ? t('app.cullRun') : t('app.cull')}
