@@ -873,3 +873,95 @@ button.danger {
 .dialog-actions .dialog-trash {
   background: #dc2626;
 }
+
+/* ------- Painel de filtros (contagens vivas) ------- */
+.filter-panel {
+  width: 220px;
+  flex-shrink: 0;
+  border-right: 1px solid #252b37;
+  background: #12161d;
+  padding: 12px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.filter-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #9aa3b2;
+  font-weight: 600;
+}
+
+.filter-reset {
+  background: transparent;
+  border: 1px solid #2c3442;
+  color: #f87171;
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.filter-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.filter-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #b6bdc9;
+  padding: 6px 8px;
+  font-size: 13px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.filter-item:hover {
+  background: #1e2430;
+}
+
+.filter-item.active {
+  background: #1e293b;
+  border-color: #3b82f6;
+  color: #93c5fd;
+}
+
+.filter-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 800;
+  background: #1e2430;
+  color: #9aa3b2;
+}
+
+.filter-icon.picks { color: #22c55e; }
+.filter-icon.rejects { color: #ef4444; }
+.filter-icon.review { color: #fbbf24; }
+.filter-icon.destaques { color: #fbbf24; }
+.filter-icon.selecionado { color: #22c55e; }
+
+.filter-count {
+  margin-left: auto;
+  font-size: 12px;
+  color: #566075;
+  font-weight: 700;
+}
+
+.filter-item.active .filter-count {
+  color: #93c5fd;
+}

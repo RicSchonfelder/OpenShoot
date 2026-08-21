@@ -47,3 +47,18 @@ pub struct DuplicateGroup {
   pub photo_names: Vec<String>,
   pub photo_paths: Vec<String>,
 }
+
+#[napi(object)]
+#[derive(serde::Serialize)]
+pub struct FilterCounts {
+  pub all: i64,
+  pub picks: i64,
+  pub rejects: i64,
+  pub unrated: i64,
+  pub review: i64,
+  pub destaques: i64,
+  pub selecionado: i64,
+  pub duplicates: i64,
+  pub faces: i64,
+  pub edited: i64,
+}

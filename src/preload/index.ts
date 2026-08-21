@@ -53,6 +53,8 @@ const api = {
     ipcRenderer.invoke('core:removePhotoFromCatalog', id),
   findDuplicates: (): Promise<Array<{ hash: string; photo_ids: number[]; photo_names: string[]; photo_paths: string[] }>> =>
     ipcRenderer.invoke('core:findDuplicates'),
+  filterCounts: (): Promise<{ all: number; picks: number; rejects: number; unrated: number; review: number; destaques: number; selecionado: number; duplicates: number; faces: number; edited: number } | null> =>
+    ipcRenderer.invoke('core:filterCounts'),
   scanFolderProgress: (
     dir: string,
     onProgress: (p: { processed: number; total: number; currentFile: string }) => void

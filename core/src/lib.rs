@@ -16,7 +16,7 @@ use napi::bindgen_prelude::*;
 use rayon::prelude::*;
 use std::path::PathBuf;
 
-use types::{DuplicateGroup, PhotoList, PhotoMeta, ScanResult};
+use types::{DuplicateGroup, FilterCounts, PhotoList, PhotoMeta, ScanResult};
 
 /// Inicializa o core: diretório de dados + catálogo SQLite.
 /// data_dir: caminho absoluto. Retorna o caminho do banco criado.
@@ -82,6 +82,12 @@ pub fn get_photo(id: i64) -> Result<Option<PhotoMeta>> {
 #[napi]
 pub fn find_duplicates() -> Result<Vec<DuplicateGroup>> {
   catalog::find_duplicates().map_err(|e| Error::from_reason(e))
+}
+
+/// Contagens por bucket (painel de filtros com números vivos).
+#[napi]
+pub fn filter_counts() -> Result<FilterCounts> {
+  catalog::filter_counts().map_err(|e| Error::from_reason(e))
 }
 
 /// Total de fotos no catálogo.
@@ -798,6 +804,13 @@ mod tests {
     // "Selecionado" = rating>=4 sem ser ai_pick → zera (rating ainda 0).
     let selecionado = super::catalog::list_photos("", "selecionado", 0, 100).expect("list selecionado");
     assert_eq!(selecionado.total, 0);
+
+    // ---- Filtro "Editar status" ----
+    super::catalog::set_photo_edit(id_a, r#"{"exposure":0.5}"#).unwrap();
+    let edited = super::catalog::list_photos("", "edited", 0, 100).expect("list edited");
+    assert_eq!(edited.total, 1);
+    let unedited = super::catalog::list_photos("", "unedited", 0, 100).expect("list unedited");
+    assert_eq!(unedited.total, 2);
 
     // Limpeza.
     conn.execute("DELETE FROM photos", []).unwrap();

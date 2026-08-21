@@ -258,6 +258,13 @@ pub fn list_photos(
       // Picks manuais: rating alto sem ter sido pick da IA.
       conds.push("rating >= 4 AND ai_pick = 0".to_string());
     }
+    "edited" => {
+      // Fotos com receita de edição salva (não-destrutiva).
+      conds.push("edit_json IS NOT NULL AND edit_json <> ''".to_string());
+    }
+    "unedited" => {
+      conds.push("edit_json IS NULL OR edit_json = ''".to_string());
+    }
     "portrait" => {
       conds.push("width > 0 AND height > 0 AND height > width".to_string());
     }
@@ -422,6 +429,30 @@ pub fn set_photo_ai_pick(id: i64, ai_pick: bool) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
   Ok(())
+}
+
+/// Contagens por bucket (para painel de filtros com números vivos).
+pub fn filter_counts() -> Result<crate::types::FilterCounts, String> {
+  let conn = open()?;
+  let one = |sql: &str| -> Result<i64, String> {
+    conn
+      .query_row(sql, [], |r| r.get::<_, i64>(0))
+      .map_err(|e| e.to_string())
+  };
+  Ok(crate::types::FilterCounts {
+    all: one("SELECT COUNT(*) FROM photos")?,
+    picks: one("SELECT COUNT(*) FROM photos WHERE rating >= 4")?,
+    rejects: one("SELECT COUNT(*) FROM photos WHERE rating >= 1 AND rating <= 2")?,
+    unrated: one("SELECT COUNT(*) FROM photos WHERE rating = 0")?,
+    review: one("SELECT COUNT(*) FROM photos WHERE review = 1")?,
+    destaques: one("SELECT COUNT(*) FROM photos WHERE ai_pick = 1")?,
+    selecionado: one("SELECT COUNT(*) FROM photos WHERE rating >= 4 AND ai_pick = 0")?,
+    duplicates: one(
+      "SELECT COUNT(*) FROM photos WHERE sha256 IN (SELECT sha256 FROM photos WHERE sha256 <> '' GROUP BY sha256 HAVING COUNT(*) > 1)",
+    )?,
+    faces: one("SELECT COUNT(*) FROM photos WHERE has_face = 1")?,
+    edited: one("SELECT COUNT(*) FROM photos WHERE edit_json IS NOT NULL AND edit_json <> ''")?,
+  })
 }
 
 /// Agrupa fotos duplicadas por sha256. Retorna lista de grupos (2+ fotos).

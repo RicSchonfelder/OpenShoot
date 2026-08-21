@@ -208,6 +208,13 @@ app.whenReady().then(() => {
       return []
     }
   })
+  ipcMain.handle('core:filterCounts', async () => {
+    try {
+      return await getCore().filterCounts()
+    } catch (e) {
+      return null
+    }
+  })
   ipcMain.handle(
     'core:scanFolderProgress',
     async (_event, dir: string, onProgress: (p: any) => void) => {

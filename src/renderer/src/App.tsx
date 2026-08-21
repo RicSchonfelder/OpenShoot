@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Gallery from './components/Gallery'
 import EditPanel from './components/EditPanel'
 import LoupeView from './components/LoupeView'
+import FilterPanel from './components/FilterPanel'
 import { useT } from './i18n/I18nContext'
 import type { PhotoMeta } from '../../types/photo'
 
@@ -21,6 +22,8 @@ type Filter =
   | 'jpeg'
   | 'destaques'
   | 'selecionado'
+  | 'edited'
+  | 'unedited'
 
 type DeleteDialogState = 'none' | 'catalog' | 'trash'
 
@@ -395,7 +398,9 @@ export default function App() {
     raw: t('app.raw'),
     jpeg: t('app.jpeg'),
     destaques: t('app.destaques'),
-    selecionado: t('app.selecionado')
+    selecionado: t('app.selecionado'),
+    edited: t('app.editadas'),
+    unedited: t('app.naoEditadas')
   }
 
   const MAIN_FILTERS: Filter[] = ['all', 'picks', 'rejects', 'unrated']
@@ -639,6 +644,27 @@ export default function App() {
                   {t('app.jpeg')}
                 </button>
               </div>
+              <div className="more-section">
+                <span className="more-section-title">{t('app.outrosStatus')}</span>
+                <button
+                  className={`${filter === 'edited' ? 'active' : ''}`}
+                  onClick={() => {
+                    setFilter('edited')
+                    setMoreOpen(false)
+                  }}
+                >
+                  {t('app.editadas')}
+                </button>
+                <button
+                  className={`${filter === 'unedited' ? 'active' : ''}`}
+                  onClick={() => {
+                    setFilter('unedited')
+                    setMoreOpen(false)
+                  }}
+                >
+                  {t('app.naoEditadas')}
+                </button>
+              </div>
               <div className="more-section more-reset">
                 <button
                   className="more-reset-btn"
@@ -657,6 +683,10 @@ export default function App() {
 
       <main className="content">
         <div className="main-gallery">
+          <FilterPanel
+            active={filter}
+            onSelect={(f) => setFilter(f as Filter)}
+          />
           <Gallery
             photos={photos}
             onRefresh={loadPhotos}
