@@ -77,6 +77,7 @@
   "edit.presetNome": "Preset name…",
   "edit.salvarPreset": "Save",
   "edit.semPresets": "No saved presets.",
+  "edit.importLr": "Import Lightroom preset (.xmp/.lrtemplate)",
   "edit.curvaTitulo": "Tone Curve",
   "edit.curvaDestaques": "Highlights",
   "edit.curvaLuzes": "Lights",

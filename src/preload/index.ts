@@ -18,6 +18,9 @@ const api = {
   thumbForPhoto: (id: number, maxDim: number): Promise<string | null> =>
     ipcRenderer.invoke('core:thumbForPhoto', id, maxDim),
   pickFolder: (): Promise<string | null> => ipcRenderer.invoke('core:pickFolder'),
+  pickPresetFile: (): Promise<string | null> => ipcRenderer.invoke('core:pickPresetFile'),
+  importLightroomPreset: (path: string, name?: string): Promise<{ ok: boolean; name?: string; recipe?: string; error?: string }> =>
+    ipcRenderer.invoke('core:importLightroomPreset', path, name),
   // Fase 2
   cullPhotos: (targetPicks?: number): Promise<{ processed: number; errors: number; avgScore: number; picks: number; review: number }> =>
     ipcRenderer.invoke('core:cullPhotos', targetPicks),

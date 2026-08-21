@@ -94,6 +94,20 @@ app.whenReady().then(() => {
     if (result.canceled || !result.filePaths.length) return null
     return result.filePaths[0]
   })
+  ipcMain.handle('core:pickPresetFile', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return null
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Escolha um preset do Lightroom',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Presets Lightroom', extensions: ['xmp', 'lrtemplate'] },
+        { name: 'Todos', extensions: ['*'] }
+      ]
+    })
+    if (result.canceled || !result.filePaths.length) return null
+    return result.filePaths[0]
+  })
 
   // ---- Fase 2: culling + XMP ----
   ipcMain.handle('core:cullPhotos', async (_e, targetPicks?: number) => {
@@ -261,6 +275,13 @@ app.whenReady().then(() => {
   ipcMain.handle('core:learnProfile', async () => {
     try {
       return await getCore().learnProfile()
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+  ipcMain.handle('core:importLightroomPreset', async (_e, path: string, name?: string) => {
+    try {
+      return await getCore().importLightroomPreset(path, name)
     } catch (e) {
       return { ok: false, error: String(e) }
     }

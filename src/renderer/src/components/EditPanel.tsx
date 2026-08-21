@@ -185,6 +185,18 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
     [loadPresets]
   )
 
+  const importLr = useCallback(() => {
+    window.openshoot.pickPresetFile().then((path) => {
+      if (!path) return
+      window.openshoot.importLightroomPreset(path).then((res) => {
+        if (res.ok && res.recipe) {
+          applyRecipe(res.recipe)
+        }
+        loadPresets()
+      })
+    })
+  }, [applyRecipe, loadPresets])
+
   // Ao trocar de foto, carrega a receita salva (se houver).
   useEffect(() => {
     setValues(EMPTY)
@@ -556,6 +568,9 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
             {t('edit.salvarPreset')}
           </button>
         </div>
+        <button onClick={importLr} className="ghost full">
+          {t('edit.importLr')}
+        </button>
         {presets.length === 0 ? (
           <p className="edit-hint">{t('edit.semPresets')}</p>
         ) : (

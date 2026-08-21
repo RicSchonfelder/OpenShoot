@@ -8,6 +8,7 @@ mod culling;
 mod edit;
 mod geometric;
 mod imageproc;
+mod lrimport;
 mod ml;
 mod retouch;
 mod types;
@@ -126,6 +127,31 @@ pub fn learn_profile() -> Result<serde_json::Value> {
       Ok(serde_json::json!({ "name": name, "photos": photos, "ok": true }))
     }
     Err(e) => Ok(serde_json::json!({ "error": e, "ok": false })),
+  }
+}
+
+/// Importa um preset do Lightroom (.xmp com crs: ou .lrtemplate) e salva como
+/// preset OpenShoot. Retorna JSON { ok, name, recipe }.
+#[napi]
+pub fn import_lightroom_preset(
+  path: String,
+  name: Option<String>,
+) -> Result<serde_json::Value> {
+  let p = PathBuf::from(&path);
+  match lrimport::import_lightroom_preset(&p) {
+    Ok(recipe) => {
+      let preset_name = name.unwrap_or_else(|| {
+        p.file_stem()
+          .map(|s| s.to_string_lossy().to_string())
+          .unwrap_or_else(|| "Preset Lightroom".to_string())
+      });
+      let result = catalog::save_preset(&preset_name, &recipe);
+      match result {
+        Ok(()) => Ok(serde_json::json!({ "ok": true, "name": preset_name, "recipe": recipe })),
+        Err(e) => Ok(serde_json::json!({ "ok": false, "error": e })),
+      }
+    }
+    Err(e) => Ok(serde_json::json!({ "ok": false, "error": e })),
   }
 }
 
