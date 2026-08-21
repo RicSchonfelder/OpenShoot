@@ -76,21 +76,26 @@
 
 | AfterShoot | OpenShoot | Status |
 |---|---|---|
-| Perfil Profissional (treinar com 2.500 fotos editadas LR/C1) | ⬜ v1: "aprender" estilo via média de parâmetros de XMPs carregados |
-| Perfil Instantâneo (preset Lightroom) | ⬜ importar preset .xmp/.lrtemplate → receita |
-| Mercado de perfis | ⬜ pasta local de estilos compartilháveis |
+| Perfil Profissional (treinar com 2.500 fotos editadas LR/C1) | ✅ v1: **Aprender perfil** (média dos parâmetros de edição das fotos → preset "Perfil aprendido") |
+| Perfil Instantâneo (preset Lightroom) | ✅ **Importar preset LR** (.xmp crs: / .lrtemplate → receita) |
 | Regras (um tipo de arquivo/cor/catálogo por perfil) | ⬜ metadados do perfil |
+| Mercado de perfis | ⬜ pasta local de estilos compartilháveis |
 
 ---
 
 ## Priorização sugerida (execução)
 
-1. **Tranche A** — meta de picks, "Para revisão", "Destaques" vs "Selecionado", painel de
-   filtros com contadores + Reiniciar, filtros Tipo de Arquivo/Orientação/Câmera.
-2. **Tranche B** — presets nomeados (rápido), depois curva de tom e HSL.
-3. **Tranche C** — wizard de importação.
-4. **Tranche D** — seleção por arrasto no patch, sliders faciais.
-5. **Tranche E** — perfil v1 (aprender de XMPs), depois importar preset.
+1. ✅ **Tranche A** — meta de picks, "Para revisão", "Destaques" vs "Selecionado",
+   painel de filtros com contadores + Reiniciar, filtros Tipo de Arquivo/Orientação/
+   Câmera/Editar status.
+2. ✅ **Tranche B** — presets nomeados, curva de tom, HSL, nitidez, redução de ruído,
+   horizonte IA, recorte IA. (Pendente: máscara de sujeito — requer SelfieSegmentation.)
+3. ✅ **Tranche C** — wizard de importação (subpastas + tipo), "Um clique".
+   (Pendente: tipo de sessão/gênero.)
+4. ✅ **Tranche D** — patch por arrasto, sliders faciais.
+   (Pendente: moldura do rosto.)
+5. 🟡 **Tranche E** — aprender perfil de XMPs, importar preset LR. 
+   (Pendente: mercado de perfis, metadados de regras.)
 
 > Cada item novo segue as regras do AGENTS.md: typecheck + cargo test verdes,
 > DESIGN.md atualizado, novo código Rust com teste.

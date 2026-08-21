@@ -23,6 +23,12 @@
   sombras, realces, brilho) com preview e persistência por foto (`edit_json`).
 - **Fase 4** ✅ — Retoque local: suavização de pele (YCbCr + blur seletivo) +
   remoção de distrações (inpainting por difusão, bbox central MVP).
+- **Fase 4b (edição geométrica)** ✅ — **Ajuste de horizonte com IA** (Hough:
+  detecta linhas dominantes, rotaciona) e **Recorte por IA** (centraliza em faces
+  SCRFD, recorte 80%) — `geometric.rs`.
+- **Fase 4c (retoque facial)** ✅ — **Patch por arrasto** no loupe (overlay +
+  inpaint da região) e **sliders faciais** (acne, olhos, dentes, cabelo) via
+  `retouch_face_region` (bbox do rosto + blur/clarear por região).
 - **Fase 6 parcial** ✅ — Captions locais offline (`captions.rs`) + empacotamento
   macOS (electron-builder) → `/Applications/OpenShoot.app` (arm64).
 - **UX de culling** ✅ (alinhada à auditoria AfterShoot):
@@ -41,7 +47,12 @@
     botão **Reiniciar filtros**.
   - **Meta de nº de picks**: `cullPhotos(targetPicks)` marca as top-N fotos como
     ★5 + slider "Meta de seleção" na toolbar (0 = sem meta/limiar 70).
-- **Core** ✅ — 33 testes Rust passando; typecheck limpo (main/preload/renderer).
+  - **Edição completa (Tranche B)** ✅ — presets nomeados, **curva de tom**
+    (4 pontos), **HSL** (8 cores × matiz/sat/lum), **nitidez** (unsharp) +
+    **redução de ruído** (bilateral).
+  - **Perfis de IA v1 (Tranche E)** ✅ — **Aprender perfil** (média dos
+    parâmetros de edição → preset) e **Importar preset Lightroom** (.xmp/.lrtemplate).
+- **Core** ✅ — 43 testes Rust passando; typecheck limpo (main/preload/renderer).
 
 ### Failures / pontos de atenção
 - **RAW preview** (CR3/NEF/ARW/DNG):
@@ -78,15 +89,11 @@
   flags, i18n, toolbar de culling.
 
 ## Próximos passos (ordem sugerida)
-1. **Presets nomeados de edição** (salvar/carregar receita JSON + biblioteca de
-   estilos) — gap #1 da auditoria.
-2. **"Para revisão"** (bucket de fotos com score limítrofe) e separação
-   "Destaques IA" vs "Selecionado manual".
-3. **Wizard de importação** (tipo de fotos, incluir subpastas, tipo de sessão).
-4. **Filtro por orientação / câmera / rating numérico** + "Editar status".
-5. **Meta de nº de picks** no culling ("quantas fotos selecionar").
-6. **Retoque facial** (sliders: acne, olhos, dentes) + seleção por arrasto no patch.
-7. **Olhos fechados** (SCRFD landmarks) + flag de aviso.
+1. **Máscara de IA (sujeito/fundo)** — requer SelfieSegmentation ONNX (baixar modelo).
+2. **Tipo de sessão/gênero** no wizard de importação (casamento, retrato, família...).
+3. **Mostrar moldura do rosto** (overlay de landmarks no loupe).
+4. **Mercado de perfis** (pasta local de estilos compartilháveis + metadados de regras).
+5. **Olhos fechados** (SCRFD landmarks) + flag de aviso.
 
 ## Como retomar (recuperação de crash)
 1. `cd ~/OpenShoot`
