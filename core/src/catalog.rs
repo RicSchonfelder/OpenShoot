@@ -49,6 +49,12 @@ fn ensure_schema(conn: &Connection) -> Result<(), String> {
       preview_available INTEGER DEFAULT 0,
       indexed_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS presets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE NOT NULL,
+      recipe TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
     CREATE INDEX IF NOT EXISTS idx_photos_ext ON photos(ext);
     CREATE INDEX IF NOT EXISTS idx_photos_sha ON photos(sha256);
     CREATE INDEX IF NOT EXISTS idx_photos_taken ON photos(taken_at);
@@ -432,8 +438,7 @@ pub fn set_photo_ai_pick(id: i64, ai_pick: bool) -> Result<(), String> {
 }
 
 /// Contagens por bucket (para painel de filtros com números vivos).
-pub fn filter_counts() -> Result<crate::types::FilterCounts, String> {
-  let conn = open()?;
+pub fn filter_counts() -> Result<crate::types::FilterCounts, String> {  let conn = open()?;
   let one = |sql: &str| -> Result<i64, String> {
     conn
       .query_row(sql, [], |r| r.get::<_, i64>(0))
@@ -514,6 +519,51 @@ pub fn remove_photo(id: i64) -> Result<(), String> {
     .execute("DELETE FROM photos WHERE id=?1", [id])
     .map_err(|e| e.to_string())?;
   Ok(())
+}
+
+// ---- Presets nomeados de edição ----
+
+/// Salva um preset (upsert por nome). Receita = JSON dos parâmetros de edição.
+pub fn save_preset(name: &str, recipe: &str) -> Result<(), String> {
+  let conn = open()?;
+  conn
+    .execute(
+      "INSERT INTO presets (name, recipe, created_at) VALUES (?1, ?2, datetime('now'))
+       ON CONFLICT(name) DO UPDATE SET recipe=excluded.recipe, created_at=datetime('now')",
+      rusqlite::params![name.trim(), recipe],
+    )
+    .map_err(|e| e.to_string())?;
+  Ok(())
+}
+
+/// Lista presets (nome + receita JSON).
+pub fn list_presets() -> Result<Vec<crate::types::Preset>, String> {
+  let conn = open()?;
+  let mut stmt = conn
+    .prepare("SELECT name, recipe FROM presets ORDER BY name")
+    .map_err(|e| e.to_string())?;
+  let rows = stmt
+    .query_map([], |row| {
+      Ok(crate::types::Preset {
+        name: row.get(0)?,
+        recipe: row.get(1)?,
+      })
+    })
+    .map_err(|e| e.to_string())?;
+  let mut out = Vec::new();
+  for r in rows {
+    out.push(r.map_err(|e| e.to_string())?);
+  }
+  Ok(out)
+}
+
+/// Remove um preset pelo nome.
+pub fn delete_preset(name: &str) -> Result<bool, String> {
+  let conn = open()?;
+  let n = conn
+    .execute("DELETE FROM presets WHERE name=?1", [name.trim()])
+    .map_err(|e| e.to_string())?;
+  Ok(n > 0)
 }
 
 pub fn scan_folder(dir: &str) -> Result<ScanResult, String> {

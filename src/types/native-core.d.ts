@@ -66,6 +66,9 @@ declare module '*.node' {
   export function removePhotoFromCatalog(id: number): boolean
   export function findDuplicates(): Array<{ hash: string; photo_ids: number[]; photo_names: string[]; photo_paths: string[] }>
   export function filterCounts(): { all: number; picks: number; rejects: number; unrated: number; review: number; destaques: number; selecionado: number; duplicates: number; faces: number; edited: number }
+  export function savePreset(name: string, recipe: string): void
+  export function listPresets(): Array<{ name: string; recipe: string }>
+  export function deletePreset(name: string): boolean
   export function scanFolderProgress(
     dir: string,
     onProgress: (p: { processed: number; total: number; currentFile: string }) => void

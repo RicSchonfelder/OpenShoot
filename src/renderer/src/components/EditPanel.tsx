@@ -60,13 +60,78 @@ interface EditPanelProps {
   onApplyAll: (json: string) => void
 }
 
+interface PresetItem {
+  name: string
+  recipe: string
+}
+
 export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
   const { t } = useT()
   const [values, setValues] = useState<EditValues>(EMPTY)
   const [skinIntensity, setSkinIntensity] = useState(0)
   const [preview, setPreview] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [presets, setPresets] = useState<PresetItem[]>([])
+  const [presetName, setPresetName] = useState('')
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Carrega a lista de presets salvos.
+  const loadPresets = useCallback(() => {
+    window.openshoot
+      .listPresets()
+      .then((p) => setPresets(p))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    loadPresets()
+  }, [loadPresets])
+
+  const applyRecipe = useCallback(
+    (recipe: string) => {
+      try {
+        const p = JSON.parse(recipe)
+        const next: EditValues = {
+          exposure: p.exposure ?? null,
+          temperature: p.temperature ?? null,
+          tint: p.tint ?? null,
+          contrast: p.contrast ?? null,
+          saturation: p.saturation ?? null,
+          shadows: p.shadows ?? null,
+          highlights: p.highlights ?? null,
+          brightness: p.brightness ?? null
+        }
+        setValues(next)
+        if (photo) updatePreview(next)
+      } catch {
+        /* ignore */
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [photo?.id]
+  )
+
+  const savePresetNow = useCallback(() => {
+    const name = presetName.trim()
+    if (!name) return
+    window.openshoot
+      .savePreset(name, toJson(values))
+      .then(() => {
+        setPresetName('')
+        loadPresets()
+      })
+      .catch(() => {})
+  }, [presetName, values, loadPresets])
+
+  const removePreset = useCallback(
+    (name: string) => {
+      window.openshoot
+        .deletePreset(name)
+        .then(() => loadPresets())
+        .catch(() => {})
+    },
+    [loadPresets]
+  )
 
   // Ao trocar de foto, carrega a receita salva (se houver).
   useEffect(() => {
@@ -220,6 +285,44 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
       <button onClick={removeDistraction} disabled={busy} className="ghost full">
         {t('edit.removerDistracao')}
       </button>
+
+      <div className="edit-presets">
+        <h4>{t('edit.presets')}</h4>
+        <div className="edit-preset-save">
+          <input
+            type="text"
+            placeholder={t('edit.presetNome')}
+            value={presetName}
+            onChange={(e) => setPresetName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') savePresetNow()
+            }}
+          />
+          <button onClick={savePresetNow} disabled={!presetName.trim()} className="ghost">
+            {t('edit.salvarPreset')}
+          </button>
+        </div>
+        {presets.length === 0 ? (
+          <p className="edit-hint">{t('edit.semPresets')}</p>
+        ) : (
+          <ul className="edit-preset-list">
+            {presets.map((p) => (
+              <li key={p.name}>
+                <button className="edit-preset-load" onClick={() => applyRecipe(p.recipe)}>
+                  {p.name}
+                </button>
+                <button
+                  className="edit-preset-del"
+                  title={t('dialog.deleteMoveTrash')}
+                  onClick={() => removePreset(p.name)}
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </aside>
   )
 }

@@ -16,7 +16,7 @@ use napi::bindgen_prelude::*;
 use rayon::prelude::*;
 use std::path::PathBuf;
 
-use types::{DuplicateGroup, FilterCounts, PhotoList, PhotoMeta, ScanResult};
+use types::{DuplicateGroup, FilterCounts, PhotoList, PhotoMeta, Preset, ScanResult};
 
 /// Inicializa o core: diretório de dados + catálogo SQLite.
 /// data_dir: caminho absoluto. Retorna o caminho do banco criado.
@@ -88,6 +88,26 @@ pub fn find_duplicates() -> Result<Vec<DuplicateGroup>> {
 #[napi]
 pub fn filter_counts() -> Result<FilterCounts> {
   catalog::filter_counts().map_err(|e| Error::from_reason(e))
+}
+
+// ---- Presets de edição ----
+
+/// Salva um preset nomeado (receita JSON de edição).
+#[napi]
+pub fn save_preset(name: String, recipe: String) -> Result<()> {
+  catalog::save_preset(&name, &recipe).map_err(|e| Error::from_reason(e))
+}
+
+/// Lista presets salvos.
+#[napi]
+pub fn list_presets() -> Result<Vec<Preset>> {
+  catalog::list_presets().map_err(|e| Error::from_reason(e))
+}
+
+/// Remove um preset pelo nome.
+#[napi]
+pub fn delete_preset(name: String) -> Result<bool> {
+  catalog::delete_preset(&name).map_err(|e| Error::from_reason(e))
 }
 
 /// Total de fotos no catálogo.
@@ -811,6 +831,18 @@ mod tests {
     assert_eq!(edited.total, 1);
     let unedited = super::catalog::list_photos("", "unedited", 0, 100).expect("list unedited");
     assert_eq!(unedited.total, 2);
+
+    // ---- Presets nomeados ----
+    super::catalog::save_preset("Meu Estilo", r#"{"contrast":20}"#).unwrap();
+    let presets = super::catalog::list_presets().expect("list presets");
+    assert!(presets.iter().any(|p| p.name == "Meu Estilo"));
+    // Upsert (mesmo nome sobrescreve).
+    super::catalog::save_preset("Meu Estilo", r#"{"contrast":30}"#).unwrap();
+    let presets2 = super::catalog::list_presets().expect("list presets 2");
+    let mine = presets2.iter().find(|p| p.name == "Meu Estilo").unwrap();
+    assert!(mine.recipe.contains("30"));
+    // Delete.
+    assert!(super::catalog::delete_preset("Meu Estilo").unwrap());
 
     // Limpeza.
     conn.execute("DELETE FROM photos", []).unwrap();

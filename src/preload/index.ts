@@ -55,6 +55,12 @@ const api = {
     ipcRenderer.invoke('core:findDuplicates'),
   filterCounts: (): Promise<{ all: number; picks: number; rejects: number; unrated: number; review: number; destaques: number; selecionado: number; duplicates: number; faces: number; edited: number } | null> =>
     ipcRenderer.invoke('core:filterCounts'),
+  savePreset: (name: string, recipe: string): Promise<boolean> =>
+    ipcRenderer.invoke('core:savePreset', name, recipe),
+  listPresets: (): Promise<Array<{ name: string; recipe: string }>> =>
+    ipcRenderer.invoke('core:listPresets'),
+  deletePreset: (name: string): Promise<boolean> =>
+    ipcRenderer.invoke('core:deletePreset', name),
   scanFolderProgress: (
     dir: string,
     onProgress: (p: { processed: number; total: number; currentFile: string }) => void

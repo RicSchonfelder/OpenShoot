@@ -215,6 +215,28 @@ app.whenReady().then(() => {
       return null
     }
   })
+  ipcMain.handle('core:savePreset', async (_e, name: string, recipe: string) => {
+    try {
+      await getCore().savePreset(name, recipe)
+      return true
+    } catch (e) {
+      return false
+    }
+  })
+  ipcMain.handle('core:listPresets', async () => {
+    try {
+      return await getCore().listPresets()
+    } catch (e) {
+      return []
+    }
+  })
+  ipcMain.handle('core:deletePreset', async (_e, name: string) => {
+    try {
+      return await getCore().deletePreset(name)
+    } catch (e) {
+      return false
+    }
+  })
   ipcMain.handle(
     'core:scanFolderProgress',
     async (_event, dir: string, onProgress: (p: any) => void) => {

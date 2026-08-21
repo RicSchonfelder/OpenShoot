@@ -62,3 +62,10 @@ pub struct FilterCounts {
   pub faces: i64,
   pub edited: i64,
 }
+
+#[napi(object)]
+#[derive(serde::Serialize)]
+pub struct Preset {
+  pub name: String,
+  pub recipe: String,
+}
