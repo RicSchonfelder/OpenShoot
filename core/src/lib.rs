@@ -51,8 +51,13 @@ pub fn hello(name: String) -> String {
 
 /// Varre uma pasta recursivamente, adicionando fotos ao catálogo.
 #[napi]
-pub fn scan_folder(dir: String) -> Result<ScanResult> {
-  catalog::scan_folder(&dir).map_err(|e| Error::from_reason(e))
+pub fn scan_folder(
+  dir: String,
+  include_subdirs: Option<bool>,
+  types: Option<String>,
+) -> Result<ScanResult> {
+  catalog::scan_folder(&dir, include_subdirs.unwrap_or(true), &types.unwrap_or_else(|| "all".into()))
+    .map_err(|e| Error::from_reason(e))
 }
 
 /// Lista fotos do catálogo com paginação, busca e filtro de rating.
@@ -712,19 +717,27 @@ pub struct ScanProgress {
 #[napi]
 pub async fn scan_folder_progress(
   dir: String,
+  include_subdirs: Option<bool>,
+  types: Option<String>,
   callback: napi::threadsafe_function::ThreadsafeFunction<
     ScanProgress,
     napi::threadsafe_function::ErrorStrategy::Fatal,
   >,
 ) -> Result<String> {
+  let include_subdirs = include_subdirs.unwrap_or(true);
+  let types = types.unwrap_or_else(|| "all".into());
   // Coleta os caminhos primeiro (rápido) para ter o total.
-  let paths: Vec<std::path::PathBuf> = walkdir::WalkDir::new(&dir)
-    .follow_links(false)
+  let mut walker = walkdir::WalkDir::new(&dir).follow_links(false);
+  if !include_subdirs {
+    walker = walker.max_depth(1);
+  }
+  let paths: Vec<std::path::PathBuf> = walker
     .into_iter()
     .filter_map(|e| e.ok())
     .filter(|e| e.file_type().is_file())
     .map(|e| e.path().to_path_buf())
     .filter(|p| crate::imageproc::is_photo_path(p))
+    .filter(|p| catalog::matches_photo_type(p, &types))
     .collect();
   let total = paths.len() as i64;
 
@@ -881,6 +894,18 @@ mod tests {
     assert!(mine.recipe.contains("30"));
     // Delete.
     assert!(super::catalog::delete_preset("Meu Estilo").unwrap());
+
+    // ---- Tipo de foto no scan ----
+    let tmp = std::env::temp_dir().join(format!("openshoot_scan_{}", std::process::id()));
+    std::fs::create_dir_all(tmp.join("sub")).ok();
+    std::fs::write(tmp.join("a.jpg"), "xx").ok();
+    std::fs::write(tmp.join("sub/b.nef"), "yy").ok();
+    // Nef é considerado foto? is_photo_path aceita .nef, mas inspect falha em
+    // arquivo fake — testamos apenas o filtro de tipo via matches_photo_type.
+    assert!(super::catalog::matches_photo_type(&tmp.join("a.jpg"), "jpeg"));
+    assert!(!super::catalog::matches_photo_type(&tmp.join("a.jpg"), "raw"));
+    assert!(super::catalog::matches_photo_type(&tmp.join("sub/b.nef"), "raw"));
+    let _ = std::fs::remove_dir_all(&tmp);
 
     // Limpeza.
     conn.execute("DELETE FROM photos", []).unwrap();

@@ -42,7 +42,7 @@ declare module '*.node' {
   export function add(a: number, b: number): number
   export function coreVersion(): string
   export function hello(name: string): string
-  export function scanFolder(dir: string): NativeScanResult
+  export function scanFolder(dir: string, includeSubdirs?: boolean, types?: string): NativeScanResult
   export function listPhotos(search: string, filter: string, offset: number, limit: number): NativePhotoList
   export function getPhoto(id: number): NativePhotoMeta | null
   export function photoCount(): number
@@ -73,6 +73,8 @@ declare module '*.node' {
   export function aiCropPhoto(id: number, maxDim: number): Promise<string | null>
   export function scanFolderProgress(
     dir: string,
+    includeSubdirs: boolean,
+    types: string,
     onProgress: (p: { processed: number; total: number; currentFile: string }) => void
   ): Promise<string>
   export function clearThumbCache(): number

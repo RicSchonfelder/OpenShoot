@@ -108,5 +108,10 @@
   "dialog.deleteRemoveCatalogDesc": "Removes from OpenShoot, file untouched",
   "dialog.deleteMoveTrash": "Move to Trash",
   "dialog.deleteMoveTrashDesc": "Deletes from source (recoverable)",
-  "dialog.cancel": "Cancel"
+  "dialog.cancel": "Cancel",
+  "import.titulo": "Import photos",
+  "import.incluirSubpastas": "Include subfolders",
+  "import.tipoFotos": "Photo type",
+  "import.todos": "All",
+  "import.iniciar": "Import"
 }

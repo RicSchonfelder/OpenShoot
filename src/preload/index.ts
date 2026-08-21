@@ -10,7 +10,8 @@ const api = {
   appInfo: (): Promise<{ platform: string; arch: string; versions: Record<string, string | undefined> }> =>
     ipcRenderer.invoke('app:info'),
   // Fase 1
-  scanFolder: (dir: string): Promise<ScanResultData | { error: string }> => ipcRenderer.invoke('core:scanFolder', dir),
+  scanFolder: (dir: string, includeSubdirs?: boolean, types?: string): Promise<ScanResultData | { error: string }> =>
+    ipcRenderer.invoke('core:scanFolder', dir, includeSubdirs, types),
   listPhotos: (search: string, filter: string, offset: number, limit: number): Promise<PhotoListData> =>
     ipcRenderer.invoke('core:listPhotos', search, filter, offset, limit),
   photoCount: (): Promise<number> => ipcRenderer.invoke('core:photoCount'),
@@ -67,9 +68,11 @@ const api = {
     ipcRenderer.invoke('core:aiCropPhoto', id, maxDim),
   scanFolderProgress: (
     dir: string,
+    includeSubdirs: boolean,
+    types: string,
     onProgress: (p: { processed: number; total: number; currentFile: string }) => void
   ): Promise<string> =>
-    ipcRenderer.invoke('core:scanFolderProgress', dir, onProgress),
+    ipcRenderer.invoke('core:scanFolderProgress', dir, includeSubdirs, types, onProgress),
   clearThumbCache: (): Promise<number> => ipcRenderer.invoke('core:clearThumbCache')
 }
 

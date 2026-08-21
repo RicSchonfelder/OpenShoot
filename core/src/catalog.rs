@@ -566,7 +566,11 @@ pub fn delete_preset(name: &str) -> Result<bool, String> {
   Ok(n > 0)
 }
 
-pub fn scan_folder(dir: &str) -> Result<ScanResult, String> {
+pub fn scan_folder(
+  dir: &str,
+  include_subdirs: bool,
+  types: &str,
+) -> Result<ScanResult, String> {
   let conn = open()?;
   let start = std::time::Instant::now();
   let mut result = ScanResult {
@@ -577,11 +581,15 @@ pub fn scan_folder(dir: &str) -> Result<ScanResult, String> {
     errors: Vec::new(),
   };
 
-  for entry in walkdir::WalkDir::new(dir)
-    .follow_links(false)
-    .into_iter()
-    .filter_entry(|e| !e.file_type().is_dir() || e.file_name() != ".gallery")
-  {
+  let mut wd = walkdir::WalkDir::new(dir).follow_links(false);
+  if !include_subdirs {
+    wd = wd.max_depth(1);
+  }
+  let walker = wd.into_iter().filter_entry(|e| {
+    !e.file_type().is_dir() || e.file_name() != ".gallery"
+  });
+
+  for entry in walker {
     let entry = match entry {
       Ok(e) => e,
       Err(_) => {
@@ -595,6 +603,11 @@ pub fn scan_folder(dir: &str) -> Result<ScanResult, String> {
     let path = entry.path();
     let is_photo = crate::imageproc::is_photo_path(path);
     if !is_photo {
+      continue;
+    }
+    // Filtro por tipo de foto ("raw" | "jpeg" | "all").
+    if !matches_photo_type(path, types) {
+      result.skipped += 1;
       continue;
     }
     result.scanned += 1;
@@ -624,6 +637,22 @@ pub fn scan_folder(dir: &str) -> Result<ScanResult, String> {
     result.errors.len()
   ));
   Ok(result)
+}
+
+/// Verifica se a extensão do arquivo corresponde ao tipo de importação.
+pub fn matches_photo_type(path: &std::path::Path, types: &str) -> bool {
+  let ext = path
+    .extension()
+    .map(|s| s.to_string_lossy().to_lowercase())
+    .unwrap_or_default();
+  match types {
+    "raw" => matches!(
+      ext.as_str(),
+      "nef" | "arw" | "dng" | "cr2" | "cr3" | "orf" | "raf" | "rw2" | "pef" | "srw"
+    ),
+    "jpeg" => matches!(ext.as_str(), "jpg" | "jpeg" | "tiff" | "tif" | "png" | "webp" | "heic" | "heif"),
+    _ => true,
+  }
 }
 
 pub fn log_debug(msg: &str) {

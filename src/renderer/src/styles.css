@@ -1142,3 +1142,51 @@ button.danger {
   font-size: 12px;
   padding: 8px 12px;
 }
+
+/* ------- Wizard de importação ------- */
+.import-dialog h3 {
+  margin-bottom: 4px;
+}
+
+.import-dialog .edit-hint {
+  margin: 0 0 14px;
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.import-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #b6bdc9;
+  margin-bottom: 10px;
+}
+
+.import-types {
+  display: flex;
+  gap: 6px;
+}
+
+.import-types button {
+  background: transparent;
+  border: 1px solid #2c3442;
+  color: #9aa3b2;
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.import-types button.active {
+  border-color: #3b82f6;
+  color: #93c5fd;
+  background: #1e293b;
+}
+
+.import-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}

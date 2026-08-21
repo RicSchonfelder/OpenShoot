@@ -40,13 +40,13 @@
 |---|---|---|
 | 8 sliders básicos (exposição, WB, contraste, sat, sombras, realces, brilho) | `edit.rs` + `EditPanel` | ✅ |
 | Aplicar em lote + preview | `applyEditAll`/`applyEditOne` | ✅ |
-| **Presets nomeados** (salvar/carregar receita JSON) | ⬜ biblioteca de presets |
-| **Curva de tom** (destaques/luzes/escuros/sombras) | ⬜ curva spline no `edit.rs` |
-| **HSL** (8 cores × matiz/sat/lum) | ⬜ matriz de cor |
-| **Nitidez** (quantidade/raio/detalhe) | ⬜ unsharp mask |
-| **Redução de ruído** (luminância/cor) | ⬜ denoise wavelet |
-| **Recorte por IA** (suave/padrão) | ⬜ saliency → crop |
-| **Ajuste de horizonte com IA** | ⬜ line detection → rotate |
+| **Presets nomeados** (salvar/carregar receita JSON) | tabela `presets` + NAPI + UI | ✅ |
+| **Curva de tom** (destaques/luzes/escuros/sombras) | `tone_curve` + sliders | ✅ |
+| **HSL** (8 cores × matiz/sat/lum) | `hsl` [24] + seletor de cor | ✅ |
+| **Nitidez** (unsharp mask) | `sharpen` | ✅ |
+| **Redução de ruído** (bilateral leve) | `denoise` | ✅ |
+| **Ajuste de horizonte com IA** | Hough `autoLevelPhoto` | ✅ |
+| **Recorte por IA** (suave/padrão) | faces + centralização `aiCropPhoto` | ✅ |
 | **Máscara de IA** (sujeito/fundo) | ⬜ SelfieSegmentation ONNX |
 | **Perfil de IA por álbum** (estilo aprendido) | ⬜ v1: média de tom de amostras |
 

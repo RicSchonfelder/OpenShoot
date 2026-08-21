@@ -46,6 +46,11 @@ export default function App() {
   const [moreOpen, setMoreOpen] = useState(false)
   const moreRef = useRef<HTMLDivElement | null>(null)
   const [targetPicks, setTargetPicks] = useState(0)
+  const [pendingImport, setPendingImport] = useState<{
+    dir: string
+    includeSubdirs: boolean
+    types: string
+  } | null>(null)
   const photosRef = useRef<PhotoMeta[]>([])
   const selectedRef = useRef<Set<number>>(new Set())
   const anchorRef = useRef<number | null>(null)
@@ -279,35 +284,49 @@ export default function App() {
     setScanErrors([])
     const dir = await window.openshoot.pickFolder()
     if (!dir) return
-    setScanning(true)
-    setScanProgress({ processed: 0, total: 0 })
-    try {
-      const res = await window.openshoot.scanFolderProgress(dir, (p) => {
-        setScanProgress({ processed: p.processed, total: p.total })
-      })
-      let r
+    // Passo 2: modal de opções de importação.
+    setPendingImport({ dir, includeSubdirs: true, types: 'all' })
+  }, [])
+
+  const confirmImport = useCallback(
+    async (opts: { dir: string; includeSubdirs: boolean; types: string }) => {
+      setPendingImport(null)
+      setScanning(true)
+      setScanProgress({ processed: 0, total: 0 })
       try {
-        r = JSON.parse(res)
-      } catch {
-        r = { scanned: 0, added: 0, updated: 0, errors: 0 }
+        const res = await window.openshoot.scanFolderProgress(
+          opts.dir,
+          opts.includeSubdirs,
+          opts.types,
+          (p) => {
+            setScanProgress({ processed: p.processed, total: p.total })
+          }
+        )
+        let r
+        try {
+          r = JSON.parse(res)
+        } catch {
+          r = { scanned: 0, added: 0, updated: 0, errors: 0 }
+        }
+        setScanMsg(
+          t('app.scanMsg', {
+            dir: opts.dir,
+            scanned: r.scanned,
+            added: r.added,
+            updated: r.updated,
+            errors: r.errors
+          })
+        )
+        await loadPhotos()
+      } catch (e) {
+        setError(String(e))
+      } finally {
+        setScanning(false)
+        setScanProgress(null)
       }
-      setScanMsg(
-        t('app.scanMsg', {
-          dir,
-          scanned: r.scanned,
-          added: r.added,
-          updated: r.updated,
-          errors: r.errors
-        })
-      )
-      await loadPhotos()
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setScanning(false)
-      setScanProgress(null)
-    }
-  }, [loadPhotos, t])
+    },
+    [loadPhotos, t]
+  )
 
   const runCull = useCallback(async () => {
     setError(null)
@@ -722,6 +741,53 @@ export default function App() {
               </button>
               <button onClick={() => setDeleteDialog('none')} className="ghost">
                 {t('dialog.cancel')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingImport && (
+        <div className="dialog-overlay">
+          <div className="dialog import-dialog">
+            <h3>{t('import.titulo')}</h3>
+            <p className="edit-hint">{pendingImport.dir}</p>
+            <label className="import-option">
+              <input
+                type="checkbox"
+                checked={pendingImport.includeSubdirs}
+                onChange={(e) =>
+                  setPendingImport({ ...pendingImport, includeSubdirs: e.target.checked })
+                }
+              />
+              {t('import.incluirSubpastas')}
+            </label>
+            <div className="import-option">
+              <span>{t('import.tipoFotos')}</span>
+              <div className="import-types">
+                {(
+                  [
+                    ['all', t('import.todos')],
+                    ['raw', t('app.raw')],
+                    ['jpeg', t('app.jpeg')]
+                  ] as Array<[string, string]>
+                ).map(([v, label]) => (
+                  <button
+                    key={v}
+                    className={`${pendingImport.types === v ? 'active' : ''}`}
+                    onClick={() => setPendingImport({ ...pendingImport, types: v })}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="import-actions">
+              <button onClick={() => setPendingImport(null)} className="ghost">
+                {t('dialog.cancel')}
+              </button>
+              <button onClick={() => confirmImport(pendingImport)} className="primary">
+                {t('import.iniciar')}
               </button>
             </div>
           </div>

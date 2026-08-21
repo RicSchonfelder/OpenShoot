@@ -63,9 +63,9 @@ app.whenReady().then(() => {
   }))
 
   // ---- Fase 1: catálogo + thumbnails ----
-  ipcMain.handle('core:scanFolder', async (_e, dir: string) => {
+  ipcMain.handle('core:scanFolder', async (_e, dir: string, includeSubdirs?: boolean, types?: string) => {
     try {
-      return getCore().scanFolder(dir)
+      return getCore().scanFolder(dir, includeSubdirs, types)
     } catch (e) {
       return { error: String(e) }
     }
@@ -253,9 +253,15 @@ app.whenReady().then(() => {
   })
   ipcMain.handle(
     'core:scanFolderProgress',
-    async (_event, dir: string, onProgress: (p: any) => void) => {
+    async (
+      _event,
+      dir: string,
+      includeSubdirs: boolean,
+      types: string,
+      onProgress: (p: any) => void
+    ) => {
       try {
-        return await getCore().scanFolderProgress(dir, onProgress)
+        return await getCore().scanFolderProgress(dir, includeSubdirs, types, onProgress)
       } catch (e) {
         return JSON.stringify({ error: String(e), scanned: 0, added: 0, updated: 0 })
       }
