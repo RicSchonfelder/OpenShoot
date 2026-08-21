@@ -416,6 +416,13 @@ app.whenReady().then(() => {
     if (result.canceled || !result.filePaths.length) return null
     return result.filePaths[0]
   })
+  ipcMain.handle('core:applyRetouchAll', async (_e, ids: number[], destDir: string, skin: number, regions: any, format: string, quality: number) => {
+    try {
+      return await getCore().applyRetouchAll(ids, destDir, skin, regions, format, quality)
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
   ipcMain.handle(
     'core:scanFolderProgress',
     async (

@@ -173,5 +173,8 @@
   "export.qualidade": "Qualidade",
   "export.exportando": "Exportando…",
   "export.exportar": "Exportar {n} foto(s)",
-  "export.feito": "{n} foto(s) exportada(s)"
+  "export.feito": "{n} foto(s) exportada(s)",
+  "retouch.batch": "Aplicar retoque em lote (Colar)",
+  "retouch.batchHint": "Aplica o retoque atual às fotos selecionadas e grava cópias numa pasta",
+  "retouch.batchDone": "{n} foto(s) retocada(s) em:\n{dir}"
 }

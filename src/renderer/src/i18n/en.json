@@ -173,5 +173,8 @@
   "export.qualidade": "Quality",
   "export.exportando": "Exporting…",
   "export.exportar": "Export {n} photo(s)",
-  "export.feito": "{n} photo(s) exported"
+  "export.feito": "{n} photo(s) exported",
+  "retouch.batch": "Apply retouch in batch (Paste)",
+  "retouch.batchHint": "Applies the current retouch to the selected photos and writes copies to a folder",
+  "retouch.batchDone": "{n} photo(s) retouched in:\n{dir}"
 }

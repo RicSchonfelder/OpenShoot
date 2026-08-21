@@ -944,7 +944,7 @@ export default function App() {
           />
         </div>
         {(mode === 'edit' || mode === 'retouch') && (
-          <EditPanel photo={selectedPhoto} onApplyAll={handleApplyAll} />
+          <EditPanel photo={selectedPhoto} onApplyAll={handleApplyAll} selectedIds={selectedIds} />
         )}
       </main>
 

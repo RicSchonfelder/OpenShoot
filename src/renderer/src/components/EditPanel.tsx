@@ -100,6 +100,7 @@ function toJson(values: EditValues): string {
 interface EditPanelProps {
   photo: PhotoMeta | null
   onApplyAll: (json: string) => void
+  selectedIds?: Set<number>
 }
 
 interface PresetItem {
@@ -107,7 +108,7 @@ interface PresetItem {
   recipe: string
 }
 
-export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
+export default function EditPanel({ photo, onApplyAll, selectedIds }: EditPanelProps) {
   const { t } = useT()
   const [values, setValues] = useState<EditValues>(EMPTY)
   const [skinIntensity, setSkinIntensity] = useState(0)
@@ -352,6 +353,34 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
       .finally(() => setBusy(false))
   }
 
+  // Aplica o retoque atual (pele + regiões faciais) em lote às fotos
+  // selecionadas e grava cópias numa pasta escolhida (não-destrutivo).
+  const applyRetouchBatch = () => {
+    const ids = selectedIds && selectedIds.size > 0 ? Array.from(selectedIds) : photo ? [photo.id] : []
+    if (ids.length === 0) return
+    const regions: Record<string, number> = {}
+    for (const [k, v] of Object.entries(faceRegions)) {
+      if (v > 0) regions[k] = v
+    }
+    setBusy(true)
+    window.openshoot.pickExportFolder().then((dir) => {
+      if (!dir) {
+        setBusy(false)
+        return
+      }
+      window.openshoot
+        .applyRetouchAll(ids, dir, skinIntensity, regions, 'jpeg', 95)
+        .then((res) => {
+          if (res.ok) {
+            window.alert(t('retouch.batchDone', { n: res.exported ?? 0, dir }))
+          } else {
+            window.alert(res.error ?? 'erro')
+          }
+        })
+        .finally(() => setBusy(false))
+    })
+  }
+
   if (!photo) {
     return (
       <aside className="edit-panel">
@@ -566,6 +595,14 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
       </button>
       <button onClick={subjectMask} disabled={busy} className="ghost full" title={t('edit.subjectMaskHint')}>
         {t('edit.subjectMask')}
+      </button>
+      <button
+        onClick={applyRetouchBatch}
+        disabled={busy || (!photo && (!selectedIds || selectedIds.size === 0))}
+        className="ghost full"
+        title={t('retouch.batchHint')}
+      >
+        {t('retouch.batch')}
       </button>
 
       <div className="edit-geo">

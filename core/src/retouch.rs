@@ -149,6 +149,91 @@ pub fn retouch_skin_thumbnail_base64(
   ))
 }
 
+/// Carrega a imagem (preview embutido ou arquivo) como RGB8, com orientação.
+fn load_retouch_rgb(path: &Path) -> Result<image::RgbImage, String> {
+  let img = match crate::imageproc::read_embedded_jpeg(path) {
+    Some(jpeg) => image::ImageReader::new(std::io::Cursor::new(jpeg))
+      .with_guessed_format()
+      .map_err(|e| e.to_string())?
+      .decode()
+      .map_err(|e| e.to_string())?,
+    None => image::ImageReader::open(path)
+      .map_err(|e| e.to_string())?
+      .decode()
+      .map_err(|e| e.to_string())?,
+  };
+  let ori = crate::imageproc::buffer_orientation(
+    &crate::imageproc::read_embedded_jpeg(path).unwrap_or_default(),
+  );
+  let dynimg = image::DynamicImage::ImageRgb8(img.to_rgb8());
+  Ok(crate::imageproc::apply_exif_orientation(dynimg, ori).to_rgb8())
+}
+
+/// Aplica suavização de pele e grava um arquivo JPEG/PNG no destino.
+/// Não-destrutivo: processa uma cópia.
+pub fn retouch_skin_to_file(
+  path: &Path,
+  intensity: f32,
+  dest: &Path,
+  format: &str,
+  quality: u8,
+) -> Result<(), String> {
+  let rgb = load_retouch_rgb(path)?;
+  let (w, h) = rgb.dimensions();
+  let retouched = retouch_skin(rgb.as_raw(), w, h, intensity);
+  let img = image::RgbImage::from_raw(w, h, retouched).ok_or("falha ao reconstruir")?;
+  save_image(&img, dest, format, quality)
+}
+
+/// Aplica retoque de região facial e grava um arquivo JPEG/PNG no destino.
+pub fn retouch_face_to_file(
+  path: &Path,
+  region: &str,
+  intensity: f32,
+  dest: &Path,
+  format: &str,
+  quality: u8,
+) -> Result<(), String> {
+  let rgb = load_retouch_rgb(path)?;
+  let (w, h) = rgb.dimensions();
+  // Detecta o primeiro rosto (se disponível).
+  let bbox = if crate::ml::models_available() {
+    crate::ml::detect_faces(rgb.as_raw(), w, h, 0.5)
+      .ok()
+      .and_then(|f| f.into_iter().next())
+      .unwrap_or([0.0, 0.0, 1.0, 1.0])
+  } else {
+    [0.0, 0.0, 1.0, 1.0]
+  };
+  let retouched = retouch_face_region(rgb.as_raw(), w, h, bbox, region, intensity);
+  let img = image::RgbImage::from_raw(w, h, retouched).ok_or("falha ao reconstruir")?;
+  save_image(&img, dest, format, quality)
+}
+
+/// Grava uma imagem como JPEG/PNG.
+fn save_image(
+  img: &image::RgbImage,
+  dest: &Path,
+  format: &str,
+  quality: u8,
+) -> Result<(), String> {
+  let dynout = image::DynamicImage::ImageRgb8(img.clone());
+  match format {
+    "png" => dynout
+      .save_with_format(dest, image::ImageFormat::Png)
+      .map_err(|e| format!("salvar PNG: {e}")),
+    _ => {
+      let q = quality.clamp(1, 100);
+      let mut out = std::io::Cursor::new(Vec::new());
+      let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, q);
+      dynout
+        .write_with_encoder(encoder)
+        .map_err(|e| format!("codificar JPEG: {e}"))?;
+      std::fs::write(dest, out.into_inner()).map_err(|e| format!("gravar JPEG: {e}"))
+    }
+  }
+}
+
 /// Inpainting por difusão: preenche a região mascarada propagando os pixels das
 /// bordas para dentro, iterativamente (borda → interior). Resultado suave e
 /// adequado para remover objetos pequenos/distrações sobre fundo.

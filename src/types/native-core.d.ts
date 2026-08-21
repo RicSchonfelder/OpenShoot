@@ -87,6 +87,7 @@ declare module '*.node' {
   export function setAlbumSessionType(albumId: number, sessionType: string): void
   export function albumPhotoIds(albumId: number): number[]
   export function exportPhotos(ids: number[], destDir: string, format: string, quality: number): { ok: boolean; exported?: number; errors?: number; files?: string[]; dest_dir?: string; error?: string }
+  export function applyRetouchAll(ids: number[], destDir: string, skin: number, regions: Record<string, number>, format: string, quality: number): { ok: boolean; exported?: number; errors?: number; files?: string[]; dest_dir?: string; error?: string }
   export function scanFolderProgress(
     dir: string,
     includeSubdirs: boolean,

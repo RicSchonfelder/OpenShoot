@@ -696,6 +696,97 @@ pub fn export_photos(
   }))
 }
 
+/// Aplica retoque (pele + regiões faciais) em lote às fotos e grava em pasta.
+/// `skin_intensity` 0..1; `face_regions`: { "acne":0.5, "olhos":0.3, ... }.
+/// Não-destrutivo: grava cópias retocadas no destino.
+#[napi]
+pub fn apply_retouch_all(
+  ids: Vec<i64>,
+  dest_dir: String,
+  skin_intensity: f64,
+  face_regions: serde_json::Value,
+  format: String,
+  quality: i64,
+) -> Result<serde_json::Value> {
+  let dest = PathBuf::from(&dest_dir);
+  if let Err(e) = std::fs::create_dir_all(&dest) {
+    return Ok(serde_json::json!({ "ok": false, "error": format!("criar pasta: {e}") }));
+  }
+  let fmt = if format.eq_ignore_ascii_case("png") { "png" } else { "jpeg" };
+  let ext = if fmt == "png" { "png" } else { "jpg" };
+  let q = quality.clamp(1, 100) as u8;
+  let skin = skin_intensity.clamp(0.0, 1.0) as f32;
+
+  // Lê as regiões faciais do JSON (mapa região → intensidade).
+  let mut regions: Vec<(String, f32)> = Vec::new();
+  if let serde_json::Value::Object(map) = &face_regions {
+    for (k, v) in map {
+      if let Some(f) = v.as_f64() {
+        if f > 0.0 {
+          regions.push((k.clone(), f as f32));
+        }
+      }
+    }
+  }
+
+  let mut exported = 0i64;
+  let mut errors = 0i64;
+  let mut files: Vec<String> = Vec::new();
+  for id in ids {
+    let photo = match catalog::get_photo(id) {
+      Ok(Some(p)) => p,
+      _ => {
+        errors += 1;
+        continue;
+      }
+    };
+    let src = PathBuf::from(&photo.path);
+    let stem = src
+      .file_stem()
+      .map(|s| s.to_string_lossy().to_string())
+      .unwrap_or_else(|| format!("foto_{id}"));
+    let mut dest_path = dest.join(format!("{stem}.{ext}"));
+    let mut counter = 1;
+    while dest_path.exists() {
+      dest_path = dest.join(format!("{stem}_{counter}.{ext}"));
+      counter += 1;
+    }
+    let mut ok = true;
+    // Pele primeiro.
+    if skin > 0.0 {
+      if let Err(e) = retouch::retouch_skin_to_file(&src, skin, &dest_path, fmt, q) {
+        crate::catalog::log_debug(&format!("[retouch] pele {}: {e}", photo.path));
+        ok = false;
+      }
+    }
+    // Depois regiões faciais (empilhadas na mesma saída).
+    if ok {
+      for (region, intensity) in &regions {
+        let tmp = dest.join(format!("__tmp_{}.{}", stem, ext));
+        if let Err(e) = retouch::retouch_face_to_file(&src, region, *intensity, &tmp, fmt, q) {
+          crate::catalog::log_debug(&format!("[retouch] {region} {}: {e}", photo.path));
+          continue;
+        }
+        // Re-carrega a tmp como base para o próximo ajuste e move para dest.
+        let _ = std::fs::copy(&tmp, &dest_path);
+        let _ = std::fs::remove_file(&tmp);
+      }
+    }
+    if ok {
+      exported += 1;
+      files.push(dest_path.display().to_string());
+    } else {
+      errors += 1;
+    }
+  }
+  Ok(serde_json::json!({
+    "ok": true,
+    "exported": exported,
+    "errors": errors,
+    "files": files,
+    "dest_dir": dest.display().to_string(),
+  }))
+}
 // ---------------- Fase 3: edição em lote ----------------
 
 fn parse_edit_params(json: &str) -> std::result::Result<edit::EditParams, String> {

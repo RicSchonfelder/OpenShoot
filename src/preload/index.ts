@@ -49,6 +49,8 @@ const api = {
   exportPhotos: (ids: number[], destDir: string, format: string, quality: number): Promise<{ ok: boolean; exported?: number; errors?: number; files?: string[]; dest_dir?: string; error?: string }> =>
     ipcRenderer.invoke('core:exportPhotos', ids, destDir, format, quality),
   pickExportFolder: (): Promise<string | null> => ipcRenderer.invoke('core:pickExportFolder'),
+  applyRetouchAll: (ids: number[], destDir: string, skin: number, regions: Record<string, number>, format: string, quality: number): Promise<{ ok: boolean; exported?: number; errors?: number; files?: string[]; dest_dir?: string; error?: string }> =>
+    ipcRenderer.invoke('core:applyRetouchAll', ids, destDir, skin, regions, format, quality),
   // Fase 2
   cullPhotos: (targetPicks?: number): Promise<{ processed: number; errors: number; avgScore: number; picks: number; review: number }> =>
     ipcRenderer.invoke('core:cullPhotos', targetPicks),
