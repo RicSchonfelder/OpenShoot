@@ -78,6 +78,7 @@ declare module '*.node' {
   export function detectFacesInPhoto(id: number): { count: number; faces: number[][]; width: number; height: number }
   export function exportPresetToFile(name: string, dest: string): { ok: boolean; name?: string; error?: string }
   export function importPresetFromFile(path: string): { ok: boolean; name?: string; error?: string }
+  export function subjectMaskPhoto(id: number, blur: number, maxDim: number): Promise<string | null>
   export function scanFolderProgress(
     dir: string,
     includeSubdirs: boolean,

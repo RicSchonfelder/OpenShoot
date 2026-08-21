@@ -336,6 +336,13 @@ app.whenReady().then(() => {
       return { ok: false, error: String(e) }
     }
   })
+  ipcMain.handle('core:subjectMaskPhoto', async (_e, id: number, blur: number, maxDim: number) => {
+    try {
+      return await getCore().subjectMaskPhoto(id, blur, maxDim)
+    } catch (e) {
+      return null
+    }
+  })
   ipcMain.handle(
     'core:scanFolderProgress',
     async (

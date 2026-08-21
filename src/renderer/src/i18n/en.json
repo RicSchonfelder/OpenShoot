@@ -80,6 +80,8 @@
   "edit.importLr": "Import Lightroom preset (.xmp/.lrtemplate)",
   "edit.importJson": "Import JSON",
   "edit.exportJson": "Export JSON",
+  "edit.subjectMask": "Subject mask (blur background)",
+  "edit.subjectMaskHint": "Keeps the subject (face + skin) sharp and blurs the background",
   "edit.curvaTitulo": "Tone Curve",
   "edit.curvaDestaques": "Highlights",
   "edit.curvaLuzes": "Lights",

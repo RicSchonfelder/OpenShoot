@@ -219,6 +219,16 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
     })
   }, [loadPresets])
 
+  const subjectMask = () => {
+    if (!photo) return
+    setBusy(true)
+    window.openshoot
+      .subjectMaskPhoto(photo.id, 0.9, 500)
+      .then((t) => t && setPreview(t))
+      .catch(() => {})
+      .finally(() => setBusy(false))
+  }
+
   // Ao trocar de foto, carrega a receita salva (se houver).
   useEffect(() => {
     setValues(EMPTY)
@@ -553,6 +563,9 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
       </button>
       <button onClick={removeDistraction} disabled={busy} className="ghost full">
         {t('edit.removerDistracao')}
+      </button>
+      <button onClick={subjectMask} disabled={busy} className="ghost full" title={t('edit.subjectMaskHint')}>
+        {t('edit.subjectMask')}
       </button>
 
       <div className="edit-geo">

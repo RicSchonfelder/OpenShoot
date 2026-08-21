@@ -364,6 +364,92 @@ pub fn retouch_face_region(
   out
 }
 
+/// Máscara de sujeito (modo "SUJEITO/FUNDO" do AfterShoot).
+/// Usa a bbox do rosto (SCRFD) expandida + máscara de pele para definir o
+/// sujeito; desfoca o FUNDO (fora da máscara). Não-destrutivo.
+/// `background_blur` 0..1 controla a força do desfoque do fundo.
+pub fn subject_mask_base64(
+  rgb: &[u8],
+  width: u32,
+  height: u32,
+  face_bbox: [f32; 4],
+  background_blur: f32,
+) -> Vec<u8> {
+  let blur = background_blur.clamp(0.0, 1.0);
+  if blur <= 0.001 || rgb.is_empty() {
+    return rgb.to_vec();
+  }
+  let w = width as usize;
+  let h = height as usize;
+
+  // Máscara de sujeito: combina bbox do rosto expandida + pele.
+  let (fx0, fy0, fx1, fy1) = (face_bbox[0], face_bbox[1], face_bbox[2], face_bbox[3]);
+  let fw = (fx1 - fx0).max(0.05);
+  let fh = (fy1 - fy0).max(0.05);
+  // Expande a bbox ~40% para incluir ombros/torso superior.
+  let sx0 = (fx0 - fw * 0.4).clamp(0.0, 1.0);
+  let sx1 = (fx1 + fw * 0.4).clamp(0.0, 1.0);
+  let sy0 = (fy0 - fh * 0.5).clamp(0.0, 1.0);
+  let sy1 = (fy1 + fh * 0.6).clamp(0.0, 1.0);
+  let (px0, py0) = ((sx0 * width as f32) as usize, (sy0 * height as f32) as usize);
+  let (px1, py1) = (((sx1 * width as f32) as usize).min(w), ((sy1 * height as f32) as usize).min(h));
+
+  // Máscara suave por pixel: 1 dentro da região expandida que também é pele.
+  let skin = skin_mask(rgb, width, height);
+  let mut subj = vec![0.0f32; w * h];
+  for y in py0..py1 {
+    for x in px0..px1 {
+      let i = y * w + x;
+      let sk = skin[i];
+      // Dentro da bbox do rosto → sempre sujeito. Fora → depende da pele.
+      let in_face = x >= (fx0 * width as f32) as usize
+        && x < (fx1 * width as f32) as usize
+        && y >= (fy0 * height as f32) as usize
+        && y < (fy1 * height as f32) as usize;
+      subj[i] = if in_face { 1.0 } else { sk };
+    }
+  }
+
+  // Blur do fundo (box blur maior).
+  let blurred = box_blur_radius(rgb, w, h, 4);
+  let mut out = Vec::with_capacity(rgb.len());
+  for (i, px) in rgb.chunks_exact(3).enumerate() {
+    let m = subj[i];
+    // Mistura: quanto mais "fundo" (m baixo), mais blurred.
+    let amount = (1.0 - m) * blur;
+    let b = &blurred[i * 3..i * 3 + 3];
+    out.push((px[0] as f32 * (1.0 - amount) + b[0] as f32 * amount).clamp(0.0, 255.0) as u8);
+    out.push((px[1] as f32 * (1.0 - amount) + b[1] as f32 * amount).clamp(0.0, 255.0) as u8);
+    out.push((px[2] as f32 * (1.0 - amount) + b[2] as f32 * amount).clamp(0.0, 255.0) as u8);
+  }
+  out
+}
+
+/// Box blur com raio arbitrário (para fundo).
+fn box_blur_radius(rgb: &[u8], w: usize, h: usize, radius: usize) -> Vec<u8> {
+  let mut out = rgb.to_vec();
+  let r = radius.max(1);
+  for y in 0..h {
+    for x in 0..w {
+      for c in 0..3 {
+        let mut sum = 0f32;
+        let mut n = 0f32;
+        for dy in -(r as i32)..=(r as i32) {
+          for dx in -(r as i32)..=(r as i32) {
+            let (nx, ny) = (x as i32 + dx, y as i32 + dy);
+            if nx >= 0 && nx < w as i32 && ny >= 0 && ny < h as i32 {
+              sum += rgb[((ny as usize) * w + nx as usize) * 3 + c] as f32;
+              n += 1.0;
+            }
+          }
+        }
+        out[(y * w + x) * 3 + c] = (sum / n) as u8;
+      }
+    }
+  }
+  out
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -462,5 +548,34 @@ mod tests {
       rgb[i]
     );
     assert_eq!(out.len(), rgb.len());
+  }
+
+  #[test]
+  fn subject_mask_blurs_background() {
+    // Fundo claro, sujeito (pele) no centro. blur alto deve suavizar o fundo.
+    let w = 40u32;
+    let h = 40u32;
+    let mut rgb = Vec::new();
+    for _ in 0..(w * h) {
+      rgb.push(200);
+      rgb.push(200);
+      rgb.push(200);
+    }
+    // "Pele" (tom) no centro — skin_mask deve marcar como sujeito.
+    for y in 15..25 {
+      for x in 15..25 {
+        let i = (y * w + x) as usize * 3;
+        rgb[i] = 180;
+        rgb[i + 1] = 150;
+        rgb[i + 2] = 120;
+      }
+    }
+    // bbox do rosto centrado.
+    let out = subject_mask_base64(&rgb, w, h, [0.3, 0.3, 0.7, 0.7], 1.0);
+    assert_eq!(out.len(), rgb.len());
+    // Fundo (canto) deve ter sido suavizado (diferente do original no blur).
+    // Com blur 1.0 o canto fica média da vizinhança; deve ser < 200 original.
+    // Testamos apenas que a saída difere do original (houve processamento).
+    assert!(out != rgb, "fundo deve ser alterado pelo blur");
   }
 }

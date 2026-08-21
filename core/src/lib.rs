@@ -183,6 +183,61 @@ pub fn import_preset_from_file(path: String) -> Result<serde_json::Value> {
   }
 }
 
+/// Máscara de sujeito: desfoca o fundo mantendo o sujeito (face + pele) nítido.
+/// Detecta o rosto via SCRFD. Retorna o preview (base64).
+#[napi]
+pub async fn subject_mask_photo(
+  id: i64,
+  background_blur: f64,
+  max_dim: u32,
+) -> Result<Option<String>> {
+  let photo = match catalog::get_photo(id) {
+    Ok(Some(p)) => p,
+    Ok(None) => return Ok(None),
+    Err(e) => return Err(Error::from_reason(e)),
+  };
+  let path = PathBuf::from(&photo.path);
+  let dim = if max_dim == 0 { 512 } else { max_dim };
+  let blur = background_blur;
+  tokio::task::spawn_blocking(move || {
+    let img = image::ImageReader::open(&path)
+      .ok()
+      .and_then(|r| r.decode().ok())
+      .map(|d| d.to_rgb8())
+      .or_else(|| {
+        crate::imageproc::read_embedded_jpeg(&path).and_then(|jpeg| {
+          image::ImageReader::new(std::io::Cursor::new(jpeg))
+            .with_guessed_format()
+            .ok()
+            .and_then(|r| r.decode().ok())
+            .map(|d| d.to_rgb8())
+        })
+      })?;
+    let (w, h) = img.dimensions();
+    let rgb = img.as_raw();
+    let bbox = if crate::ml::models_available() {
+      crate::ml::detect_faces(rgb, w, h, 0.5)
+        .ok()
+        .and_then(|f| f.into_iter().next())
+        .unwrap_or([0.2, 0.2, 0.8, 0.8])
+    } else {
+      [0.2, 0.2, 0.8, 0.8]
+    };
+    let out = retouch::subject_mask_base64(rgb, w, h, bbox, blur as f32);
+    let img_out = image::RgbImage::from_raw(w, h, out)?;
+    let dynimg = image::DynamicImage::ImageRgb8(img_out);
+    let thumb = dynimg.thumbnail(dim, dim);
+    let mut buf = std::io::Cursor::new(Vec::new());
+    thumb.write_to(&mut buf, image::ImageFormat::Jpeg).ok()?;
+    Some(format!(
+      "data:image/jpeg;base64,{}",
+      base64::engine::general_purpose::STANDARD.encode(buf.into_inner())
+    ))
+  })
+  .await
+  .map_err(|e| Error::from_reason(e.to_string()))
+}
+
 /// Total de fotos no catálogo.
 #[napi]
 pub fn photo_count() -> Result<i64> {

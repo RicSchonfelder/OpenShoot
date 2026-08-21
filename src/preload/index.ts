@@ -31,6 +31,8 @@ const api = {
     ipcRenderer.invoke('core:exportPresetToFile', name, dest),
   importPresetFromFile: (path: string): Promise<{ ok: boolean; name?: string; error?: string }> =>
     ipcRenderer.invoke('core:importPresetFromFile', path),
+  subjectMaskPhoto: (id: number, blur: number, maxDim: number): Promise<string | null> =>
+    ipcRenderer.invoke('core:subjectMaskPhoto', id, blur, maxDim),
   // Fase 2
   cullPhotos: (targetPicks?: number): Promise<{ processed: number; errors: number; avgScore: number; picks: number; review: number }> =>
     ipcRenderer.invoke('core:cullPhotos', targetPicks),
