@@ -1114,3 +1114,18 @@ button.danger {
 .hsl-color.hsl-blue.active { border-color: #3b82f6; }
 .hsl-color.hsl-purple.active { border-color: #a855f7; }
 .hsl-color.hsl-magenta.active { border-color: #ec4899; }
+
+/* ------- Nitidez / Ruído ------- */
+.edit-sharp {
+  margin-top: 6px;
+  padding-top: 12px;
+  border-top: 1px solid #252b37;
+}
+
+.edit-sharp h4 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: #93c5fd;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}

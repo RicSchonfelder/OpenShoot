@@ -16,6 +16,8 @@ export interface EditValues {
   toneDarks: number | null
   toneShadows: number | null
   hsl: number[] | null
+  sharpen: number | null
+  denoise: number | null
 }
 
 const EMPTY: EditValues = {
@@ -31,7 +33,9 @@ const EMPTY: EditValues = {
   toneLights: null,
   toneDarks: null,
   toneShadows: null,
-  hsl: null
+  hsl: null,
+  sharpen: null,
+  denoise: null
 }
 
 const HSL_COLORS = [
@@ -88,6 +92,8 @@ function toJson(values: EditValues): string {
   ]
   if (curve.some((v) => v !== 0)) o.tone_curve = curve
   if (values.hsl && values.hsl.some((v) => v !== 0)) o.hsl = values.hsl
+  if (values.sharpen != null && values.sharpen !== 0) o.sharpen = values.sharpen
+  if (values.denoise != null && values.denoise !== 0) o.denoise = values.denoise
   return JSON.stringify(o)
 }
 
@@ -142,7 +148,9 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
           toneLights: c?.[1] ?? null,
           toneDarks: c?.[2] ?? null,
           toneShadows: c?.[3] ?? null,
-          hsl: Array.isArray(p.hsl) ? (p.hsl as number[]) : null
+          hsl: Array.isArray(p.hsl) ? (p.hsl as number[]) : null,
+          sharpen: p.sharpen ?? null,
+          denoise: p.denoise ?? null
         }
         setValues(next)
         if (photo) updatePreview(next)
@@ -199,7 +207,9 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
           toneLights: c?.[1] ?? null,
           toneDarks: c?.[2] ?? null,
           toneShadows: c?.[3] ?? null,
-          hsl: Array.isArray(p.hsl) ? (p.hsl as number[]) : null
+          hsl: Array.isArray(p.hsl) ? (p.hsl as number[]) : null,
+          sharpen: p.sharpen ?? null,
+          denoise: p.denoise ?? null
         })
       } catch {
         /* ignore */
@@ -240,6 +250,13 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
     hsl[hslColor * 3 + channel] = val
     const allZero = hsl.every((v) => v === 0)
     const next = { ...values, hsl: allZero ? null : hsl }
+    setValues(next)
+    if (debounce.current) clearTimeout(debounce.current)
+    debounce.current = setTimeout(() => updatePreview(next), 200)
+  }
+
+  const onDetailSlider = (key: 'sharpen' | 'denoise', val: number) => {
+    const next = { ...values, [key]: val === 0 ? null : val }
     setValues(next)
     if (debounce.current) clearTimeout(debounce.current)
     debounce.current = setTimeout(() => updatePreview(next), 200)
@@ -372,6 +389,34 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
                 step={1}
                 value={v}
                 onChange={(e) => onHslSlider(channel, Number(e.target.value))}
+              />
+            </label>
+          )
+        })}
+      </div>
+
+      <div className="edit-sharp">
+        <h4>{t('edit.nitidezTitulo')}</h4>
+        {(
+          [
+            ['edit.nitidez', 'sharpen'],
+            ['edit.ruido', 'denoise']
+          ] as Array<[string, 'sharpen' | 'denoise']>
+        ).map(([labelKey, key]) => {
+          const v = values[key] ?? 0
+          return (
+            <label key={key} className="edit-slider">
+              <span>
+                {t(labelKey)}
+                <em>{v}</em>
+              </span>
+              <input
+                type="range"
+                min={-100}
+                max={100}
+                step={1}
+                value={v}
+                onChange={(e) => onDetailSlider(key, Number(e.target.value))}
               />
             </label>
           )

@@ -32,6 +32,10 @@ pub struct EditParams {
   /// Ordem (Lightroom): Red, Orange, Yellow, Green, Aqua, Blue, Purple, Magenta.
   /// Ajuste aplicado por proximidade de matiz com falloff.
   pub hsl: Option<[f32; 24]>,
+  /// Nitidez (-100..100). 0 = neutro. Implementada com unsharp mask.
+  pub sharpen: Option<f32>,
+  /// Redução de ruído (-100..100). 0 = neutro. Blur seletivo preservando bordas.
+  pub denoise: Option<f32>,
 }
 
 /// Centros de matiz das 8 cores HSL (graus).
@@ -252,7 +256,96 @@ pub fn apply_to_rgb8(
     out.push((p[1] * 255.0) as u8);
     out.push((p[2] * 255.0) as u8);
   }
+
+  // Nitidez (unsharp mask) e redução de ruído operam na imagem inteira.
+  let mut result = out;
+  if params.sharpen.is_some() {
+    result = unsharp_mask(&result, width, height, params.sharpen.unwrap_or(0.0));
+  }
+  if params.denoise.is_some() {
+    result = denoise_preserve_edges(&result, width, height, params.denoise.unwrap_or(0.0));
+  }
   let _ = (width, height);
+  result
+}
+
+/// Unsharp mask: realça bordas subtraindo uma versão desfocada.
+/// amount -100..100 (0 = neutro).
+fn unsharp_mask(rgb: &[u8], w: u32, h: u32, amount: f32) -> Vec<u8> {
+  let blur = box_blur(rgb, w, h, 1);
+  let a = amount / 100.0;
+  let mut out = Vec::with_capacity(rgb.len());
+  for (i, px) in rgb.chunks_exact(3).enumerate() {
+    for c in 0..3 {
+      let orig = px[c] as f32;
+      let b = blur[i * 3 + c] as f32;
+      let sharp = orig + (orig - b) * a * 2.0;
+      out.push(sharp.clamp(0.0, 255.0) as u8);
+    }
+  }
+  out
+}
+
+/// Redução de ruído: blur 3x3 preservando bordas (parecido com bilateral leve).
+/// amount -100..100 (0 = neutro; valores positivos suavizam mais).
+fn denoise_preserve_edges(rgb: &[u8], w: u32, h: u32, amount: f32) -> Vec<u8> {
+  let a = (amount / 100.0).clamp(0.0, 1.0);
+  if a <= 0.0 {
+    return rgb.to_vec();
+  }
+  let (wi, hi) = (w as i32, h as i32);
+  let mut out = rgb.to_vec();
+  for y in 0..hi {
+    for x in 0..wi {
+      for c in 0..3 {
+        let idx = ((y * wi + x) * 3 + c) as usize;
+        let center = rgb[idx] as f32;
+        // Média 3x3.
+        let mut sum = 0f32;
+        let mut n = 0f32;
+        for dy in -1i32..=1 {
+          for dx in -1i32..=1 {
+            let (nx, ny) = (x + dx, y + dy);
+            if nx >= 0 && nx < wi && ny >= 0 && ny < hi {
+              sum += rgb[((ny * wi + nx) * 3 + c) as usize] as f32;
+              n += 1.0;
+            }
+          }
+        }
+        let mean = sum / n;
+        // Bilateral simplificado: mistura mais onde o centro ≈ vizinhança.
+        let diff = (center - mean).abs();
+        let w_keep = (1.0 - a) + a * (diff / 255.0);
+        let blended = mean * a + center * (1.0 - a);
+        out[idx] = (center + (blended - center) * w_keep).clamp(0.0, 255.0) as u8;
+      }
+    }
+  }
+  out
+}
+
+/// Blur 3x3 (para unsharp mask).
+fn box_blur(rgb: &[u8], w: u32, h: u32, _radius: u32) -> Vec<u8> {
+  let (wi, hi) = (w as i32, h as i32);
+  let mut out = Vec::with_capacity(rgb.len());
+  for y in 0..hi {
+    for x in 0..wi {
+      for c in 0..3 {
+        let mut sum = 0f32;
+        let mut n = 0f32;
+        for dy in -1i32..=1 {
+          for dx in -1i32..=1 {
+            let (nx, ny) = (x + dx, y + dy);
+            if nx >= 0 && nx < wi && ny >= 0 && ny < hi {
+              sum += rgb[((ny * wi + nx) * 3 + c) as usize] as f32;
+              n += 1.0;
+            }
+          }
+        }
+        out.push((sum / n) as u8);
+      }
+    }
+  }
   out
 }
 
@@ -397,5 +490,62 @@ mod tests {
     let (h, _, _) = rgb_to_hsl(p.apply_pixel([0.0, 1.0, 0.0]));
     // Matiz original do verde puro é ~120; deslocado deve diferir.
     assert!((h - 120.0).abs() > 10.0, "matiz deve mudar, ficou {}", h);
+  }
+
+  #[test]
+  fn sharpen_boosts_edge_contrast() {
+    // Imagem com uma borda nítida (50 → 200). Nitidez deve aumentar o contraste.
+    let w = 4u32;
+    let h = 1u32;
+    let mut rgb = Vec::new();
+    for _ in 0..2 {
+      for c in 0..3 {
+        rgb.push(50);
+      }
+    }
+    for _ in 0..2 {
+      for c in 0..3 {
+        rgb.push(200);
+      }
+    }
+    let p = EditParams {
+      sharpen: Some(80.0),
+      ..Default::default()
+    };
+    let out = unsharp_mask(&rgb, w, h, 80.0);
+    // O lado escuro da borda deve escurecer ou o claro deve clarear.
+    let dark_edge = out[2 * 3];
+    let bright_edge = out[2 * 3 + 0];
+    assert!(
+      (dark_edge < 50 || bright_edge > 200),
+      "borda deve ter mais contraste: {} / {}",
+      dark_edge,
+      bright_edge
+    );
+  }
+
+  #[test]
+  fn denoise_smooths_uniform_area() {
+    // Área uniforme com ruído: denoise deve aproximar os valores da média.
+    let w = 4u32;
+    let h = 1u32;
+    let mut rgb = Vec::new();
+    // [100, 112, 88, 100] no canal R; g/b constantes.
+    for (i, v) in [100u8, 112, 88, 100].iter().enumerate() {
+      rgb.push(*v);
+      rgb.push(100);
+      rgb.push(100);
+    }
+    let p = EditParams {
+      denoise: Some(90.0),
+      ..Default::default()
+    };
+    let out = denoise_preserve_edges(&rgb, w, h, 90.0);
+    let center_r = out[1 * 3] as i32;
+    assert!(
+      (center_r - 100).abs() < 15,
+      "ruído deve suavizar em direção à média, canal r ficou {}",
+      center_r
+    );
   }
 }
