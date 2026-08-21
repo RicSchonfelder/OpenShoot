@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Gallery from './components/Gallery'
 import EditPanel from './components/EditPanel'
+import EditViewPhoto from './components/EditViewPhoto'
 import LoupeView from './components/LoupeView'
 import FilterPanel from './components/FilterPanel'
 import { useT } from './i18n/I18nContext'
@@ -54,6 +55,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [loupeOpen, setLoupeOpen] = useState(false)
   const [loupeIndex, setLoupeIndex] = useState(0)
+  const [editViewId, setEditViewId] = useState<number | null>(null)
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>('none')
   const [moreOpen, setMoreOpen] = useState(false)
   const moreRef = useRef<HTMLDivElement | null>(null)
@@ -121,15 +123,18 @@ export default function App() {
         const next = new Set<number>()
         for (let i = lo; i <= hi; i++) next.add(photosRef.current[i].id)
         setSelectedIds(next)
+        setEditViewId(null)
       } else if (opts.toggle) {
         // Cmd/Ctrl: alterna este item mantendo os outros
         const next = new Set(selectedRef.current)
         if (next.has(id)) next.delete(id)
         else next.add(id)
         setSelectedIds(next)
+        setEditViewId(null)
       } else {
-        // Clique simples: seleciona só este
+        // Clique simples: seleciona só este e abre a foto em tela grande.
         setSelectedIds(new Set([id]))
+        setEditViewId(id)
       }
       setAnchorId(id)
     },
@@ -503,6 +508,30 @@ export default function App() {
     return () => document.removeEventListener('mousedown', onDoc)
   }, [moreOpen])
 
+  // Atalhos do modo de edição em tela grande.
+  useEffect(() => {
+    if (editViewId == null) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setEditViewId(null)
+        return
+      }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const idx = photosRef.current.findIndex((p) => p.id === editViewId)
+        if (idx < 0) return
+        const dir = e.key === 'ArrowRight' ? 1 : -1
+        const next = photosRef.current[idx + dir]
+        if (next) {
+          setEditViewId(next.id)
+          setSelectedIds(new Set([next.id]))
+          setAnchorId(next.id)
+        }
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [editViewId])
+
   if (loupeOpen) {
     return (
       <LoupeView
@@ -512,6 +541,35 @@ export default function App() {
         onApplyRating={loupeApplyRating}
         onClose={loupeClose}
       />
+    )
+  }
+
+  // Modo de edição em tela grande: foto por inteiro + painel de edição.
+  const editPhoto = editViewId != null ? (photos.find((p) => p.id === editViewId) ?? null) : null
+  if (editPhoto) {
+    return (
+      <div className="app">
+        <header className="topbar">
+          <span className="logo">OpenShoot</span>
+          <div className="topbar-right">
+            <button onClick={() => setEditViewId(null)} className="ghost">
+              ← {t('app.voltarGaleria')}
+            </button>
+            <button onClick={exportXmp} disabled={exporting} className="ghost">
+              {exporting ? t('app.exportando') : t('app.exportarXmp')}
+            </button>
+          </div>
+        </header>
+        <main className="content editview">
+          <div className="editview-stage">
+            <EditViewPhoto photoId={editPhoto.id} />
+          </div>
+          <EditPanel photo={editPhoto} onApplyAll={handleApplyAll} />
+        </main>
+        <div className="shortcuts-bar">
+          <span dangerouslySetInnerHTML={{ __html: t('app.editViewShortcuts') }} />
+        </div>
+      </div>
     )
   }
 

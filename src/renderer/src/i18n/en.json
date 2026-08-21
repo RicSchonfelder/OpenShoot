@@ -44,6 +44,8 @@
   "app.reiniciar": "Reset filters",
   "app.targetPicks": "Selection target:",
   "app.filtrosTitulo": "Selection filters",
+  "app.voltarGaleria": "← Back to gallery",
+  "app.editViewShortcuts": "<b>Esc</b> or <b>←</b> back · <b>←→</b> previous/next photo",
   "app.importProgress": "Importing… {processed}/{total} files",
   "app.scanErrors": "{n} error(s) during import",
   "app.shortcuts": "<b>P</b> pick · <b>X</b> reject · <b>U</b> clear · <b>1-5</b> ★ · <b>←→↑↓</b> navigate · <b>Shift</b> range · <b>⌘</b> multi · <b>Del</b> trash · <b>↵</b> loupe",

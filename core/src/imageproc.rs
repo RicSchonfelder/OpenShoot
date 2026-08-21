@@ -64,12 +64,17 @@ pub fn inspect_file(path: &Path) -> Result<FileMeta, String> {
 
   // Try to extract dimensions + camera from EXIF (fast, no full decode).
   let dims_camera = read_exif_basic(path);
-  if let Some((w, h)) = dims_camera.dims {
+  if let Some((mut w, mut h)) = dims_camera.dims {
+    // Orientação 5-8 = 90/270°: troca largura/altura para refletir o retrato.
+    if (5..=8).contains(&dims_camera.orientation) {
+      std::mem::swap(&mut w, &mut h);
+    }
     meta.width = w;
     meta.height = h;
   }
   meta.camera = dims_camera.camera;
   meta.taken_at = dims_camera.taken_at;
+  meta.orientation = dims_camera.orientation;
 
   // Mark preview available only if we can actually decode it.
   // RAW previews são resolvidos async via jpgfromraw-lib; aqui marcamos true
@@ -96,6 +101,7 @@ pub struct ExifBasic {
   pub dims: Option<(i64, i64)>,
   pub camera: String,
   pub taken_at: Option<String>,
+  pub orientation: u16,
 }
 
 pub fn read_exif_basic(path: &Path) -> ExifBasic {
@@ -103,6 +109,7 @@ pub fn read_exif_basic(path: &Path) -> ExifBasic {
     dims: None,
     camera: String::new(),
     taken_at: None,
+    orientation: 1,
   };
   if !path.exists() {
     return result;
@@ -114,6 +121,12 @@ pub fn read_exif_basic(path: &Path) -> ExifBasic {
   let mut bufreader = BufReader::new(file);
   let exifreader = exif::Reader::new();
   if let Ok(exif) = exifreader.read_from_container(&mut bufreader) {
+    // Orientation (0x0112): 1-8. Sem ele, assume 1 (normal).
+    if let Some(f) = exif.get_field(exif::Tag::Orientation, exif::In::PRIMARY) {
+      if let Some(v) = f.value.get_uint(0) {
+        result.orientation = v.clamp(1, 8) as u16;
+      }
+    }
     // Dimensions: try several tags, take whatever combination is present.
     let mut w: Option<u32> = None;
     let mut h: Option<u32> = None;
@@ -241,13 +254,38 @@ fn extract_preview_bytes_sync(path: &Path) -> Result<Vec<u8>, String> {
   Ok(out.into_inner())
 }
 
+/// Lê a orientação EXIF (0x0112) de um buffer JPEG/TIFF (1..8).
+fn buffer_orientation(bytes: &[u8]) -> image::metadata::Orientation {
+  let mut cursor = std::io::Cursor::new(bytes);
+  let ori = exif::Reader::new()
+    .read_from_container(&mut cursor)
+    .ok()
+    .and_then(|exif| {
+      exif.get_field(exif::Tag::Orientation, exif::In::PRIMARY)
+        .and_then(|f| f.value.get_uint(0))
+    })
+    .unwrap_or(1);
+  match ori {
+    2 => image::metadata::Orientation::FlipHorizontal,
+    3 => image::metadata::Orientation::Rotate180,
+    4 => image::metadata::Orientation::FlipVertical,
+    5 => image::metadata::Orientation::Rotate90AndFlipHorizontal,
+    6 => image::metadata::Orientation::Rotate90,
+    7 => image::metadata::Orientation::Rotate90AndFlipVertical,
+    8 => image::metadata::Orientation::Rotate270,
+    _ => image::metadata::Orientation::Normal,
+  }
+}
+
 /// Gera um thumbnail (default max 256px) como JPEG bytes a partir de uma foto.
 fn thumbnail_from_jpeg(bytes: &[u8], max_dim: u32) -> Result<Vec<u8>, String> {
+  let ori = buffer_orientation(bytes);
   let img = ImageReader::new(std::io::Cursor::new(bytes))
     .with_guessed_format()
     .map_err(|e| e.to_string())?
     .decode()
     .map_err(|e| e.to_string())?;
+  let img = img.apply_orientation(ori);
   let thumb = img.thumbnail(max_dim, max_dim);
   let mut out = std::io::Cursor::new(Vec::new());
   thumb

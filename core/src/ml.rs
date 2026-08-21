@@ -13,6 +13,7 @@ pub fn models_dir() -> PathBuf {
 struct MlEngine {
   scrfd: Option<Mutex<Session>>,
   nima: Option<Mutex<Session>>,
+  mobilefacenet: Option<Mutex<Session>>,
 }
 
 static ENGINE: OnceLock<Result<MlEngine, String>> = OnceLock::new();
@@ -25,6 +26,7 @@ fn build_engine() -> Result<MlEngine, Box<dyn std::error::Error>> {
   let dir = models_dir();
   let scrfd_path = dir.join("scrfd_2.5g_bnkps.onnx");
   let nima_path = dir.join("nima_mobilenet_aesthetic.onnx");
+  let mfn_path = dir.join("mobilefacenet.onnx");
 
   let mut scrfd = None;
   if scrfd_path.exists() {
@@ -46,7 +48,17 @@ fn build_engine() -> Result<MlEngine, Box<dyn std::error::Error>> {
     eprintln!("[ml] aviso: modelo NIMA ausente em {}", nima_path.display());
   }
 
-  Ok(MlEngine { scrfd, nima })
+  let mut mobilefacenet = None;
+  if mfn_path.exists() {
+    match build_session(&mfn_path) {
+      Ok(s) => mobilefacenet = Some(Mutex::new(s)),
+      Err(e) => eprintln!("[ml] aviso: MobileFaceNet nao carregou: {e}"),
+    }
+  } else {
+    eprintln!("[ml] aviso: modelo MobileFaceNet ausente em {}", mfn_path.display());
+  }
+
+  Ok(MlEngine { scrfd, nima, mobilefacenet })
 }
 
 fn build_session(model: &Path) -> Result<Session, Box<dyn std::error::Error>> {
@@ -377,6 +389,86 @@ pub fn models_available() -> bool {
     && models_dir().join("nima_mobilenet_aesthetic.onnx").exists()
 }
 
+/// Indica se o modelo de embedding facial (MobileFaceNet) está disponível.
+pub fn embedding_available() -> bool {
+  models_dir().join("mobilefacenet.onnx").exists()
+}
+
+/// Gera o embedding facial (vetor normalizado) de um rosto dentro da imagem.
+/// `bbox` é normalizada (0..1). Recorta o rosto, redimensiona para 112x112
+/// (entrada MobileFaceNet) e retorna o vetor de características.
+pub fn face_embedding(
+  rgb: &[u8],
+  width: u32,
+  height: u32,
+  bbox: [f32; 4],
+) -> Result<Vec<f32>, String> {
+  let engine = init_engine().as_ref().map_err(|e| e.clone())?;
+  let session = engine
+    .mobilefacenet
+    .as_ref()
+    .ok_or_else(|| "MobileFaceNet nao disponivel".to_string())?;
+  let mut guard = session.lock().map_err(|e| e.to_string())?;
+
+  const SIDE: usize = 112;
+  // Recorta o rosto com uma pequena margem.
+  let (x0, y0, x1, y1) = (
+    (bbox[0] * width as f32).max(0.0) as usize,
+    (bbox[1] * height as f32).max(0.0) as usize,
+    (bbox[2] * width as f32).min(width as f32) as usize,
+    (bbox[3] * height as f32).min(height as f32) as usize,
+  );
+  let cw = (x1 - x0).max(1);
+  let ch = (y1 - y0).max(1);
+  // Margem de 20% ao redor do rosto (ajuda o alinhamento).
+  let mx = (cw as f32 * 0.2) as usize;
+  let my = (ch as f32 * 0.2) as usize;
+  let sx0 = x0.saturating_sub(mx);
+  let sy0 = y0.saturating_sub(my);
+  let sx1 = (x1 + mx).min(width as usize);
+  let sy1 = (y1 + my).min(height as usize);
+  let cw2 = (sx1 - sx0).max(1);
+  let ch2 = (sy1 - sy0).max(1);
+
+  // Constrói o tensor NCHW 1x3x112x112 por amostragem bilinear simples.
+  let mut tensor = Array4::<f32>::zeros((1, 3, SIDE, SIDE));
+  for ty in 0..SIDE {
+    for tx in 0..SIDE {
+      let sx = ((tx as f32 + 0.5) / SIDE as f32 * cw2 as f32).floor() as usize;
+      let sy = ((ty as f32 + 0.5) / SIDE as f32 * ch2 as f32).floor() as usize;
+      let sx = sx.min(cw2 - 1);
+      let sy = sy.min(ch2 - 1);
+      let i = ((sy0 + sy) * width as usize + (sx0 + sx)) * 3;
+      // MobileFaceNet: normaliza [-1, 1] com (pixel-127.5)/128.
+      tensor[[0, 0, ty, tx]] = (rgb[i] as f32 - 127.5) / 128.0;
+      tensor[[0, 1, ty, tx]] = (rgb[i + 1] as f32 - 127.5) / 128.0;
+      tensor[[0, 2, ty, tx]] = (rgb[i + 2] as f32 - 127.5) / 128.0;
+    }
+  }
+
+  let input = Tensor::from_array(tensor).map_err(|e| e.to_string())?;
+  let outputs = guard
+    .run(ort::inputs![input])
+    .map_err(|e| format!("erro MobileFaceNet: {e}"))?;
+
+  let mut emb: Option<Vec<f32>> = None;
+  for (_, val) in outputs.iter() {
+    if let Ok((_, arr)) = val.try_extract_tensor::<f32>() {
+      emb = Some(arr.to_vec());
+      break;
+    }
+  }
+  let emb = emb.ok_or_else(|| "output MobileFaceNet nao extraido".to_string())?;
+
+  // Normaliza L2 para comparar por cosseno.
+  let norm: f32 = emb.iter().map(|v| v * v).sum::<f32>().sqrt();
+  if norm > 1e-6 {
+    Ok(emb.into_iter().map(|v| v / norm).collect())
+  } else {
+    Ok(emb)
+  }
+}
+
 /// Score combinado de IA (0..100): NIMA (estética) + bônus por faces.
 /// Retorna None se o ML não estiver disponível (fallback heurístico).
 pub fn ml_quality_score(rgb: &[u8], width: u32, height: u32) -> Result<f64, String> {
@@ -442,5 +534,32 @@ mod tests {
     let keep = nms(&boxes, &scores, 0.4);
     assert_eq!(keep.len(), 1);
     assert_eq!(keep[0], 1);
+  }
+
+  #[test]
+  fn embedding_dimension_and_norm() {
+    if !embedding_available() {
+      eprintln!("skip: MobileFaceNet ausente");
+      return;
+    }
+    // Imagem sintética (gradiente) simulando um rosto na região central.
+    let w = 112u32;
+    let h = 112u32;
+    let mut rgb = Vec::with_capacity((w * h * 3) as usize);
+    for y in 0..h {
+      for x in 0..w {
+        rgb.push((x as f32 / w as f32 * 255.0) as u8);
+        rgb.push((y as f32 / h as f32 * 255.0) as u8);
+        rgb.push(128);
+      }
+    }
+    let emb = face_embedding(&rgb, w, h, [0.1, 0.1, 0.9, 0.9]).expect("embedding");
+    assert!(!emb.is_empty(), "embedding não pode ser vazio");
+    // Norma L2 ~1 (normalizada).
+    let norm: f32 = emb.iter().map(|v| v * v).sum::<f32>().sqrt();
+    assert!((norm - 1.0).abs() < 0.1, "norma deve ser ~1, got {norm}");
+    // Determinístico: mesma entrada → mesmo vetor.
+    let emb2 = face_embedding(&rgb, w, h, [0.1, 0.1, 0.9, 0.9]).expect("embedding2");
+    assert_eq!(emb, emb2, "embedding deve ser determinístico");
   }
 }

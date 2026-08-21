@@ -7,6 +7,7 @@ mod cr3;
 mod culling;
 mod edit;
 mod geometric;
+mod grouping;
 mod imageproc;
 mod lrimport;
 mod ml;
@@ -233,6 +234,47 @@ pub async fn subject_mask_photo(
       "data:image/jpeg;base64,{}",
       base64::engine::general_purpose::STANDARD.encode(buf.into_inner())
     ))
+  })
+  .await
+  .map_err(|e| Error::from_reason(e.to_string()))
+}
+
+// ---------------- Reconhecimento facial / agrupamento ----------------
+
+/// Agrupa fotos por pessoa (similaridade facial via MobileFaceNet).
+/// Retorna JSON { ok, groups: [{person_id, count, sample_path, photo_ids, photo_paths}] }.
+#[napi]
+pub async fn group_by_similarity_async(threshold: Option<f64>) -> Result<serde_json::Value> {
+  let paths = match catalog::all_photo_paths() {
+    Ok(p) => p,
+    Err(e) => return Err(Error::from_reason(e)),
+  };
+  let t = threshold.unwrap_or(0.5) as f32;
+  tokio::task::spawn_blocking(move || {
+    match grouping::group_by_similarity(&paths, t) {
+      Ok(groups) => serde_json::to_value(groups).unwrap_or(serde_json::json!([])),
+      Err(e) => serde_json::json!({ "error": e }),
+    }
+  })
+  .await
+  .map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// Exporta as fotos agrupadas por pessoa para pastas (Pessoa 1, Pessoa 2...).
+/// Retorna JSON { ok, out_dir, groups, exported }.
+#[napi]
+pub async fn export_people_to_folders(
+  out_dir: String,
+  threshold: Option<f64>,
+) -> Result<serde_json::Value> {
+  let paths = match catalog::all_photo_paths() {
+    Ok(p) => p,
+    Err(e) => return Err(Error::from_reason(e)),
+  };
+  let t = threshold.unwrap_or(0.5) as f32;
+  tokio::task::spawn_blocking(move || {
+    grouping::export_grouped(&paths, &PathBuf::from(&out_dir), t)
+      .unwrap_or_else(|e| serde_json::json!({ "ok": false, "error": e }))
   })
   .await
   .map_err(|e| Error::from_reason(e.to_string()))
