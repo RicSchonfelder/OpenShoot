@@ -1066,3 +1066,51 @@ button.danger {
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
+
+/* ------- HSL ------- */
+.edit-hsl {
+  margin-top: 6px;
+  padding-top: 12px;
+  border-top: 1px solid #252b37;
+}
+
+.edit-hsl h4 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: #93c5fd;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.hsl-colors {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.hsl-color {
+  background: #1e2430;
+  border: 1px solid #2c3442;
+  color: #9aa3b2;
+  padding: 4px 0;
+  font-size: 9px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.hsl-color.active {
+  border-color: #3b82f6;
+  color: #fff;
+  background: #1e293b;
+}
+
+.hsl-color.hsl-red.active { border-color: #ef4444; }
+.hsl-color.hsl-orange.active { border-color: #f97316; }
+.hsl-color.hsl-yellow.active { border-color: #facc15; }
+.hsl-color.hsl-green.active { border-color: #22c55e; }
+.hsl-color.hsl-aqua.active { border-color: #06b6d4; }
+.hsl-color.hsl-blue.active { border-color: #3b82f6; }
+.hsl-color.hsl-purple.active { border-color: #a855f7; }
+.hsl-color.hsl-magenta.active { border-color: #ec4899; }

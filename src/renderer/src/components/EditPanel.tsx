@@ -15,6 +15,7 @@ export interface EditValues {
   toneLights: number | null
   toneDarks: number | null
   toneShadows: number | null
+  hsl: number[] | null
 }
 
 const EMPTY: EditValues = {
@@ -29,11 +30,23 @@ const EMPTY: EditValues = {
   toneHighlights: null,
   toneLights: null,
   toneDarks: null,
-  toneShadows: null
+  toneShadows: null,
+  hsl: null
 }
 
+const HSL_COLORS = [
+  'Red',
+  'Orange',
+  'Yellow',
+  'Green',
+  'Aqua',
+  'Blue',
+  'Purple',
+  'Magenta'
+] as const
+
 interface SliderDef {
-  key: keyof EditValues
+  key: 'exposure' | 'temperature' | 'tint' | 'contrast' | 'saturation' | 'shadows' | 'highlights' | 'brightness'
   labelKey: string
   min: number
   max: number
@@ -52,7 +65,7 @@ const SLIDERS: SliderDef[] = [
   { key: 'brightness', labelKey: 'edit.brilho', min: -100, max: 100, step: 1, unit: '' }
 ]
 
-const TONE_SLIDERS: Array<{ key: keyof EditValues; labelKey: string }> = [
+const TONE_SLIDERS: Array<{ key: 'toneHighlights' | 'toneLights' | 'toneDarks' | 'toneShadows'; labelKey: string }> = [
   { key: 'toneHighlights', labelKey: 'edit.curvaDestaques' },
   { key: 'toneLights', labelKey: 'edit.curvaLuzes' },
   { key: 'toneDarks', labelKey: 'edit.curvaEscuros' },
@@ -74,6 +87,7 @@ function toJson(values: EditValues): string {
     values.toneShadows ?? 0
   ]
   if (curve.some((v) => v !== 0)) o.tone_curve = curve
+  if (values.hsl && values.hsl.some((v) => v !== 0)) o.hsl = values.hsl
   return JSON.stringify(o)
 }
 
@@ -95,6 +109,7 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
   const [busy, setBusy] = useState(false)
   const [presets, setPresets] = useState<PresetItem[]>([])
   const [presetName, setPresetName] = useState('')
+  const [hslColor, setHslColor] = useState(0)
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Carrega a lista de presets salvos.
@@ -126,7 +141,8 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
           toneHighlights: c?.[0] ?? null,
           toneLights: c?.[1] ?? null,
           toneDarks: c?.[2] ?? null,
-          toneShadows: c?.[3] ?? null
+          toneShadows: c?.[3] ?? null,
+          hsl: Array.isArray(p.hsl) ? (p.hsl as number[]) : null
         }
         setValues(next)
         if (photo) updatePreview(next)
@@ -182,7 +198,8 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
           toneHighlights: c?.[0] ?? null,
           toneLights: c?.[1] ?? null,
           toneDarks: c?.[2] ?? null,
-          toneShadows: c?.[3] ?? null
+          toneShadows: c?.[3] ?? null,
+          hsl: Array.isArray(p.hsl) ? (p.hsl as number[]) : null
         })
       } catch {
         /* ignore */
@@ -204,7 +221,7 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
     [photo?.id]
   )
 
-  const onSlider = (key: keyof EditValues, val: number, neutral: number) => {
+  const onSlider = (key: SliderDef['key'], val: number, neutral: number) => {
     const next = { ...values, [key]: val === neutral ? null : val }
     setValues(next)
     if (debounce.current) clearTimeout(debounce.current)
@@ -213,6 +230,16 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
 
   const onToneSlider = (key: keyof EditValues, val: number) => {
     const next = { ...values, [key]: val === 0 ? null : val }
+    setValues(next)
+    if (debounce.current) clearTimeout(debounce.current)
+    debounce.current = setTimeout(() => updatePreview(next), 200)
+  }
+
+  const onHslSlider = (channel: number, val: number) => {
+    const hsl = values.hsl ? [...values.hsl] : new Array(24).fill(0)
+    hsl[hslColor * 3 + channel] = val
+    const allZero = hsl.every((v) => v === 0)
+    const next = { ...values, hsl: allZero ? null : hsl }
     setValues(next)
     if (debounce.current) clearTimeout(debounce.current)
     debounce.current = setTimeout(() => updatePreview(next), 200)
@@ -305,6 +332,46 @@ export default function EditPanel({ photo, onApplyAll }: EditPanelProps) {
                 step={1}
                 value={v}
                 onChange={(e) => onToneSlider(s.key, Number(e.target.value))}
+              />
+            </label>
+          )
+        })}
+      </div>
+
+      <div className="edit-hsl">
+        <h4>{t('edit.hslTitulo')}</h4>
+        <div className="hsl-colors">
+          {HSL_COLORS.map((c, i) => (
+            <button
+              key={c}
+              className={`hsl-color hsl-${c.toLowerCase()} ${hslColor === i ? 'active' : ''}`}
+              onClick={() => setHslColor(i)}
+            >
+              {c.slice(0, 3)}
+            </button>
+          ))}
+        </div>
+        {(
+          [
+            ['edit.hslMatiz', 0],
+            ['edit.hslSaturacao', 1],
+            ['edit.hslLuminancia', 2]
+          ] as Array<[string, number]>
+        ).map(([labelKey, channel]) => {
+          const v = values.hsl?.[hslColor * 3 + channel] ?? 0
+          return (
+            <label key={labelKey} className="edit-slider">
+              <span>
+                {t(labelKey)}
+                <em>{v}</em>
+              </span>
+              <input
+                type="range"
+                min={-100}
+                max={100}
+                step={1}
+                value={v}
+                onChange={(e) => onHslSlider(channel, Number(e.target.value))}
               />
             </label>
           )

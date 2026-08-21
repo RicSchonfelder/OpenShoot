@@ -28,6 +28,83 @@ pub struct EditParams {
   /// Segue a curva paramétrica do AfterShoot/Lightroom: pontos de controle
   /// aplicados por faixa de luminância com interpolação suave.
   pub tone_curve: Option<[f32; 4]>,
+  /// HSL por cor: 8 cores × (hue, sat, lum) = 24 valores em -100..100.
+  /// Ordem (Lightroom): Red, Orange, Yellow, Green, Aqua, Blue, Purple, Magenta.
+  /// Ajuste aplicado por proximidade de matiz com falloff.
+  pub hsl: Option<[f32; 24]>,
+}
+
+/// Centros de matiz das 8 cores HSL (graus).
+const HSL_HUE_CENTERS: [f32; 8] = [0.0, 30.0, 60.0, 120.0, 180.0, 240.0, 285.0, 315.0];
+
+/// Converte RGB (0..1) → HSL. Retorna (h, s, l) com h em 0..360.
+fn rgb_to_hsl(rgb: [f32; 3]) -> (f32, f32, f32) {
+  let (r, g, b) = (rgb[0], rgb[1], rgb[2]);
+  let max = r.max(g).max(b);
+  let min = r.min(g).min(b);
+  let l = (max + min) / 2.0;
+  if (max - min).abs() < 1e-6 {
+    return (0.0, 0.0, l);
+  }
+  let d = max - min;
+  let s = if l > 0.5 { d / (2.0 - max - min) } else { d / (max + min) };
+  let h = if max == r {
+    ((g - b) / d + if g < b { 6.0 } else { 0.0 }) * 60.0
+  } else if max == g {
+    ((b - r) / d + 2.0) * 60.0
+  } else {
+    ((r - g) / d + 4.0) * 60.0
+  };
+  (h, s, l)
+}
+
+/// Converte HSL → RGB (0..1). h em 0..360.
+fn hsl_to_rgb(h: f32, s: f32, l: f32) -> [f32; 3] {
+  let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+  let hp = ((h % 360.0) + 360.0) % 360.0 / 60.0;
+  let x = c * (1.0 - (hp % 2.0 - 1.0).abs());
+  let (r1, g1, b1) = match hp as i32 {
+    0 => (c, x, 0.0),
+    1 => (x, c, 0.0),
+    2 => (0.0, c, x),
+    3 => (0.0, x, c),
+    4 => (x, 0.0, c),
+    _ => (c, 0.0, x),
+  };
+  let m = l - c / 2.0;
+  [(r1 + m).clamp(0.0, 1.0), (g1 + m).clamp(0.0, 1.0), (b1 + m).clamp(0.0, 1.0)]
+}
+
+/// Aplica ajuste HSL (24 valores) a um pixel RGB. Retorna pixel ajustado.
+fn apply_hsl_pixel(rgb: [f32; 3], hsl: &[f32; 24]) -> [f32; 3] {
+  let (h, s, l) = rgb_to_hsl(rgb);
+  let mut dh = 0.0f32;
+  let mut ds = 0.0f32;
+  let mut dl = 0.0f32;
+  let mut total_w = 0.0f32;
+  for i in 0..8 {
+    let (dh_i, ds_i, dl_i) = (hsl[i * 3], hsl[i * 3 + 1], hsl[i * 3 + 2]);
+    if dh_i == 0.0 && ds_i == 0.0 && dl_i == 0.0 {
+      continue;
+    }
+    // Distância angular de matiz ao centro da cor.
+    let diff = (h - HSL_HUE_CENTERS[i]).abs();
+    let ang = if diff > 180.0 { 360.0 - diff } else { diff };
+    // Falloff gaussiano: largura ~30° de matiz.
+    let w = (-(ang * ang) / (2.0 * 25.0 * 25.0)).exp();
+    dh += dh_i / 100.0 * w;
+    ds += ds_i / 100.0 * w;
+    dl += dl_i / 100.0 * w;
+    total_w += w;
+  }
+  if total_w == 0.0 {
+    return rgb;
+  }
+  // Ajuste de matiz: deslocar h (com wrap). sat/lum: escala suave.
+  let nh = (h + dh * 30.0).rem_euclid(360.0);
+  let ns = (s + ds * 0.6).clamp(0.0, 1.0);
+  let nl = (l + dl * 0.35).clamp(0.0, 1.0);
+  hsl_to_rgb(nh, ns, nl)
 }
 
 impl EditParams {
@@ -123,6 +200,14 @@ impl EditParams {
         g += dt;
         b += dt;
       }
+    }
+
+    // HSL por cor (8 cores).
+    if let Some(hsl) = self.hsl {
+      let adj = apply_hsl_pixel([r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0)], &hsl);
+      r = adj[0];
+      g = adj[1];
+      b = adj[2];
     }
 
     [r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0)]
@@ -281,5 +366,36 @@ mod tests {
     };
     let bright = p.apply_pixel([0.85, 0.85, 0.85]);
     assert!(bright[0] > 0.85, "destaque deve clarear, ficou {}", bright[0]);
+  }
+
+  #[test]
+  fn hsl_red_desaturates() {
+    // Red: saturação -100 → o vermelho puro perde saturação.
+    let mut hsl = [0f32; 24];
+    hsl[1] = -100.0; // Red sat
+    let p = EditParams {
+      hsl: Some(hsl),
+      ..Default::default()
+    };
+    let red = p.apply_pixel([1.0, 0.0, 0.0]);
+    // vermelho puro fica rosado (mais claro/cinza), canais não-vermelhos sobem.
+    assert!(red[1] > 0.0 || red[2] > 0.0, "vermelho deve perder saturação");
+    // Cor oposta (ciano/azul) quase não afetada.
+    let blue = p.apply_pixel([0.0, 0.0, 1.0]);
+    assert!(blue[2] > 0.9, "azul deve permanecer, ficou {}", blue[2]);
+  }
+
+  #[test]
+  fn hsl_green_hue_shift() {
+    // Green: hue +60 → verde gira para ciano/amarelo.
+    let mut hsl = [0f32; 24];
+    hsl[9] = 60.0; // Green hue (índice 3*3)
+    let p = EditParams {
+      hsl: Some(hsl),
+      ..Default::default()
+    };
+    let (h, _, _) = rgb_to_hsl(p.apply_pixel([0.0, 1.0, 0.0]));
+    // Matiz original do verde puro é ~120; deslocado deve diferir.
+    assert!((h - 120.0).abs() > 10.0, "matiz deve mudar, ficou {}", h);
   }
 }
