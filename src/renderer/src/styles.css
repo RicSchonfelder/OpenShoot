@@ -1190,3 +1190,43 @@ button.danger {
   gap: 8px;
   margin-top: 14px;
 }
+
+/* ------- Loupe: seleção por arrasto (patch) ------- */
+.loupe-stage {
+  cursor: crosshair;
+  user-select: none;
+}
+
+.loupe-img {
+  pointer-events: none;
+}
+
+.loupe-sel {
+  position: absolute;
+  border: 2px dashed #fbbf24;
+  background: rgba(251, 191, 36, 0.15);
+  pointer-events: none;
+  z-index: 5;
+}
+
+.loupe-bottombar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+.loupe-patch {
+  background: #1e293b;
+  border: 1px solid #fbbf24;
+  color: #fbbf24;
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.loupe-patch:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

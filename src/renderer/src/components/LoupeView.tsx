@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { PhotoMeta } from '../../../types/photo'
 import { useT } from '../i18n/I18nContext'
 
@@ -10,9 +10,17 @@ interface LoupeViewProps {
   onClose: () => void
 }
 
+interface SelRect {
+  x0: number
+  y0: number
+  x1: number
+  y1: number
+}
+
 /**
  * Modo Loupe/Review: mostra a foto GRANDE, navega com setas, e P/X/U aplicam
  * rating e avançam — o fluxo de culling rápido estilo AfterShoot/Lightroom.
+ * Suporta seleção por arrasto para remover distrações (patch).
  */
 export default function LoupeView({
   photos,
@@ -24,6 +32,11 @@ export default function LoupeView({
   const { t } = useT()
   const [src, setSrc] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [preview, setPreview] = useState<string | null>(null)
+  const [sel, setSel] = useState<SelRect | null>(null)
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null)
+  const stageRef = useRef<HTMLDivElement | null>(null)
+  const imgRef = useRef<HTMLImageElement | null>(null)
   const photo = photos[currentIndex]
   const total = photos.length
 
@@ -31,6 +44,8 @@ export default function LoupeView({
   useEffect(() => {
     let active = true
     setSrc(null)
+    setPreview(null)
+    setSel(null)
     if (!photo) return
     setBusy(true)
     // Usa o thumbnail em alta resolução (máx ~1200px) para o loupe.
@@ -44,6 +59,57 @@ export default function LoupeView({
       active = false
     }
   }, [photo?.id])
+
+  // Coordenadas normalizadas (0..1) a partir de um evento de mouse no stage.
+  const normCoords = (e: React.MouseEvent): { x: number; y: number } | null => {
+    const img = imgRef.current
+    const stage = stageRef.current
+    if (!img || !stage) return null
+    const rect = img.getBoundingClientRect()
+    if (rect.width === 0 || rect.height === 0) return null
+    return {
+      x: (e.clientX - rect.left) / rect.width,
+      y: (e.clientY - rect.top) / rect.height
+    }
+  }
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    const p = normCoords(e)
+    if (!p) return
+    setDragStart(p)
+    setSel({ x0: p.x, y0: p.y, x1: p.x, y1: p.y })
+  }
+
+  const onMouseMove = (e: React.MouseEvent) => {
+    if (!dragStart) return
+    const p = normCoords(e)
+    if (!p) return
+    setSel({ x0: dragStart.x, y0: dragStart.y, x1: p.x, y1: p.y })
+  }
+
+  const onMouseUp = () => {
+    setDragStart(null)
+  }
+
+  const removeSelected = () => {
+    if (!photo || !sel) return
+    const x0 = Math.min(sel.x0, sel.x1)
+    const x1 = Math.max(sel.x0, sel.x1)
+    const y0 = Math.min(sel.y0, sel.y1)
+    const y1 = Math.max(sel.y0, sel.y1)
+    if (x1 - x0 < 0.01 || y1 - y0 < 0.01) return
+    setBusy(true)
+    window.openshoot
+      .inpaintPhoto(photo.id, [x0, y0, x1, y1], 600)
+      .then((t) => {
+        if (t) {
+          setPreview(t)
+          setSel(null)
+        }
+      })
+      .catch(() => {})
+      .finally(() => setBusy(false))
+  }
 
   // Atalhos do loupe.
   useEffect(() => {
@@ -108,6 +174,8 @@ export default function LoupeView({
     reject: photo.rating >= 1 && photo.rating <= 2
   }
 
+  const showImg = preview ?? src
+
   return (
     <div className="loupe">
       <div className="loupe-topbar">
@@ -136,13 +204,37 @@ export default function LoupeView({
         <button className="loupe-close" onClick={onClose}>✕ {t('loupe.fechar')} (Esc)</button>
       </div>
 
-      <div className="loupe-stage">
-        {src ? (
-          <img src={src} alt={photo.fileName} className="loupe-img" />
+      <div
+        className="loupe-stage"
+        ref={stageRef}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={onMouseUp}
+        onMouseLeave={onMouseUp}
+      >
+        {showImg ? (
+          <img
+            ref={imgRef}
+            src={showImg}
+            alt={photo.fileName}
+            className="loupe-img"
+            draggable={false}
+          />
         ) : (
           <div className="loupe-loading">
             {busy ? t('loupe.carregando') : t('loupe.semPreview')}
           </div>
+        )}
+        {sel && (
+          <div
+            className="loupe-sel"
+            style={{
+              left: `${Math.min(sel.x0, sel.x1) * 100}%`,
+              top: `${Math.min(sel.y0, sel.y1) * 100}%`,
+              width: `${Math.abs(sel.x1 - sel.x0) * 100}%`,
+              height: `${Math.abs(sel.y1 - sel.y0) * 100}%`
+            }}
+          />
         )}
         {photo.cullScore != null && (
           <span className="loupe-score">score {Math.round(photo.cullScore)}</span>
@@ -150,6 +242,14 @@ export default function LoupeView({
       </div>
 
       <div className="loupe-bottombar">
+        <button
+          onClick={removeSelected}
+          disabled={!sel || busy}
+          className="loupe-patch"
+          title={t('loupe.patchHint')}
+        >
+          {t('loupe.patch')}
+        </button>
         <span dangerouslySetInnerHTML={{ __html: t('loupe.atalhos') }} />
       </div>
     </div>
