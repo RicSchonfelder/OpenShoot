@@ -1230,3 +1230,18 @@ button.danger {
   opacity: 0.5;
   cursor: default;
 }
+
+/* ------- Aprender perfil ------- */
+.toolbar-learn {
+  background: transparent;
+  border: 1px solid #a855f7;
+  color: #c084fc;
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.toolbar-learn:hover {
+  background: #2a1e3d;
+}

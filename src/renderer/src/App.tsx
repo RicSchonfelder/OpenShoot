@@ -387,6 +387,23 @@ export default function App() {
     }
   }, [loadPhotos, t, targetPicks])
 
+  const learnProfile = useCallback(async () => {
+    setError(null)
+    setCulling(true)
+    try {
+      const res = await window.openshoot.learnProfile()
+      if (!res.ok) {
+        setError(res.error ?? 'erro')
+      } else {
+        setScanMsg(t('app.learnMsg', { name: res.name ?? '', n: res.photos ?? 0 }))
+      }
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setCulling(false)
+    }
+  }, [t])
+
   const exportXmp = useCallback(async () => {
     setError(null)
     setExporting(true)
@@ -597,6 +614,14 @@ export default function App() {
           }}
         >
           {t('app.selectAll')} (⌘A)
+        </button>
+        <button
+          className="toolbar-learn"
+          onClick={learnProfile}
+          disabled={culling}
+          title={t('app.learnHint')}
+        >
+          {t('app.learn')}
         </button>
         <div className="more-menu" ref={moreRef}>
           <button

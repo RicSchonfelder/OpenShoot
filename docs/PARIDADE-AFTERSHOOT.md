@@ -55,11 +55,11 @@
 | AfterShoot | OpenShoot | Status |
 |---|---|---|
 | Import via drag-and-drop + navegar + recentes | `pickFolder` (dialog nativo) | 🟡 |
-| **Wizard: tipo de fotos** (CULL/EDIT/RETOUCH, RAW, JPEG/TIFF) | ⬜ seletor de tipo |
-| **Incluir subpastas** (toggle) | ⬜ flag no scan |
-| **Tipo de sessão** (casamento, retrato, família...) | ⬜ seletor de gênero |
-| **"Começar" one-click** (cull+edit) | ⬜ pipeline encadeado |
+| **Wizard: tipo de fotos** (RAW/JPEG/TIFF) | modal de importação (subpastas + tipo) | ✅ |
+| **Incluir subpastas** (toggle) | checkbox + `max_depth(1)` | ✅ |
+| **"Começar" one-click** (cull+edit) | botão "Um clique" (cull + preset) | ✅ |
 | Progresso + contador "X/Y" | `scanFolderProgress` | ✅ |
+| **Tipo de sessão** (casamento, retrato, família...) | ⬜ seletor de gênero |
 
 ## Tranche D — Retoque (expansão)
 
@@ -67,8 +67,8 @@
 |---|---|---|
 | Suavização de pele | YCbCr + blur seletivo | ✅ |
 | Remover distração (inpainting) | difusão, bbox central | ✅ |
-| **Patch com seleção por arrasto** | ⬜ seleção manual de bbox no loupe |
-| **Sliders faciais** (acne, olhos, dentes, cabelo, corpo) | ⬜ segmentação facial + sliders |
+| **Patch com seleção por arrasto** | arrasto no loupe + overlay | ✅ |
+| **Sliders faciais** (acne, olhos, dentes, cabelo) | `retouch_face_region` + NAPI | ✅ |
 | **Mostrar moldura do rosto** | ⬜ overlay de landmarks |
 | **Modos SUJEITO/FUNDO/PATCH** | ⬜ segmentação sujeito |
 

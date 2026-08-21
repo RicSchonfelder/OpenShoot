@@ -258,6 +258,13 @@ app.whenReady().then(() => {
       return null
     }
   })
+  ipcMain.handle('core:learnProfile', async () => {
+    try {
+      return await getCore().learnProfile()
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
   ipcMain.handle(
     'core:scanFolderProgress',
     async (

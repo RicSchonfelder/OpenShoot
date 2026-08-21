@@ -566,6 +566,70 @@ pub fn delete_preset(name: &str) -> Result<bool, String> {
   Ok(n > 0)
 }
 
+/// "Aprende" um perfil de estilo: calcula a MÉDIA dos parâmetros de edição
+/// aplicados às fotos (via `edit_json`), e salva como preset nomeado.
+/// Retorna o nome do preset criado e quantas fotos foram usadas.
+pub fn learn_profile() -> Result<(String, i64), String> {
+  let conn = open()?;
+  let mut stmt = conn
+    .prepare("SELECT edit_json FROM photos WHERE edit_json IS NOT NULL AND edit_json <> ''")
+    .map_err(|e| e.to_string())?;
+  let rows = stmt
+    .query_map([], |r| r.get::<_, String>(0))
+    .map_err(|e| e.to_string())?;
+
+  let mut sum: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+  let mut count = 0i64;
+  let mut photos_used = 0i64;
+  for row in rows {
+    let json = match row {
+      Ok(j) => j,
+      Err(_) => continue,
+    };
+    let v: serde_json::Value = match serde_json::from_str(&json) {
+      Ok(v) => v,
+      Err(_) => continue,
+    };
+    count += 1;
+    if let serde_json::Value::Object(map) = v {
+      for (k, val) in map {
+        if let serde_json::Value::Number(n) = val {
+          if let Some(f) = n.as_f64() {
+            let e = sum.entry(k).or_insert(0.0);
+            *e += f;
+          }
+        }
+      }
+      photos_used += 1;
+    }
+  }
+  if photos_used == 0 {
+    return Err("nenhuma foto com edição salva para aprender o perfil".to_string());
+  }
+
+  // Média por parâmetro → receita JSON.
+  let mut recipe = std::collections::BTreeMap::new();
+  for (k, v) in sum {
+    let avg = v / count as f64;
+    // Arredonda e ignora valores ~neutros.
+    let rounded = (avg * 100.0).round() / 100.0;
+    if rounded.abs() > 0.001 {
+      recipe.insert(k, serde_json::json!(rounded));
+    }
+  }
+  let recipe_json = serde_json::Value::Object(
+    recipe
+      .into_iter()
+      .map(|(k, v)| (k, v))
+      .collect::<serde_json::Map<String, serde_json::Value>>(),
+  )
+  .to_string();
+
+  let name = "Perfil aprendido";
+  save_preset(name, &recipe_json)?;
+  Ok((name.to_string(), photos_used))
+}
+
 pub fn scan_folder(
   dir: &str,
   include_subdirs: bool,

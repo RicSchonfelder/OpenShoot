@@ -118,6 +118,17 @@ pub fn delete_preset(name: String) -> Result<bool> {
   catalog::delete_preset(&name).map_err(|e| Error::from_reason(e))
 }
 
+/// Aprende um perfil de estilo a partir das fotos com edição salva (média).
+#[napi]
+pub fn learn_profile() -> Result<serde_json::Value> {
+  match catalog::learn_profile() {
+    Ok((name, photos)) => {
+      Ok(serde_json::json!({ "name": name, "photos": photos, "ok": true }))
+    }
+    Err(e) => Ok(serde_json::json!({ "error": e, "ok": false })),
+  }
+}
+
 /// Total de fotos no catálogo.
 #[napi]
 pub fn photo_count() -> Result<i64> {
@@ -958,6 +969,23 @@ mod tests {
     assert!(mine.recipe.contains("30"));
     // Delete.
     assert!(super::catalog::delete_preset("Meu Estilo").unwrap());
+
+    // ---- Aprender perfil (média de edições) ----
+    super::catalog::set_photo_edit(id_a, r#"{"exposure":1.0,"contrast":20}"#).unwrap();
+    // dup_b também com exposição (média de exposure deve ser ~1.0).
+    let id_b: i64 = conn
+      .query_row("SELECT id FROM photos WHERE file_name='dup_b.jpg'", [], |r| r.get(0))
+      .unwrap();
+    super::catalog::set_photo_edit(id_b, r#"{"exposure":1.0,"contrast":40}"#).unwrap();
+    let (name, photos) = super::catalog::learn_profile().unwrap();
+    assert!(name.contains("Perfil"));
+    assert!(photos >= 2);
+    let presets = super::catalog::list_presets().unwrap();
+    let prof = presets.iter().find(|p| p.name == name).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&prof.recipe).unwrap();
+    assert_eq!(v["exposure"], 1.0, "média de exposure deve ser 1.0");
+    assert_eq!(v["contrast"], 30.0, "média de contrast deve ser 30");
+    super::catalog::delete_preset(&name).unwrap();
 
     // ---- Tipo de foto no scan ----
     let tmp = std::env::temp_dir().join(format!("openshoot_scan_{}", std::process::id()));

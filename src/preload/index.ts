@@ -68,6 +68,8 @@ const api = {
     ipcRenderer.invoke('core:aiCropPhoto', id, maxDim),
   retouchFacePhoto: (id: number, region: string, intensity: number, maxDim: number): Promise<string | null> =>
     ipcRenderer.invoke('core:retouchFacePhoto', id, region, intensity, maxDim),
+  learnProfile: (): Promise<{ ok: boolean; name?: string; photos?: number; error?: string }> =>
+    ipcRenderer.invoke('core:learnProfile'),
   scanFolderProgress: (
     dir: string,
     includeSubdirs: boolean,
