@@ -68,9 +68,9 @@ export default function LoupeView({
     setSel(null)
     if (!photo) return
     setBusy(true)
-    // Usa o thumbnail em alta resolução (máx ~1200px) para o loupe.
+    // Usa o thumbnail em alta resolução (máx ~2000px) para o loupe.
     window.openshoot
-      .thumbForPhoto(photo.id, 1200)
+      .thumbForPhoto(photo.id, 2000)
       .then((t) => {
         if (active && t) setSrc(t)
       })
