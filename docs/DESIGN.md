@@ -1,11 +1,11 @@
 # OpenShoot — Design Document
 
-> **Inspiração:** AfterShoot (Electron + React UI, backend Rust "Cromatela", ONNX Runtime na GPU).
+> **Inspiração:** referência externa (Electron + React UI, backend Rust "Cromatela", ONNX Runtime na GPU).
 > **Diferença:** OpenShoot é **open-source** (MIT), usa apenas **modelos de IA abertos** — nenhum peso proprietário, e o usuário tem acesso total ao código-fonte.
 
 **Pilares inegociáveis:**
 1. **100% local & offline** — pixels nunca saem da máquina (IA de visão roda na GPU via ONNX).
-2. **Open source** — diferente do AfterShoot (repo privado + modelos criptografados), todo o código é público e auditável.
+2. **Open source** — diferente da referência externa (repo privado + modelos criptografados), todo o código é público e auditável.
 3. **Chaves de serviços externos pertencem ao usuário** — se houver uso de nuvem (ex: OpenRouter p/ texto), é **opt-in** e a chave é do usuário, armazenada no Keychain, nunca no código.
 
 **Status:** Planejamento · **Alvo:** macOS (arm64 + x86_64) · **Data:** 2026-08-17
@@ -52,7 +52,7 @@ Processamento 100% local, não-destrutivo, offline.
 ```
 
 ### Comunicação UI ⇄ Backend
-- Usar [**napi-rs**](https://napi.rs) (Rust → Node, ABI estável, `.node` bundle) — é o mesmo mecanismo que o Aftershoot usa (`rs.darwin-arm64.node` presente no instalado).
+- Usar [**napi-rs**](https://napi.rs) (Rust → Node, ABI estável, `.node` bundle) — é o mesmo mecanismo que a referência externa usa (`rs.darwin-arm64.node` presente no instalado).
 - Chamadas: `import { OpenShootCore } from '../core'` → spawn `Job` async e emite eventos de progresso via callback NAPI.
 
 ---
@@ -61,7 +61,7 @@ Processamento 100% local, não-destrutivo, offline.
 
 | Camada | Tecnologia | Justificativa |
 |---|---|---|
-| UI | Electron 31+, React 18, TypeScript, Tailwind, Vite/(electron-forge webpack) | mesmo modelo do Aftershoot |
+| UI | Electron 31+, React 18, TypeScript, Tailwind, Vite/(electron-forge webpack) | mesmo modelo de referência |
 | Bridge | napi-rs (Rust) | IPC eficiente, sem servidor HTTP |
 | Backend | Rust (edition 2021) | performance p/ processamento de imagem |
 | RAW | `libraw` (crate `libraw-rs` / bindings) e/ou `rawspeed` | decode de CR3/NEF/ARW/DNG |
@@ -162,7 +162,7 @@ OpenShoot/
 
 ## 7. Decisões de Risco
 
-1. **Modelos não igualam a qualidade do Aftershoot** — resolvido por transparência: medidas objetivas + presets do usuário.
+1. **Modelos não igualam a qualidade da referência externa** — resolvido por transparência: medidas objetivas + presets do usuário.
 2. **ONNX + Metal**: `ort` precisa de feature `metal`. Fallback CPU se GPU indisponível.
 3. **RAW decode completo** (não só thumbnail) é caro — pipeline em dois níveis: preview rápido + processamento full-res sob demanda.
 4. **Licenças**: preferir modelos Apache-2.0/MIT (Real-ESRGAN BSD-3, SCRFD MIT-ish, LaMa Apache-2.0). Registrar cada licença em `THIRD_PARTY.md`.

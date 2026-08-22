@@ -449,7 +449,7 @@ pub fn retouch_face_region(
   out
 }
 
-/// Máscara de sujeito (modo "SUJEITO/FUNDO" do AfterShoot).
+/// Máscara de sujeito (modo "SUJEITO/FUNDO" da referência externa).
 /// Usa a bbox do rosto (SCRFD) expandida + máscara de pele para definir o
 /// sujeito; desfoca o FUNDO (fora da máscara). Não-destrutivo.
 /// `background_blur` 0..1 controla a força do desfoque do fundo.

@@ -1,4 +1,4 @@
-# Auditoria funcional — AfterShoot × OpenShoot
+# Auditoria funcional — referência externa × OpenShoot
 
 > **Data:** 2026-08-18
 > **Método:** auditoria funcional real (navegação por todos os menus + importação de
@@ -8,7 +8,7 @@
 
 ---
 
-## 0. Sessão de auditoria 2026-08-20 (AfterShoot v2.21.4, Electron 31.7.7)
+## 0. Sessão de auditoria 2026-08-20 (referência externa v2.21.4, Electron 31.7.7)
 
 Observado em execução real (álbum "Documents" com IMG_CR3_001.CR3 e IMG_FACE_001.jpg):
 
@@ -49,7 +49,7 @@ Fluxo em etapas com 4 opções (cada uma com ícone + descrição):
    da maior parte do seu trabalho de edição."
 3. **Retoque** — "Dê os retoques finais nas suas fotos sem sair do aplicativo."
 4. **Seleção e edição com um clique** — "Defina suas preferências, clique em iniciar
-   e deixe o Aftershoot cuidar da seleção e edição." (pipeline completo)
+   e deixe a referência externa cuidar da seleção e edição." (pipeline completo)
 
 ### Topbar do workspace do álbum
 - Modos: **IMPORT | CULL | EDIT | RETOUCH**.
@@ -62,7 +62,7 @@ Fluxo em etapas com 4 opções (cada uma com ícone + descrição):
 - Sub-navegação da conta: **Detalhes da conta / Meus Perfis de IA / Minha Assinatura /
   Indicação**.
 - Header: "Criar um novo perfil de IA" + botões **Novo Perfil** e **Marketplace**.
-- Seção **MERCADO** (perfis prontos da Aftershoot), cards com nome + tipo + tags de
+- Seção **MERCADO** (perfis prontos da referência externa), cards com nome + tipo + tags de
   estilo e botões **Iniciar Edição** / **Ajustar perfil**:
   - **Almond Twist** (JPEG — Film, Warm), **Butter Pecan** (JPEG — Matte, True to Life),
     **Hazel Harmony** (JPEG — Low Key, Vintage), **True to Life** (RAW — Most Used),
@@ -82,15 +82,15 @@ Fluxo em etapas com 4 opções (cada uma com ícone + descrição):
 
 ---
 
-## 1. Mapa de navegação do AfterShoot (menus e telas)
+## 1. Mapa de navegação da referência externa (menus e telas)
 
 ### Barra lateral esquerda (persistente)
 - **Lar** — lista de álbuns (projetos).
 - **Meus Perfis de IA** — perfis de edição do usuário + criar novo + marketplace.
 - **Mercado** — perfis/estilos de terceiros.
 - **Suporte** — chat Intercom (com artigos "How to Build Your First Professional AI
-  Profile", "How to Use Aftershoot Retouching", "Get Started with Aftershoot Culling",
-  "How to AI Edit Your Images With Aftershoot").
+  Profile", "How to Use referência externa Retouching", "Get Started with referência externa Culling",
+  "How to AI Edit Your Images With referência externa").
 - **Profile Pic / avatar** — Detalhes da conta, Meus Perfis, Minha Assinatura, Indicação.
 
 ### Tela Lar (`#/projects`)
@@ -122,7 +122,7 @@ Fluxo em etapas com 4 opções (cada uma com ícone + descrição):
 
 ### Importar Definições (seção recolhível)
 - **Baixar e fazer backup de fotos** (ingestão de cartão de memória antes de processar).
-- **Ajude a melhorar a IA do Aftershoot** (compartilhar dados — opt-in de privacidade).
+- **Ajude a melhorar a IA da referência externa** (compartilhar dados — opt-in de privacidade).
 
 ### Pós-seleção da pasta: "Que tipo de sessão é esta?"
 - Botão **Sugerir um estilo** (IA detecta o tipo).
@@ -152,7 +152,7 @@ Fluxo em etapas com 4 opções (cada uma com ícone + descrição):
 - Botão **Iniciar seleção**.
 
 ### Tela de culling
-- Mensagem: "O AFTERSHOOT SELECIONA. VOCÊ ESCOLHE." / "O Aftershoot identifica
+- Mensagem: "O referência externa SELECIONA. VOCÊ ESCOLHE." / "O referência externa identifica
   **imagens desfocadas, olhos fechados e cria conjuntos de duplicados**. Você revê e finaliza."
 - Botão **Iniciar seleção da IA**.
 - Durante: progresso + tempo estimado (ex.: "11m 16s") + botão Cancelar.
@@ -218,9 +218,9 @@ Contém **image strip** (várias fotos p/ comparar o ajuste) + seções com slid
 
 ---
 
-## 6. Gap analysis — OpenShoot vs AfterShoot (priorizado)
+## 6. Gap analysis — OpenShoot vs referência externa (priorizado)
 
-| # | Área | AfterShoot | OpenShoot (hoje) | Gap / sugestão |
+| # | Área | referência externa | OpenShoot (hoje) | Gap / sugestão |
 |---|---|---|---|---|
 | 1 | **Perfis de IA / estilos** | criar perfil, mercado, personalizar, salvar | 8 sliders manuais, "aplicar em lote", sem presets salvos | Criar sistema de **presets nomeados** (salvar/carregar receita JSON) + biblioteca de estilos |
 | 2 | **Importação** | wizard (tipo fotos, subpastas, backup, tipo de sessão) + filtros de grid | diálogo nativo → grid direto | Adicionar wizard: tipo de fotos, incluir subpastas, escolha de tipo de sessão |

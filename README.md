@@ -3,7 +3,7 @@
 > Open-source AI culling, editing & retouching for photographers.
 
 Aplicativo desktop para fotógrafos que automatiza o pós-processamento de fotos —
-**100% local e offline**. Arquitetura inspirada no AfterShoot (UI Electron/React +
+**100% local e offline**. Arquitetura inspirada em uma referência externa (UI Electron/React +
 core Rust + ONNX Runtime na GPU), mas **totalmente aberto** (MIT): o usuário tem
 acesso a todo o código-fonte.
 

@@ -19,7 +19,7 @@ interface SelRect {
 
 /**
  * Modo Loupe/Review: mostra a foto GRANDE, navega com setas, e P/X/U aplicam
- * rating e avançam — o fluxo de culling rápido estilo AfterShoot/Lightroom.
+ * rating e avançam — o fluxo de culling rápido estila referência externa/Lightroom.
  * Suporta seleção por arrasto para remover distrações (patch).
  */
 export default function LoupeView({

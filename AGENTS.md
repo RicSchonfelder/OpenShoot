@@ -3,7 +3,7 @@
 ## Contexto
 
 Aplicativo desktop open-source para fotógrafos: culling/edição/retoque de fotos
-com IA local. Inspirado no AfterShoot: UI Electron/React + core Rust (napi-rs) +
+com IA local. Inspirado em uma referência externa: UI Electron/React + core Rust (napi-rs) +
 ONNX Runtime. Repo público: https://github.com/RicSchonfelder/OpenShoot
 
 ## Pilares invioláveis

@@ -31,7 +31,7 @@
   `retouch_face_region` (bbox do rosto + blur/clarear por região).
 - **Fase 6 parcial** ✅ — Captions locais offline (`captions.rs`) + empacotamento
   macOS (electron-builder) → `/Applications/OpenShoot.app` (arm64).
-- **UX de culling** ✅ (alinhada à auditoria AfterShoot):
+- **UX de culling** ✅ (alinhada à auditoria referência externa):
   - **i18n pt-BR + en** (`src/renderer/src/i18n/`): `useT()`, detecção por
     `navigator.language`, "Cull"→"Selecionar" (pt).
   - **Loupe integrado**: duplo clique / Enter abre; setas navegam; P/X/U/1-5 aplicam
@@ -82,8 +82,8 @@
   `GROUP BY HAVING COUNT(*) > 1` + NAPI `findDuplicates()`; filtro "faces" usa
   coluna `has_face` populada no culling (SCRFD).
 
-## Auditoria AfterShoot (2026-08-18/20)
-- Documento de referência: `docs/AUDITORIA-AFTERSHOOT.md` (mapa completo + gap
+## Auditoria referência externa (2026-08-18/20)
+- Documento de referência: `docs/AUDITORIA-referência externa.md` (mapa completo + gap
   analysis com 15 itens priorizados). Implementados até agora:
   ★1-5 por foto, filtros avançados (dropdown), detecção de duplicatas, loupe,
   flags, i18n, toolbar de culling.

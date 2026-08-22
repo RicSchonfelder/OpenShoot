@@ -25,7 +25,7 @@ pub struct EditParams {
   /// Brilho (-100..100): deslocamento de luminância.
   pub brightness: Option<f32>,
   /// Curva de tom: [destaques, luzes, escuros, sombras] (-100..100 cada).
-  /// Segue a curva paramétrica do AfterShoot/Lightroom: pontos de controle
+  /// Segue a curva paramétrica da referência externa/Lightroom: pontos de controle
   /// aplicados por faixa de luminância com interpolação suave.
   pub tone_curve: Option<[f32; 4]>,
   /// HSL por cor: 8 cores × (hue, sat, lum) = 24 valores em -100..100.

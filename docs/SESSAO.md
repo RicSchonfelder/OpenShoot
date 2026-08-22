@@ -31,7 +31,7 @@ você (ou um agente) continue sem perder contexto.
 ## 3. O projeto em uma frase
 
 App desktop **open-source (MIT)** para fotógrafos: culling/edição/retoque de fotos
-com **IA local**. Inspirado no AfterShoot, mas 100% aberto.
+com **IA local**. Inspirado em uma referência externa, mas 100% aberto.
 
 **Arquitetura (3 camadas):**
 ```

@@ -1,9 +1,9 @@
-# OpenShoot — Roadmap de Paridade com o AfterShoot
+# OpenShoot — Roadmap de Paridade com a referência externa
 
-> **Objetivo:** deixar o OpenShoot com o mesmo conjunto de features/UX do AfterShoot
-> (v2.21.4, auditado em 2026-08-18/20). Cada item = feature do AfterShoot → plano de
+> **Objetivo:** deixar o OpenShoot com o mesmo conjunto de features/UX da referência externa
+> (v2.21.4, auditado em 2026-08-18/20). Cada item = feature da referência externa → plano de
 > implementação no OpenShoot, com prioridade e esforço.
-> **Fonte:** `docs/AUDITORIA-AFTERSHOOT.md` (mapa completo + gap analysis).
+> **Fonte:** `docs/AUDITORIA-referência externa.md` (mapa completo + gap analysis).
 > **Atualizado:** 2026-08-21
 
 **Legenda de status:** ✅ feito · 🟡 em andamento · ⬜ pendente
@@ -12,7 +12,7 @@
 
 ## Tranche A — Culling & Seleção (núcleo, alto valor / baixo custo)
 
-| AfterShoot | OpenShoot | Status |
+| referência externa | OpenShoot | Status |
 |---|---|---|
 | Culling IA (score + rating ★1-5) | NIMA + SCRFD + heurística → quantis ★1-5 | ✅ |
 | ★1-5 clicável por foto no grid | `cell-stars` (5 botões, clique zera) | ✅ |
@@ -36,7 +36,7 @@
 
 ## Tranche B — Edição (expansão tonal)
 
-| AfterShoot | OpenShoot | Status |
+| referência externa | OpenShoot | Status |
 |---|---|---|
 | 8 sliders básicos (exposição, WB, contraste, sat, sombras, realces, brilho) | `edit.rs` + `EditPanel` | ✅ |
 | Aplicar em lote + preview | `applyEditAll`/`applyEditOne` | ✅ |
@@ -52,7 +52,7 @@
 
 ## Tranche C — Importação (wizard)
 
-| AfterShoot | OpenShoot | Status |
+| referência externa | OpenShoot | Status |
 |---|---|---|
 | Import via drag-and-drop + navegar + recentes | `pickFolder` (dialog nativo) | 🟡 |
 | **Wizard: tipo de fotos** (RAW/JPEG/TIFF) | modal de importação (subpastas + tipo) | ✅ |
@@ -63,7 +63,7 @@
 
 ## Tranche D — Retoque (expansão)
 
-| AfterShoot | OpenShoot | Status |
+| referência externa | OpenShoot | Status |
 |---|---|---|
 | Suavização de pele | YCbCr + blur seletivo | ✅ |
 | Remover distração (inpainting) | difusão, bbox central | ✅ |
@@ -75,10 +75,10 @@
 
 ## Tranche F — Exportação (teste comparativo 2026-08-21)
 
-Auditoria do diálogo de exportação do AfterShoot (álbum Editadas, 459 fotos) e
+Auditoria do diálogo de exportação da referência externa (álbum Editadas, 459 fotos) e
 implementação equivalente no OpenShoot:
 
-| AfterShoot | OpenShoot | Status |
+| referência externa | OpenShoot | Status |
 |---|---|---|
 | Diálogo Exportar N Foto(s) com aba Pasta/Outros Apps | diálogo com destino/tipo/qualidade | ✅ |
 | Destino + arquivos em conflito (sufixo automático) | `export_photos` com sufixo _1/_2 | ✅ |
@@ -92,7 +92,7 @@ implementação equivalente no OpenShoot:
 
 ## Tranche E — Perfis de IA (o mais pesado)
 
-| AfterShoot | OpenShoot | Status |
+| referência externa | OpenShoot | Status |
 |---|---|---|
 | Perfil Profissional (treinar com 2.500 fotos editadas LR/C1) | ✅ v1: **Aprender perfil** (média dos parâmetros de edição das fotos → preset "Perfil aprendido") |
 | Perfil Instantâneo (preset Lightroom) | ✅ **Importar preset LR** (.xmp crs: / .lrtemplate → receita) |
