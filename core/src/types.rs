@@ -68,6 +68,24 @@ pub struct FilterCounts {
 pub struct Preset {
   pub name: String,
   pub recipe: String,
+  /// Identidade do perfil (estilo AfterShoot): 'raw' | 'jpeg' | ''.
+  pub file_type: String,
+  /// 'color' | 'bw' | ''.
+  pub color_type: String,
+  /// 'manual' | 'learned' | 'lightroom' | 'imported'.
+  pub source: String,
+}
+
+/// Rosto detectado pelo SCRFD com 5 landmarks (bnkps): 2 olhos, nariz,
+/// 2 cantos da boca. `bbox` tem 4 coords [x1,y1,x2,y2] e `kps` são 5 pontos
+/// [x, y], todos normalizados 0..1 em relação à imagem original.
+/// (Vec em vez de array fixo: napi-rs não suporta [T; N] em objects.)
+#[napi(object)]
+#[derive(serde::Serialize)]
+#[allow(dead_code)]
+pub struct FaceWithKps {
+  pub bbox: Vec<f64>,
+  pub kps: Vec<Vec<f64>>,
 }
 
 #[napi(object)]

@@ -11,6 +11,8 @@ export default function ExportDialog({ ids, onClose, onDone }: ExportDialogProps
   const { t } = useT()
   const [format, setFormat] = useState<'jpeg' | 'png'>('jpeg')
   const [quality, setQuality] = useState(100)
+  const [colorProfile, setColorProfile] = useState<'srgb' | 'display-p3'>('srgb')
+  const [naming, setNaming] = useState('{original}')
   const [destDir, setDestDir] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const photoCount = ids.length
@@ -23,7 +25,7 @@ export default function ExportDialog({ ids, onClose, onDone }: ExportDialogProps
     if (!destDir) return
     setBusy(true)
     try {
-      const res = await window.openshoot.exportPhotos(ids, destDir, format, quality)
+      const res = await window.openshoot.exportPhotos(ids, destDir, format, quality, colorProfile, naming)
       if (res.ok) {
         onDone(t('export.feito', { n: res.exported ?? 0 }))
       } else {
@@ -88,6 +90,43 @@ export default function ExportDialog({ ids, onClose, onDone }: ExportDialogProps
               />
             </label>
           )}
+          <label className="edit-slider">
+            <span>
+              {t('export.espacoCor')}
+              <em>{colorProfile === 'srgb' ? 'sRGB' : 'Display P3'}</em>
+            </span>
+            <select
+              value={colorProfile}
+              onChange={(e) => setColorProfile(e.target.value as 'srgb' | 'display-p3')}
+            >
+              <option value="srgb">sRGB</option>
+              <option value="display-p3">Display P3</option>
+            </select>
+          </label>
+          <label className="edit-slider">
+            <span>{t('export.nomeacao')}</span>
+            <input
+              type="text"
+              value={naming}
+              onChange={(e) => setNaming(e.target.value)}
+              placeholder="{original}"
+            />
+          </label>
+          <div className="export-formats">
+            {([
+              ['{original}', t('export.namingOriginal')],
+              ['{n}_{original}', t('export.namingContador')],
+              ['{date}_{original}', t('export.namingData')]
+            ] as const).map(([pattern, label]) => (
+              <button
+                key={pattern}
+                className={`${naming === pattern ? 'active' : ''}`}
+                onClick={() => setNaming(pattern)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="import-actions">

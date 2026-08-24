@@ -17,6 +17,10 @@ interface SelRect {
   y1: number
 }
 
+const ZOOM_MAX = 8
+const ZOOM_100 = 2.5
+const ZOOM_STEP = 1.25
+
 /**
  * Modo Loupe/Review: mostra a foto GRANDE, navega com setas, e P/X/U aplicam
  * rating e avançam — o fluxo de culling rápido estila referência externa/Lightroom.
@@ -37,6 +41,12 @@ export default function LoupeView({
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null)
   const [showFaces, setShowFaces] = useState(false)
   const [faces, setFaces] = useState<number[][]>([])
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [panning, setPanning] = useState(false)
+  const zoomRef = useRef(1)
+  const panRef = useRef({ x: 0, y: 0 })
+  const panDragRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null)
   const stageRef = useRef<HTMLDivElement | null>(null)
   const imgRef = useRef<HTMLImageElement | null>(null)
   const photo = photos[currentIndex]
@@ -66,6 +76,10 @@ export default function LoupeView({
     setSrc(null)
     setPreview(null)
     setSel(null)
+    zoomRef.current = 1
+    panRef.current = { x: 0, y: 0 }
+    setZoom(1)
+    setPan({ x: 0, y: 0 })
     if (!photo) return
     setBusy(true)
     // Usa o thumbnail em alta resolução (máx ~2000px) para o loupe.
@@ -94,6 +108,16 @@ export default function LoupeView({
   }
 
   const onMouseDown = (e: React.MouseEvent) => {
+    if (zoomRef.current > 1) {
+      panDragRef.current = {
+        sx: e.clientX,
+        sy: e.clientY,
+        ox: panRef.current.x,
+        oy: panRef.current.y
+      }
+      setPanning(true)
+      return
+    }
     const p = normCoords(e)
     if (!p) return
     setDragStart(p)
@@ -101,6 +125,17 @@ export default function LoupeView({
   }
 
   const onMouseMove = (e: React.MouseEvent) => {
+    const pd = panDragRef.current
+    if (pd) {
+      const z = zoomRef.current
+      const np = {
+        x: pd.ox + (e.clientX - pd.sx) / z,
+        y: pd.oy + (e.clientY - pd.sy) / z
+      }
+      panRef.current = np
+      setPan(np)
+      return
+    }
     if (!dragStart) return
     const p = normCoords(e)
     if (!p) return
@@ -108,8 +143,69 @@ export default function LoupeView({
   }
 
   const onMouseUp = () => {
+    panDragRef.current = null
+    setPanning(false)
     setDragStart(null)
   }
+
+  // Zoom ancorado no cursor (wheel): mantém o ponto sob o mouse fixo.
+  const zoomAt = (clientX: number, clientY: number, z2raw: number) => {
+    const img = imgRef.current
+    const stage = stageRef.current
+    if (!img || !stage) return
+    const z1 = zoomRef.current
+    const z2 = Math.min(ZOOM_MAX, Math.max(1, z2raw))
+    if (z2 === z1) return
+    if (z2 <= 1) {
+      zoomRef.current = 1
+      panRef.current = { x: 0, y: 0 }
+      setZoom(1)
+      setPan({ x: 0, y: 0 })
+      return
+    }
+    let sx = 0
+    let sy = 0
+    if (Number.isFinite(clientX) && Number.isFinite(clientY)) {
+      const stageRect = stage.getBoundingClientRect()
+      const mx = clientX - stageRect.left - img.offsetLeft
+      const my = clientY - stageRect.top - img.offsetTop
+      sx = mx - img.offsetWidth / 2
+      sy = my - img.offsetHeight / 2
+    }
+    const np = {
+      x: panRef.current.x + sx * (1 / z2 - 1 / z1),
+      y: panRef.current.y + sy * (1 / z2 - 1 / z1)
+    }
+    zoomRef.current = z2
+    panRef.current = np
+    setZoom(z2)
+    setPan(np)
+  }
+
+  const fitView = () => {
+    zoomRef.current = 1
+    panRef.current = { x: 0, y: 0 }
+    setZoom(1)
+    setPan({ x: 0, y: 0 })
+  }
+
+  // Zoom ancorado no centro da imagem (botões +/−/100%).
+  const zoomCentered = (z2raw: number) => {
+    zoomAt(NaN, NaN, z2raw)
+  }
+
+  // Wheel no stage: zoom centrado no cursor (listener nativo não-passivo).
+  useEffect(() => {
+    const stage = stageRef.current
+    if (!stage) return
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      zoomAt(e.clientX, e.clientY, zoomRef.current * Math.exp(-e.deltaY * 0.0015))
+    }
+    stage.addEventListener('wheel', onWheel, { passive: false })
+    return () => stage.removeEventListener('wheel', onWheel)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const removeSelected = () => {
     if (!photo || !sel) return
@@ -233,6 +329,7 @@ export default function LoupeView({
       <div
         className="loupe-stage"
         ref={stageRef}
+        style={{ cursor: zoom > 1 ? (panning ? 'grabbing' : 'grab') : undefined }}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
@@ -245,6 +342,13 @@ export default function LoupeView({
             alt={photo.fileName}
             className="loupe-img"
             draggable={false}
+            style={
+              zoom > 1
+                ? {
+                    transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)`
+                  }
+                : undefined
+            }
           />
         ) : (
           <div className="loupe-loading">
@@ -289,6 +393,43 @@ export default function LoupeView({
         >
           {t('loupe.patch')}
         </button>
+        <div className="loupe-zoombar">
+          <button
+            type="button"
+            className={`loupe-zoom-btn${zoom === 1 ? ' active' : ''}`}
+            onClick={fitView}
+            title={t('loupe.ajustar')}
+          >
+            {t('loupe.ajustar')}
+          </button>
+          <button
+            type="button"
+            className="loupe-zoom-btn"
+            onClick={() => zoomCentered(ZOOM_100)}
+            title={t('loupe.zoom100')}
+          >
+            {t('loupe.zoom100')}
+          </button>
+          <button
+            type="button"
+            className="loupe-zoom-btn"
+            onClick={() => zoomCentered(zoomRef.current / ZOOM_STEP)}
+            disabled={zoom <= 1}
+            aria-label={t('loupe.menos')}
+          >
+            {t('loupe.menos')}
+          </button>
+          <button
+            type="button"
+            className="loupe-zoom-btn"
+            onClick={() => zoomCentered(zoomRef.current * ZOOM_STEP)}
+            disabled={zoom >= ZOOM_MAX}
+            aria-label={t('loupe.mais')}
+          >
+            {t('loupe.mais')}
+          </button>
+          <span className="loupe-zoom-label">{Math.round(zoom * 100)}%</span>
+        </div>
         <span dangerouslySetInnerHTML={{ __html: t('loupe.atalhos') }} />
       </div>
     </div>

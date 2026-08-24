@@ -266,6 +266,17 @@ app.whenReady().then(() => {
       return false
     }
   })
+  ipcMain.handle(
+    'core:savePresetFull',
+    async (_e, name: string, recipe: string, fileType: string, colorType: string, source: string) => {
+      try {
+        await getCore().savePresetFull(name, recipe, fileType, colorType, source)
+        return true
+      } catch (e) {
+        return false
+      }
+    }
+  )
   ipcMain.handle('core:listPresets', async () => {
     try {
       return await getCore().listPresets()
@@ -399,9 +410,9 @@ app.whenReady().then(() => {
       return []
     }
   })
-  ipcMain.handle('core:exportPhotos', async (_e, ids: number[], destDir: string, format: string, quality: number) => {
+  ipcMain.handle('core:exportPhotos', async (_e, ids: number[], destDir: string, format: string, quality: number, colorProfile: string, naming: string) => {
     try {
-      return await getCore().exportPhotos(ids, destDir, format, quality)
+      return await getCore().exportPhotos(ids, destDir, format, quality, colorProfile, naming)
     } catch (e) {
       return { ok: false, error: String(e) }
     }
@@ -419,6 +430,14 @@ app.whenReady().then(() => {
   ipcMain.handle('core:applyRetouchAll', async (_e, ids: number[], destDir: string, skin: number, regions: any, format: string, quality: number) => {
     try {
       return await getCore().applyRetouchAll(ids, destDir, skin, regions, format, quality)
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+  // --- Galeria web (agent-05) ---
+  ipcMain.handle('core:createWebGallery', async (_e, ids: number[], destDir: string, title: string) => {
+    try {
+      return await getCore().createWebGallery(ids, destDir, title)
     } catch (e) {
       return { ok: false, error: String(e) }
     }
@@ -444,6 +463,58 @@ app.whenReady().then(() => {
       return getCore().clearThumbCache()
     } catch (e) {
       return 0
+    }
+  })
+
+  // ---- Pessoas: agrupamento facial + exportação por pessoa ----
+  type CoreWithPeople = typeof import('*.node') & {
+    groupBySimilarityAsync(threshold: number | null | undefined): Promise<unknown>
+    exportPeopleToFolders(outDir: string, threshold: number | null | undefined): Promise<unknown>
+  }
+  ipcMain.handle('core:groupBySimilarity', async (_e, threshold?: number) => {
+    try {
+      return await (getCore() as CoreWithPeople).groupBySimilarityAsync(threshold ?? null)
+    } catch (e) {
+      return { error: String(e) }
+    }
+  })
+  ipcMain.handle('core:exportPeopleToFolders', async (_e, outDir: string, threshold?: number) => {
+    try {
+      return await (getCore() as CoreWithPeople).exportPeopleToFolders(outDir, threshold ?? null)
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  // --- Labels de cor (agent-10) ---
+  type CoreWithLabels = typeof import('*.node') & {
+    setPhotoLabel(id: number, label: string): void
+    getPhotoLabel(id: number): string
+    getLabelsBulk(ids: number[]): Record<string, string>
+  }
+  ipcMain.handle('core:setPhotoLabel', (_e, id: number, label: string) => {
+    try {
+      ;(getCore() as CoreWithLabels).setPhotoLabel(id, label)
+      return true
+    } catch (err) {
+      console.error('Falha ao definir etiqueta:', err)
+      return false
+    }
+  })
+  ipcMain.handle('core:getPhotoLabel', (_e, id: number) => {
+    try {
+      return (getCore() as CoreWithLabels).getPhotoLabel(id)
+    } catch (err) {
+      console.error('Falha ao ler etiqueta:', err)
+      return ''
+    }
+  })
+  ipcMain.handle('core:getLabelsBulk', (_e, ids: number[]) => {
+    try {
+      return (getCore() as CoreWithLabels).getLabelsBulk(ids)
+    } catch (err) {
+      console.error('Falha ao ler etiquetas (lote):', err)
+      return {}
     }
   })
 

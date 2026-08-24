@@ -67,7 +67,9 @@ declare module '*.node' {
   export function findDuplicates(): Array<{ hash: string; photo_ids: number[]; photo_names: string[]; photo_paths: string[] }>
   export function filterCounts(): { all: number; picks: number; rejects: number; unrated: number; review: number; destaques: number; selecionado: number; duplicates: number; faces: number; edited: number }
   export function savePreset(name: string, recipe: string): void
-  export function listPresets(): Array<{ name: string; recipe: string }>
+  export function savePresetFull(name: string, recipe: string, fileType: string, colorType: string, source: string): void
+  export function updatePresetMeta(name: string, fileType: string, colorType: string): boolean
+  export function listPresets(): Array<{ name: string; recipe: string; file_type: string; color_type: string; source: string }>
   export function deletePreset(name: string): boolean
   export function autoLevelPhoto(id: number, maxDim: number): Promise<{ preview: string; angle: number } | { error: string }>
   export function aiCropPhoto(id: number, maxDim: number): Promise<string | null>
@@ -86,8 +88,9 @@ declare module '*.node' {
   export function addFolderToAlbum(albumId: number, dir: string): number
   export function setAlbumSessionType(albumId: number, sessionType: string): void
   export function albumPhotoIds(albumId: number): number[]
-  export function exportPhotos(ids: number[], destDir: string, format: string, quality: number): { ok: boolean; exported?: number; errors?: number; files?: string[]; dest_dir?: string; error?: string }
+  export function exportPhotos(ids: number[], destDir: string, format: string, quality: number, colorProfile: string, naming: string): { ok: boolean; exported?: number; errors?: number; files?: string[]; dest_dir?: string; error?: string }
   export function applyRetouchAll(ids: number[], destDir: string, skin: number, regions: Record<string, number>, format: string, quality: number): { ok: boolean; exported?: number; errors?: number; files?: string[]; dest_dir?: string; error?: string }
+  export function createWebGallery(ids: number[], destDir: string, title: string): { ok: boolean; path?: string; count?: number; error?: string }
   export function scanFolderProgress(
     dir: string,
     includeSubdirs: boolean,

@@ -6,6 +6,7 @@ import ExportDialog from './components/ExportDialog'
 import LoupeView from './components/LoupeView'
 import FilterPanel from './components/FilterPanel'
 import HomeView from './components/HomeView'
+import PeopleView from './components/PeopleView'
 import { useT } from './i18n/I18nContext'
 import type { PhotoMeta } from '../../types/photo'
 
@@ -62,6 +63,7 @@ export default function App() {
   const [albumPhotoIds, setAlbumPhotoIds] = useState<Set<number> | null>(null)
   const [mode, setMode] = useState<'import' | 'cull' | 'edit' | 'retouch'>('import')
   const [exportOpen, setExportOpen] = useState(false)
+  const [showPeople, setShowPeople] = useState(false)
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>('none')
   const [moreOpen, setMoreOpen] = useState(false)
   const moreRef = useRef<HTMLDivElement | null>(null)
@@ -571,6 +573,11 @@ export default function App() {
     return <HomeView onOpenAlbum={openAlbum} />
   }
 
+  // Tela Pessoas (agrupamento facial) em tela cheia.
+  if (showPeople) {
+    return <PeopleView onBack={() => setShowPeople(false)} />
+  }
+
   if (loupeOpen) {
     return (
       <LoupeView
@@ -618,6 +625,9 @@ export default function App() {
         <span className="logo">OpenShoot</span>
         <button onClick={closeAlbum} className="ghost back-albums">
           ← {t('app.meusAlbums')}
+        </button>
+        <button onClick={() => setShowPeople(true)} className="ghost">
+          {t('people.titulo')}
         </button>
         <div className="mode-tabs">
           {(

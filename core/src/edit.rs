@@ -383,8 +383,78 @@ pub fn edit_thumbnail_base64(
   ))
 }
 
+/// Aproximação de Display P3: boost simples de saturação (+5%) sobre a saída
+/// sRGB. A conversão ICC/P3 real (primas e gamma diferentes) está fora do
+/// escopo do pipeline atual; o fator 1.05 simula a gamut mais ampla do P3.
+fn boost_display_p3_saturation(img: &image::RgbImage) -> image::RgbImage {
+  let (w, h) = img.dimensions();
+  let mut out = image::RgbImage::new(w, h);
+  for (x, y, px) in img.enumerate_pixels() {
+    let (r, g, b) = (
+      px[0] as f32 / 255.0,
+      px[1] as f32 / 255.0,
+      px[2] as f32 / 255.0,
+    );
+    let luma = 0.299 * r + 0.587 * g + 0.114 * b;
+    let s = 1.05; // +5% de saturação
+    let to_u8 = |v: f32| ((luma + (v - luma) * s).clamp(0.0, 1.0) * 255.0) as u8;
+    out.put_pixel(x, y, image::Rgb([to_u8(r), to_u8(g), to_u8(b)]));
+  }
+  out
+}
+
+/// Converte dias desde a época Unix em (ano, mês, dia) — algoritmo civil.
+fn civil_from_days(z: i64) -> (i64, u32, u32) {
+  let z = z + 719_468;
+  let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+  let doe = (z - era * 146_097) as u64;
+  let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+  let y = yoe as i64 + era * 400;
+  let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+  let mp = (5 * doy + 2) / 153;
+  let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+  let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+  (if m <= 2 { y + 1 } else { y }, m, d)
+}
+
+/// Data YYYYMMDD para nomeação: extrai da data EXIF (`taken_at`, ISO ou
+/// "YYYY-MM-DD HH:MM:SS"); se ausente/inválida, usa a data de hoje.
+fn export_date_prefix(taken_at: Option<&str>) -> String {
+  if let Some(ts) = taken_at {
+    let digits: String = ts.chars().filter(|c| c.is_ascii_digit()).collect();
+    if digits.len() >= 8 {
+      let y: i32 = digits[..4].parse().unwrap_or(0);
+      if (1900..2100).contains(&y) {
+        return digits[..8].to_string();
+      }
+    }
+  }
+  let days = std::time::SystemTime::now()
+    .duration_since(std::time::UNIX_EPOCH)
+    .map(|d| d.as_secs() / 86_400)
+    .unwrap_or(0) as i64;
+  let (y, m, d) = civil_from_days(days);
+  format!("{y:04}{m:02}{d:02}")
+}
+
+/// Gera o nome base (sem extensão) do arquivo exportado conforme o padrão
+/// `naming` escolhido:
+/// - "{original}" (default/comportamento atual): mantém o nome original;
+/// - "{n}_{original}": contador global da exportação como prefixo;
+/// - "{date}_{original}": data EXIF (taken_at) ou hoje, formato YYYYMMDD.
+/// Padrões desconhecidos/vazios caem no default "{original}".
+pub fn build_export_name(naming: &str, n: usize, taken_at: Option<&str>, original_stem: &str) -> String {
+  match naming {
+    "{n}_{original}" => format!("{n}_{original_stem}"),
+    "{date}_{original}" => format!("{}_{}", export_date_prefix(taken_at), original_stem),
+    _ => original_stem.to_string(),
+  }
+}
+
 /// Exporta uma foto com a edição aplicada para um arquivo no destino.
 /// `format`: "jpeg" | "png". `quality`: 1..100 (JPEG apenas).
+/// `color_profile`: "srgb" (pipeline já é sRGB, sem mudança) ou "display-p3"
+/// (aproximação documentada: boost de saturação +5% — ver função acima).
 /// Não-destrutivo: lê o original, aplica a receita, grava uma cópia.
 pub fn export_photo_to_file(
   path: &Path,
@@ -392,6 +462,7 @@ pub fn export_photo_to_file(
   dest: &Path,
   format: &str,
   quality: u8,
+  color_profile: &str,
 ) -> Result<(), String> {
   let img = match crate::imageproc::read_embedded_jpeg(path) {
     Some(jpeg) => image::ImageReader::new(std::io::Cursor::new(jpeg))
@@ -419,7 +490,13 @@ pub fn export_photo_to_file(
   let (w, h) = rgb.dimensions();
   let edited = apply_to_rgb8(params, rgb.as_raw(), w, h);
   let out_img = image::RgbImage::from_raw(w, h, edited).ok_or("falha ao reconstruir")?;
-  let dynout = image::DynamicImage::ImageRgb8(out_img);
+  // Espaço de cor, aplicado antes de salvar: "srgb" não altera nada
+  // (pipeline já produz sRGB); "display-p3" aplica a aproximação +5% sat.
+  let dynout = if color_profile.eq_ignore_ascii_case("display-p3") {
+    image::DynamicImage::ImageRgb8(boost_display_p3_saturation(&out_img))
+  } else {
+    image::DynamicImage::ImageRgb8(out_img)
+  };
 
   match format {
     "png" => dynout
@@ -525,7 +602,7 @@ mod tests {
     img.save(&src).unwrap();
     let dest = tmp.join("out.jpg");
     let params = EditParams::default();
-    export_photo_to_file(&src, &params, &dest, "jpeg", 90).unwrap();
+    export_photo_to_file(&src, &params, &dest, "jpeg", 90, "srgb").unwrap();
     assert!(dest.exists(), "JPEG deve ser criado");
     let size = std::fs::metadata(&dest).unwrap().len();
     assert!(size > 0, "arquivo não pode ser vazio");
@@ -545,7 +622,7 @@ mod tests {
       exposure: Some(-2.0),
       ..Default::default()
     };
-    export_photo_to_file(&src, &params, &dest, "jpeg", 90).unwrap();
+    export_photo_to_file(&src, &params, &dest, "jpeg", 90, "srgb").unwrap();
     // Re-decoda e verifica que escureceu.
     let decoded = image::ImageReader::open(&dest)
       .unwrap()
@@ -631,7 +708,7 @@ mod tests {
     let h = 1u32;
     let mut rgb = Vec::new();
     // [100, 112, 88, 100] no canal R; g/b constantes.
-    for (i, v) in [100u8, 112, 88, 100].iter().enumerate() {
+    for (_, v) in [100u8, 112, 88, 100].iter().enumerate() {
       rgb.push(*v);
       rgb.push(100);
       rgb.push(100);
@@ -647,5 +724,89 @@ mod tests {
       "ruído deve suavizar em direção à média, canal r ficou {}",
       center_r
     );
+  }
+
+  #[test]
+  fn export_naming_contador_prefixes_file_with_number() {
+    // Naming "{n}_{original}": o arquivo gerado deve ter prefixo numérico.
+    let tmp = std::env::temp_dir().join("openshoot_export_naming_test");
+    std::fs::create_dir_all(&tmp).unwrap();
+    let src = tmp.join("praia.png");
+    let img = image::RgbImage::from_pixel(4, 4, image::Rgb([120u8, 80, 200]));
+    img.save(&src).unwrap();
+    let name = build_export_name("{n}_{original}", 3, None, "praia");
+    assert_eq!(name, "3_praia", "contador global vira prefixo numérico");
+    let dest = tmp.join(format!("{name}.jpg"));
+    export_photo_to_file(&src, &EditParams::default(), &dest, "jpeg", 90, "srgb").unwrap();
+    assert!(dest.exists(), "arquivo com prefixo numérico deve existir");
+    assert!(
+      dest
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .chars()
+        .next()
+        .unwrap()
+        .is_ascii_digit(),
+      "nome do arquivo deve começar com dígito"
+    );
+    let _ = std::fs::remove_dir_all(&tmp);
+  }
+
+  #[test]
+  fn naming_patterns() {
+    // Default e padrão desconhecido mantêm o original.
+    assert_eq!(build_export_name("{original}", 1, None, "foto"), "foto");
+    assert_eq!(build_export_name("", 1, None, "foto"), "foto");
+    // Data EXIF (taken_at) em ISO ou "YYYY-MM-DD HH:MM:SS" → YYYYMMDD.
+    assert_eq!(
+      build_export_name("{date}_{original}", 1, Some("2024-01-15 10:30:00"), "a"),
+      "20240115_a"
+    );
+    assert_eq!(
+      build_export_name("{date}_{original}", 1, Some("2023-11-02T08:00:00Z"), "b"),
+      "20231102_b"
+    );
+    // Sem EXIF: usa a data de hoje em YYYYMMDD.
+    let days = std::time::SystemTime::now()
+      .duration_since(std::time::UNIX_EPOCH)
+      .unwrap()
+      .as_secs()
+      / 86_400;
+    let (y, m, d) = civil_from_days(days as i64);
+    assert_eq!(
+      build_export_name("{date}_{original}", 1, None, "c"),
+      format!("{y:04}{m:02}{d:02}_c")
+    );
+  }
+
+  #[test]
+  fn display_p3_boosts_saturation_and_keeps_gray() {
+    // Cinza neutro não muda (saturação não afeta luma = pixel).
+    let img = image::RgbImage::from_pixel(2, 2, image::Rgb([128u8, 128, 128]));
+    let out = boost_display_p3_saturation(&img);
+    assert_eq!(out.get_pixel(0, 0)[0], 128);
+    // Vermelho saturado fica ainda mais separado dos outros canais.
+    let img = image::RgbImage::from_pixel(1, 1, image::Rgb([200u8, 60, 60]));
+    let out = boost_display_p3_saturation(&img);
+    assert!(
+      out.get_pixel(0, 0)[0] > 200,
+      "boost P3 deve afastar o canal dominante"
+    );
+  }
+
+  #[test]
+  fn export_display_p3_writes_file() {
+    // Exportação completa com color_profile "display-p3" grava arquivo válido.
+    let tmp = std::env::temp_dir().join("openshoot_export_p3_test");
+    std::fs::create_dir_all(&tmp).unwrap();
+    let src = tmp.join("src_p3.png");
+    let img = image::RgbImage::from_pixel(4, 4, image::Rgb([200u8, 60, 60]));
+    img.save(&src).unwrap();
+    let dest = tmp.join("out_p3.jpg");
+    export_photo_to_file(&src, &EditParams::default(), &dest, "jpeg", 90, "display-p3").unwrap();
+    let decoded = image::ImageReader::open(&dest).unwrap().decode().unwrap();
+    assert_eq!(decoded.to_rgb8().dimensions(), (4, 4));
+    let _ = std::fs::remove_dir_all(&tmp);
   }
 }

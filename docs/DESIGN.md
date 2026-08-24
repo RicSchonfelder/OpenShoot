@@ -148,7 +148,11 @@ OpenShoot/
 ### Fase 5 — Export & Delivery
 - [ ] Export JPEG/TIFF com ajustes aplicados
 - [ ] XMP sidecars (ratings, labels, keywords) p/ LR/C1/PS
-- [ ] (Opcional) Galeria web estática p/ compartilhamento
+- [x] (Opcional) Galeria web estática p/ compartilhamento — `create_web_gallery`
+  (`core/src/gallery.rs` + IPC `core:createWebGallery`, UI `GalleryExport.tsx`):
+  copia as fotos para `<dest>/photos/`, gera thumbs 400px em `<dest>/thumbs/`
+  e escreve um `index.html` self-contained (dark theme, grid responsivo,
+  lightbox CSS `:target`, zero dependências externas, 100% offline).
 
 ### Fase 6 — Material opcional via OpenRouter (opt-in)
 > **Não afeta os pixels.** Só texto/organização. Chave = do usuário (Keychain), nunca no código/env.

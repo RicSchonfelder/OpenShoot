@@ -3,6 +3,23 @@ import type { PhotoListData, PhotoMeta, ScanResultData } from '../types/photo'
 
 export type { PhotoListData, PhotoMeta, ScanResultData }
 
+export interface PersonGroup {
+  person_id: number
+  count: number
+  sample_path: string
+  photo_ids: number[]
+  photo_paths: string[]
+}
+
+export interface PeopleExportResult {
+  ok: boolean
+  out_dir?: string
+  groups?: Array<{ person_id: number; folder: string; count: number; sample: string }>
+  exported?: number
+  no_face?: number
+  error?: string
+}
+
 const api = {
   hello: (name: string): Promise<string> => ipcRenderer.invoke('core:hello', name),
   add: (a: number, b: number): Promise<number> => ipcRenderer.invoke('core:add', a, b),
@@ -46,11 +63,13 @@ const api = {
   setAlbumSessionType: (albumId: number, sessionType: string): Promise<boolean> =>
     ipcRenderer.invoke('core:setAlbumSessionType', albumId, sessionType),
   albumPhotoIds: (albumId: number): Promise<number[]> => ipcRenderer.invoke('core:albumPhotoIds', albumId),
-  exportPhotos: (ids: number[], destDir: string, format: string, quality: number): Promise<{ ok: boolean; exported?: number; errors?: number; files?: string[]; dest_dir?: string; error?: string }> =>
-    ipcRenderer.invoke('core:exportPhotos', ids, destDir, format, quality),
+  exportPhotos: (ids: number[], destDir: string, format: string, quality: number, colorProfile: string, naming: string): Promise<{ ok: boolean; exported?: number; errors?: number; files?: string[]; dest_dir?: string; error?: string }> =>
+    ipcRenderer.invoke('core:exportPhotos', ids, destDir, format, quality, colorProfile, naming),
   pickExportFolder: (): Promise<string | null> => ipcRenderer.invoke('core:pickExportFolder'),
   applyRetouchAll: (ids: number[], destDir: string, skin: number, regions: Record<string, number>, format: string, quality: number): Promise<{ ok: boolean; exported?: number; errors?: number; files?: string[]; dest_dir?: string; error?: string }> =>
     ipcRenderer.invoke('core:applyRetouchAll', ids, destDir, skin, regions, format, quality),
+  createWebGallery: (ids: number[], destDir: string, title: string): Promise<{ ok: boolean; path?: string; count?: number; error?: string }> =>
+    ipcRenderer.invoke('core:createWebGallery', ids, destDir, title),
   // Fase 2
   cullPhotos: (targetPicks?: number): Promise<{ processed: number; errors: number; avgScore: number; picks: number; review: number }> =>
     ipcRenderer.invoke('core:cullPhotos', targetPicks),
@@ -91,7 +110,15 @@ const api = {
     ipcRenderer.invoke('core:filterCounts'),
   savePreset: (name: string, recipe: string): Promise<boolean> =>
     ipcRenderer.invoke('core:savePreset', name, recipe),
-  listPresets: (): Promise<Array<{ name: string; recipe: string }>> =>
+  savePresetFull: (
+    name: string,
+    recipe: string,
+    fileType: string,
+    colorType: string,
+    source: string
+  ): Promise<boolean> =>
+    ipcRenderer.invoke('core:savePresetFull', name, recipe, fileType, colorType, source),
+  listPresets: (): Promise<Array<{ name: string; recipe: string; file_type: string; color_type: string; source: string }>> =>
     ipcRenderer.invoke('core:listPresets'),
   deletePreset: (name: string): Promise<boolean> =>
     ipcRenderer.invoke('core:deletePreset', name),
@@ -110,7 +137,20 @@ const api = {
     onProgress: (p: { processed: number; total: number; currentFile: string }) => void
   ): Promise<string> =>
     ipcRenderer.invoke('core:scanFolderProgress', dir, includeSubdirs, types, onProgress),
-  clearThumbCache: (): Promise<number> => ipcRenderer.invoke('core:clearThumbCache')
+  clearThumbCache: (): Promise<number> => ipcRenderer.invoke('core:clearThumbCache'),
+  // Pessoas (agrupamento facial)
+  groupBySimilarity: (
+    threshold?: number
+  ): Promise<PersonGroup[] | { groups?: PersonGroup[] } | { error: string }> =>
+    ipcRenderer.invoke('core:groupBySimilarity', threshold),
+  exportPeopleToFolders: (outDir: string, threshold?: number): Promise<PeopleExportResult> =>
+    ipcRenderer.invoke('core:exportPeopleToFolders', outDir, threshold),
+  // Labels de cor (agent-10)
+  setPhotoLabel: (id: number, label: string): Promise<void> =>
+    ipcRenderer.invoke('core:setPhotoLabel', id, label),
+  getPhotoLabel: (id: number): Promise<string> => ipcRenderer.invoke('core:getPhotoLabel', id),
+  getLabelsBulk: (ids: number[]): Promise<Record<string, string>> =>
+    ipcRenderer.invoke('core:getLabelsBulk', ids)
 }
 
 contextBridge.exposeInMainWorld('openshoot', api)

@@ -184,3 +184,28 @@ Todos os commits foram feitos e **pushed** para `main`:
 
 **Ponto de partida ao voltar:** ler `docs/DESIGN.md` (arquitetura) e este doc
 (seção 8 para o próximo passo).
+
+---
+
+## 11. Estado 2026-08-24
+
+Resumo do estado atual do app (sessão com **10 agentes paralelos** trabalhando
+no repositório — documentação, código e testes em simultâneo):
+
+- **Álbuns**: criação/renome/exclusão via SQLite (`albums` + `album_photos`), com
+  capa (primeira foto), contagem, importação por pasta ou seleção, e
+  `session_type` por álbum. CRUD completo exposto via NAPI + UI.
+- **Abas de fluxo**: barra de modos **IMPORT / CULL / EDIT / RETOUCH**
+  (`mode-tabs`) guiando o pipeline da sessão; IMPORT com banner de importação
+  (subdiretórios, tipos, session type).
+- **Exportação**: diálogo de exportação JPEG/PNG (qualidade configurável) das
+  fotos editadas + exportação em massa de XMP sidecars compatível com
+  Lightroom/Capture One.
+- **Retoque em lote**: suavização de pele (segmentação YCbCr + blur seletivo),
+  retoque facial, blur de fundo e remoção de distrações (inpainting) aplicáveis
+  em lote, não-destrutivo.
+- **Face recognition**: embeddings MobileFaceNet agrupam fotos por pessoa
+  (`PeopleView`); SCRFD continua responsável pela detecção no culling.
+- **10 agentes paralelos**: trabalho distribuído no repo — cada agente dono de
+  arquivos específicos (documentação: README.md, THIRD_PARTY.md, docs/; demais:
+  src/, core/). Nada commitado nesta sessão de docs.

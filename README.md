@@ -1,61 +1,150 @@
 # OpenShoot 📸
 
-> Open-source AI culling, editing & retouching for photographers.
+[![CI](https://github.com/RicSchonfelder/OpenShoot/actions/workflows/ci.yml/badge.svg)](https://github.com/RicSchonfelder/OpenShoot/blob/main/.github/workflows/ci.yml)
 
-Aplicativo desktop para fotógrafos que automatiza o pós-processamento de fotos —
-**100% local e offline**. Arquitetura inspirada em uma referência externa (UI Electron/React +
-core Rust + ONNX Runtime na GPU), mas **totalmente aberto** (MIT): o usuário tem
-acesso a todo o código-fonte.
+> **Open-source AI photo culling, editing & retouching — 100% local & offline**
 
-## Pilares
+OpenShoot is a desktop app for photographers that automates post-processing with
+AI models running **entirely on your machine**. No cloud. No uploads. No
+subscriptions. Your pixels never leave your computer.
 
-| Pilar | Compromisso |
+## Why OpenShoot?
+
+| | |
 |---|---|
-| 🔒 **100% local** | Imagens nunca saem da sua máquina. Processamento na sua GPU (ONNX/Metal). |
-| 🧩 **Open source** | MIT. Todo o código é público e auditável. |
-| 🔑 **Chaves são suas** | Qualquer serviço externo (ex: OpenRouter, Fase 6) é opt-in e usa a SUA chave, guardada no Keychain. |
-| ♻️ **Não-destrutivo** | Nunca altera o original. Edições/ratings vão para XMP sidecars. |
+| 🔒 **100% local & offline** | All AI inference runs via ONNX Runtime (CoreML/Metal on macOS). Images are never uploaded anywhere. |
+| ⚡ **AI-powered culling** | Aesthetic scoring (NIMA) + face detection (SCRFD) + sharpness analysis rate every photo automatically. |
+| ✍️ **Batch editing** | Presets, tone curve, HSL, exposure/WB/contrast — non-destructive, applied to whole sessions. |
+| 💄 **Retouching** | Skin smoothing, facial enhancement and background blur with selective masks. |
+| 👤 **Face recognition grouping** | Cluster photos by person using MobileFaceNet embeddings. |
+| 📁 **Albums & workflow** | Organize shoots into albums and work through an IMPORT → CULL → EDIT → RETOUCH pipeline. |
+| 🔀 **Interoperable** | Writes Lightroom/Capture One-compatible XMP sidecars; exports JPEG/PNG. |
+| ♻️ **Non-destructive** | Originals are never modified — ratings and edits live in sidecar files. |
+| 🧩 **Truly open source** | MIT licensed, fully auditable code. No proprietary weights, no black boxes. |
+
+## Features
+
+### AI Culling
+- **NIMA (MobileNet aesthetic)** predicts an aesthetic score per photo.
+- **SCRFD** detects faces (multi-scale decode + NMS); photos containing sharp,
+  well-exposed faces get boosted.
+- Laplacian sharpness, exposure and histogram heuristics combined with ML scores.
+- Automatic star ratings (★1–5), picks/rejects, duplicate grouping.
+- One-click bulk XMP sidecar export for your rated picks.
+
+### Batch Editing
+- Non-destructive edit engine: exposure, white balance, contrast, saturation,
+  shadows/highlights, brightness.
+- Tone curve and HSL adjustments.
+- Save/load presets and apply them across entire albums in one pass.
+
+### Retouching
+- Skin smoothing (YCbCr skin segmentation + selective blur).
+- Facial retouching tools.
+- Background blur with subject separation.
+- Distraction removal via inpainting.
+
+### Face Recognition Grouping
+- MobileFaceNet embeddings group photos of the same person across a session —
+  browse your shoot by people.
+
+### Albums & Workflow Tabs
+- Create albums, import folders (including subdirectories), and assign session
+  types.
+- Four workflow tabs guide you through **IMPORT → CULL → EDIT → RETOUCH**.
+
+### Export & Interop
+- **XMP sidecars** compatible with Adobe Lightroom Classic and Capture One
+  (ratings, color labels, keywords).
+- **JPEG/PNG export** of edited images.
+- RAW support: NEF, ARW, DNG, CR2 and CR3 (embedded preview extraction).
+
+## Architecture
+
+```
+┌─────────────────────┐        ┌──────────────────────────┐        ┌─────────────────────────┐
+│  Electron + React   │ ⇄ IPC ⇄ │   Rust core (napi-rs)    │ ⇄ GPU ⇄ │ ONNX Runtime / CoreML   │
+│  UI (src/)          │        │   catalog · AI · XMP     │        │ NIMA · SCRFD · FaceNet  │
+└─────────────────────┘        │   (core/)                │        └─────────────────────────┘
+                               └──────────────────────────┘
+```
+
+- **UI**: Electron + React (`src/`) — virtualized grid, loupe view, edit panels.
+- **Core**: Rust compiled as a native addon via [napi-rs](https://napi.rs)
+  (`core/`) — SQLite catalog, RAW decoding, ML inference, edit/retouch engines,
+  XMP writer.
+- **Inference**: [ort](https://github.com/pykeio/ort) with the CoreML execution
+  provider (Apple Neural Engine / Metal), automatic CPU fallback.
+
+See [docs/DESIGN.md](docs/DESIGN.md) for the full design document.
+
+## Requirements
+
+- **macOS** (Apple Silicon, arm64)
+- **Rust ≥ 1.88**
+- **Node.js ≥ 20**
+
+## Getting Started
+
+```bash
+git clone https://github.com/RicSchonfelder/OpenShoot.git
+cd OpenShoot
+npm install         # approve Electron/esbuild/fsevents install scripts if prompted
+npm run build:core  # compiles the Rust core -> core/*.node
+npm run dev         # launches the app
+```
+
+Other useful commands:
+
+```bash
+npm run typecheck   # TypeScript checks (main/preload + renderer)
+npm test            # Rust tests (cargo)
+npm run dist:mac    # build a packaged .app/.dmg into release/
+```
+
+## ONNX Models
+
+OpenShoot needs three models in `core/models/`:
+
+| File | Purpose | License |
+|---|---|---|
+| `scrfd_2.5g_bnkps.onnx` (~3.1 MB) | Face detection | Apache-2.0 ([InsightFace SCRFD](https://github.com/deepinsight/insightface/tree/master/detection/scrfd)) |
+| `nima_mobilenet_aesthetic.onnx` (~12.3 MB) | Aesthetic scoring | Google Research NIMA (non-commercial — see [THIRD_PARTY.md](THIRD_PARTY.md)) |
+| `mobilefacenet.onnx` (~3.8 MB) | Face embeddings/grouping | See [THIRD_PARTY.md](THIRD_PARTY.md) |
+
+Download links:
+
+```bash
+cd core/models
+curl -L -o scrfd_2.5g_bnkps.onnx \
+  https://huggingface.co/RuteNL/SCRFD-face-detection-ONNX/resolve/main/2.5g_bnkps.onnx
+curl -L -o nima_mobilenet_aesthetic.onnx \
+  https://huggingface.co/cromsc/nima-mobilenet-aesthetic/resolve/main/nima_mobilenet_aesthetic.onnx
+# mobilefacenet.onnx: any standard MobileFaceNet ONNX export works
+```
+
+If `core/models/` already contains the `.onnx` files (e.g. after a fresh clone),
+you're ready to go.
 
 ## Roadmap
 
-- **Fase 0 — Esqueleto** ✅ `Electron (React) ⇄ Rust (napi-rs) via IPC`
-- **Fase 1 — Catálogo & RAW** Importação, SQLite, decode RAW + previews
-- **Fase 2 — Culling (IA)** Facas, nitidez, score, duplicatas, XMP
-- **Fase 3 — Edição em lote** Presets + "aprender" estilo
-- **Fase 4 — Retoque** Pele, remoção de distrações, fundo
-- **Fase 5 — Export** JPEG/TIFF + XMP p/ Lightroom/Capture One/Photoshop
-- **Fase 6 — Texto (opt-in)** OpenRouter p/ keywords/descrições (chave do usuário)
+- [x] Phase 0 — Electron + React skeleton, napi-rs IPC bridge
+- [x] Phase 1 — SQLite catalog, RAW decode, thumbnails, virtualized grid
+- [x] Phase 2 — AI culling (NIMA + SCRFD), ratings, filters, bulk XMP export
+- [x] Phase 3 — Batch editing engine, presets, tone curve/HSL
+- [x] Phase 4 — Retouching (skin smoothing, inpainting, background blur)
+- [x] Albums, workflow tabs (IMPORT/CULL/EDIT/RETOUCH), face recognition grouping
+- [ ] CR3 dimensions from BMFF header for photos without EXIF
+- [ ] Opt-in text features (keywords/captions via user-provided API key)
+- [ ] Windows/Linux builds
 
-## Desenvolvimento
+## Contributing
 
-Pré-requisitos: Node ≥ 18, Rust ≥ 1.70, macOS (arm64/x86_64).
+Contributions welcome! Read [CONTRIBUTING.md](CONTRIBUTING.md), pick a
+[`good first issue`](https://github.com/RicSchonfelder/OpenShoot/issues?q=is%3Aissue+label%3A%22good+first+issue%22),
+and open a PR.
 
-```bash
-npm install        # instala dependencias (pode exigir aprovar scripts do Electron)
-npm run build:core # compila core Rust -> core/*.node
-npm run dev        # roda o app
-```
+## License
 
-Comandos de validação:
-
-```bash
-npm run typecheck  # TypeScript (main/preload + renderer)
-npm test           # testes Rust (cargo)
-```
-
-## Arquitetura
-
-```
-UI (Electron/React)  ⇄  [IPC via napi-rs]  ⇄  core Rust (ONNX na GPU)
-```
-
-Veja [docs/DESIGN.md](docs/DESIGN.md) para o design completo.
-
-## Contribuindo
-
-Leia [CONTRIBUTING.md](CONTRIBUTING.md). Toda ajuda é bem-vinda — problemas,
-ideias e PRs.
-
-## Licença
-
-MIT — veja [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). Third-party components and models are listed in
+[THIRD_PARTY.md](THIRD_PARTY.md).

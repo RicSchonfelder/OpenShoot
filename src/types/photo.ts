@@ -16,6 +16,7 @@ export interface PhotoMeta {
   hasFace: boolean
   review: boolean
   aiPick: boolean
+  label?: string
 }
 
 export interface ScanResultData {

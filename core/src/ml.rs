@@ -277,6 +277,252 @@ pub fn detect_faces(
   Ok(faces)
 }
 
+/// Igual a [`detect_faces`], mas também decodifica os 5 keypoints do modelo
+/// SCRFD bnkps (kps_8/kps_16/kps_32): 2 olhos, nariz, 2 cantos da boca.
+/// Os outputs kps_s têm formato [1, N, 10] e são offsets do centro da âncora,
+/// normalizados pela mesma regra do bbox (offset * stride, depois remove o
+/// letterbox e divide por scale*width/height).
+#[allow(dead_code)]
+pub fn detect_faces_with_kps(
+  rgb: &[u8],
+  width: u32,
+  height: u32,
+  threshold: f32,
+) -> Result<Vec<crate::types::FaceWithKps>, String> {
+  let engine = init_engine();
+  let engine = engine.as_ref().map_err(|e| e.clone())?;
+  let session = engine.scrfd.as_ref().ok_or_else(|| "SCRFD nao disponivel".to_string())?;
+  let mut guard = session.lock().map_err(|e| e.to_string())?;
+
+  const SIDE: usize = 640;
+  let tensor = to_nchw(rgb, width, height, SIDE, 128.0, 127.5);
+
+  // Fator de escala do letterbox (imagem -> 640x640).
+  let scale = (SIDE as f32 / width as f32).min(SIDE as f32 / height as f32);
+  let nw = width as f32 * scale;
+  let nh = height as f32 * scale;
+  let ox = (SIDE as f32 - nw) / 2.0;
+  let oy = (SIDE as f32 - nh) / 2.0;
+
+  let input = Tensor::from_array(tensor).map_err(|e| e.to_string())?;
+  let outputs = guard
+    .run(ort::inputs![input])
+    .map_err(|e| format!("erro SCRFD: {e}"))?;
+
+  // Coletar outputs por escala: score_s (fg), bbox_s, kps_s.
+  let mut scores: Vec<(u32, Vec<f32>)> = Vec::new();
+  let mut boxes: Vec<(u32, Vec<f32>)> = Vec::new();
+  let mut kpts: Vec<(u32, Vec<f32>)> = Vec::new();
+  for (name, val) in outputs.iter() {
+    let n = name.to_string();
+    let stride = if n.contains("_8") { Some(8u32) }
+      else if n.contains("_16") { Some(16) }
+      else if n.contains("_32") { Some(32) }
+      else { None };
+    if let Some(s) = stride {
+      if let Ok((_, arr)) = val.try_extract_tensor::<f32>() {
+        let data = arr.to_vec();
+        if n.contains("score") {
+          scores.push((s, data));
+        } else if n.contains("bbox") {
+          boxes.push((s, data));
+        } else if n.contains("kps") {
+          kpts.push((s, data));
+        }
+      }
+    }
+  }
+  if scores.is_empty() || boxes.is_empty() || kpts.is_empty() {
+    return Err("outputs SCRFD por escala (score/bbox/kps) nao encontrados".to_string());
+  }
+
+  // Decodificação idêntica à de detect_faces, com keypoints extras.
+  // score_s [1,N,1], bbox_s [1,N,4], kps_s [1,N,10]; N=(SIDE/stride)^2*2 âncoras.
+  let mut candidates: Vec<[f32; 4]> = Vec::new(); // bbox em pixels (letterbox 640)
+  let mut candidate_kps: Vec<[[f32; 2]; 5]> = Vec::new();
+  let mut candidate_scores: Vec<f32> = Vec::new();
+  for (s, sdata) in &scores {
+    let bdata = boxes.iter().find(|(bs, _)| bs == s).map(|(_, d)| d);
+    let Some(bdata) = bdata else { continue };
+    let kdata = kpts.iter().find(|(ks, _)| ks == s).map(|(_, d)| d);
+    let Some(kdata) = kdata else { continue };
+    let stride_f = *s as f32;
+    let num_anchors = 2usize;
+    let cells_per_anchor = (SIDE as usize / *s as usize).pow(2);
+    let cols = SIDE as usize / *s as usize;
+    for cell in 0..cells_per_anchor {
+      let row = cell / cols;
+      let col = cell % cols;
+      for a in 0..num_anchors {
+        let idx4 = (cell * num_anchors + a) * 4;
+        let idx10 = (cell * num_anchors + a) * 10;
+        let sidx = cell * num_anchors + a;
+        if sidx >= sdata.len() || idx4 + 3 >= bdata.len() || idx10 + 9 >= kdata.len() {
+          continue;
+        }
+        let fg = sdata[sidx];
+        if fg < threshold {
+          continue;
+        }
+        let cx = col as f32 * stride_f + stride_f / 2.0 - 0.5;
+        let cy = row as f32 * stride_f + stride_f / 2.0 - 0.5;
+        let (dx1, dy1, dx2, dy2) = (
+          bdata[idx4],
+          bdata[idx4 + 1],
+          bdata[idx4 + 2],
+          bdata[idx4 + 3],
+        );
+        let x1 = cx - dx1 * stride_f;
+        let y1 = cy - dy1 * stride_f;
+        let x2 = cx + dx2 * stride_f;
+        let y2 = cy + dy2 * stride_f;
+        // Keypoints: offset direto do centro da âncora (positivo), * stride.
+        let mut kps_px = [[0.0f32; 2]; 5];
+        for j in 0..5 {
+          kps_px[j][0] = cx + kdata[idx10 + 2 * j] * stride_f;
+          kps_px[j][1] = cy + kdata[idx10 + 2 * j + 1] * stride_f;
+        }
+        candidates.push([x1, y1, x2, y2]);
+        candidate_kps.push(kps_px);
+        candidate_scores.push(fg);
+      }
+    }
+  }
+
+  // NMS igual ao fluxo do bbox.
+  let keep = nms(&candidates, &candidate_scores, 0.4);
+
+  // Remove o offset do letterbox e normaliza para 0..1 na imagem original.
+  let w = width as f32;
+  let h = height as f32;
+  let mut faces = Vec::new();
+  for idx in keep {
+    let b = &candidates[idx];
+    let norm_x = |v: f32| ((v - ox) / (scale * w)).clamp(0.0, 1.0);
+    let norm_y = |v: f32| ((v - oy) / (scale * h)).clamp(0.0, 1.0);
+    if (b[2] - b[0]) <= 0.001 || (b[3] - b[1]) <= 0.001 {
+      continue;
+    }
+    let mut kps_norm = [[0.0f64; 2]; 5];
+    for j in 0..5 {
+      kps_norm[j][0] = norm_x(candidate_kps[idx][j][0]) as f64;
+      kps_norm[j][1] = norm_y(candidate_kps[idx][j][1]) as f64;
+    }
+    faces.push(crate::types::FaceWithKps {
+      bbox: vec![
+        norm_x(b[0]) as f64,
+        norm_y(b[1]) as f64,
+        norm_x(b[2]) as f64,
+        norm_y(b[3]) as f64,
+      ],
+      kps: kps_norm
+        .iter()
+        .map(|k| vec![k[0], k[1]])
+        .collect(),
+    });
+  }
+  Ok(faces)
+}
+
+/// Heurística documentada de olhos abertos (0..1) a partir dos 5 keypoints
+/// do SCRFD e dos pixels RGB originais.
+///
+/// Para cada olho (kps[0] e kps[1], normalizados 0..1):
+/// 1. Largura da face aproximada = distância euclidiana entre os centros dos
+///    olhos; a caixa do olho tem ~12% dessa largura, centrada no keypoint.
+/// 2. Recorta a região em luma normalizada 0..1.
+/// 3. Calcula:
+///    - variância do Laplaciano (nitidez): íris/cílios/pálpebra aberta criam
+///      bordas; olho fechado é pele suave -> variância baixa.
+///    - variação vertical média |Δy|: olho fechado tem pouca transição
+///      vertical (linha única da pálpebra); aberto tem borda superior/inferior.
+///    - brilho médio: região muito escura não é mensurável -> zera confiança.
+/// 4. Score do olho = clamp01(0.50*nitidez + 0.35*var_vertical + 0.15*brilho),
+///    com tetos empíricos (SHARP_CEILING/VGRAD_CEILING) para mapear 0..1.
+/// Retorna a média dos dois olhos.
+#[allow(dead_code)]
+pub fn eyes_open_score(kps: [[f32; 2]; 5], rgb: &[u8], width: u32, height: u32) -> f32 {
+  const SHARP_CEILING: f32 = 0.02;
+  const VGRAD_CEILING: f32 = 0.15;
+
+  let w = width as f32;
+  let h = height as f32;
+  // Proxy de largura da face: distância entre os centros dos olhos (px).
+  let dxp = (kps[0][0] - kps[1][0]) * w;
+  let dyp = (kps[0][1] - kps[1][1]) * h;
+  let face_w = (dxp * dxp + dyp * dyp).sqrt().max(1.0);
+  // Caixa ~12% da largura da face centrada no olho.
+  let half = (face_w * 0.06).max(2.0);
+
+  let mut total = 0.0f32;
+  for kp in &kps[0..2] {
+    let cx = kp[0] * w;
+    let cy = kp[1] * h;
+    let (x0, y0) = (((cx - half).floor() as i32).max(0) as u32, ((cy - half).floor() as i32).max(0) as u32);
+    let (x1, y1) = (
+      ((cx + half).ceil() as i32).min(width as i32 - 1).max(0) as u32,
+      ((cy + half).ceil() as i32).min(height as i32 - 1).max(0) as u32,
+    );
+    if x1 <= x0 || y1 <= y0 {
+      continue;
+    }
+    let pw = (x1 - x0 + 1) as usize;
+    let ph = (y1 - y0 + 1) as usize;
+    let mut patch = vec![0.0f32; pw * ph];
+    let mut sum = 0.0f32;
+    for py in 0..ph as u32 {
+      for px in 0..pw as u32 {
+        let i = (((y0 + py) * width + (x0 + px)) * 3) as usize;
+        let luma =
+          (0.299 * rgb[i] as f32 + 0.587 * rgb[i + 1] as f32 + 0.114 * rgb[i + 2] as f32) / 255.0;
+        patch[(py as usize) * pw + px as usize] = luma;
+        sum += luma;
+      }
+    }
+    let bright = sum / (pw * ph) as f32;
+
+    // Variância do Laplaciano simples (vizinhança-4).
+    let mut lap_vals: Vec<f32> = Vec::new();
+    for y in 1..ph - 1 {
+      for x in 1..pw - 1 {
+        let c = patch[y * pw + x];
+        let lap = 4.0 * c
+          - patch[(y - 1) * pw + x]
+          - patch[(y + 1) * pw + x]
+          - patch[y * pw + (x - 1)]
+          - patch[y * pw + (x + 1)];
+        lap_vals.push(lap);
+      }
+    }
+    let sharp = if lap_vals.is_empty() {
+      0.0
+    } else {
+      let n = lap_vals.len() as f32;
+      let mean = lap_vals.iter().sum::<f32>() / n;
+      let var = lap_vals.iter().map(|v| (v - mean) * (v - mean)).sum::<f32>() / n;
+      var.max(0.0)
+    };
+
+    // Variação vertical média |Δy| entre linhas consecutivas.
+    let mut vsum = 0.0f32;
+    let mut vcount = 0u32;
+    for y in 1..ph {
+      for x in 0..pw {
+        vsum += (patch[y * pw + x] - patch[(y - 1) * pw + x]).abs();
+        vcount += 1;
+      }
+    }
+    let vgrad = if vcount == 0 { 0.0 } else { vsum / vcount as f32 };
+
+    let sharp_norm = (sharp / SHARP_CEILING).clamp(0.0, 1.0);
+    let vgrad_norm = (vgrad / VGRAD_CEILING).clamp(0.0, 1.0);
+    // Região escura/estourada não permite medir: fator reduz o score.
+    let light = (bright / 0.25).clamp(0.0, 1.0);
+    total += (0.50 * sharp_norm + 0.35 * vgrad_norm + 0.15 * light).clamp(0.0, 1.0);
+  }
+  (total / 2.0).clamp(0.0, 1.0)
+}
+
 /// Non-Maximum Suppression (IOU) sobre bboxes. Retorna índices mantidos.
 fn nms(boxes: &[[f32; 4]], scores: &[f32], iou_threshold: f32) -> Vec<usize> {
   let n = boxes.len();
@@ -561,5 +807,115 @@ mod tests {
     // Determinístico: mesma entrada → mesmo vetor.
     let emb2 = face_embedding(&rgb, w, h, [0.1, 0.1, 0.9, 0.9]).expect("embedding2");
     assert_eq!(emb, emb2, "embedding deve ser determinístico");
+  }
+
+  /// Imagem sintética RGB (gradiente horizontal + vertical).
+  fn gradient_rgb(w: u32, h: u32) -> Vec<u8> {
+    let mut rgb = Vec::with_capacity((w * h * 3) as usize);
+    for y in 0..h {
+      for x in 0..w {
+        rgb.push((x as f32 / w as f32 * 255.0) as u8);
+        rgb.push((y as f32 / h as f32 * 255.0) as u8);
+        rgb.push(128);
+      }
+    }
+    rgb
+  }
+
+  #[test]
+  fn scrfd_kps_decode_runs_without_error() {
+    // Skip se o modelo não foi baixado (CI sem pesos).
+    if !models_dir().join("scrfd_2.5g_bnkps.onnx").exists() {
+      eprintln!("skip: SCRFD ausente");
+      return;
+    }
+    let w = 320u32;
+    let h = 240u32;
+    let rgb = gradient_rgb(w, h);
+    // Só valida que roda sem erro e que a estrutura devolvida é consistente.
+    let faces = detect_faces_with_kps(&rgb, w, h, 0.7).expect("detect_faces_with_kps");
+    for f in &faces {
+      assert_eq!(f.bbox.len(), 4, "bbox deve ter 4 coords");
+      assert_eq!(f.kps.len(), 5, "devem ser 5 keypoints");
+      for v in &f.bbox {
+        assert!((0.0..=1.0).contains(v), "bbox fora de 0..1: {v}");
+      }
+      for kp in &f.kps {
+        for c in kp {
+          assert!((0.0..=1.0).contains(c), "kps fora de 0..1: {c}");
+        }
+      }
+      // Olhos à esquerda do nariz, nariz acima da boca (ordem bnkps).
+      assert!(f.kps[0][0] <= f.kps[2][0] || f.kps[1][0] <= f.kps[2][0]);
+    }
+  }
+
+  #[test]
+  fn eyes_open_scores_open_above_closed() {
+    let w = 200u32;
+    let h = 200u32;
+    // Keypoints normalizados: olhos em (60,80) e (140,80); resto plausível.
+    let kps = [
+      [60.0 / w as f32, 80.0 / h as f32],
+      [140.0 / w as f32, 80.0 / h as f32],
+      [0.50, 0.55],
+      [0.42, 0.65],
+      [0.58, 0.65],
+    ];
+    // "Rosto fechado": pele uniforme.
+    let closed = vec![190u8; (w * h * 3) as usize];
+    // "Rosto aberto": xadrez de alto contraste dentro das caixas dos olhos
+    // (simula íris/pálpebras com bordas -> nitidez alta).
+    let mut open = closed.clone();
+    let half = 6i32;
+    for &[kx, ky] in &kps[0..2] {
+      let cx = (kx * w as f32) as i32;
+      let cy = (ky * h as f32) as i32;
+      for dy in -half..=half {
+        for dx in -half..=half {
+          let x = cx + dx;
+          let y = cy + dy;
+          if x < 0 || y < 0 || x >= w as i32 || y >= h as i32 {
+            continue;
+          }
+          let i = ((y * w as i32 + x) * 3) as usize;
+          let v = if (x + y) % 2 == 0 { 20 } else { 235 };
+          open[i] = v;
+          open[i + 1] = v;
+          open[i + 2] = v;
+        }
+      }
+    }
+    let s_open = eyes_open_score(kps, &open, w, h);
+    let s_closed = eyes_open_score(kps, &closed, w, h);
+    assert!(
+      (0.0..=1.0).contains(&s_open),
+      "score aberto fora de 0..1: {s_open}"
+    );
+    assert!(
+      (0.0..=1.0).contains(&s_closed),
+      "score fechado fora de 0..1: {s_closed}"
+    );
+    assert!(
+      s_open > s_closed + 0.15,
+      "olho aberto ({s_open:.3}) deve pontuar bem acima do fechado ({s_closed:.3})"
+    );
+  }
+
+  #[test]
+  fn eyes_open_score_flat_dark_is_low() {
+    let w = 64u32;
+    let h = 64u32;
+    let kps = [
+      [0.25, 0.25],
+      [0.75, 0.25],
+      [0.5, 0.5],
+      [0.4, 0.7],
+      [0.6, 0.7],
+    ];
+    let dark = vec![10u8; (w * h * 3) as usize];
+    let s = eyes_open_score(kps, &dark, w, h);
+    assert!((0.0..=1.0).contains(&s));
+    assert!(s < 0.5, "região escura e lisa deve ter score baixo, got {s}");
   }
 }

@@ -106,6 +106,9 @@ interface EditPanelProps {
 interface PresetItem {
   name: string
   recipe: string
+  file_type?: string
+  color_type?: string
+  source?: string
 }
 
 export default function EditPanel({ photo, onApplyAll, selectedIds }: EditPanelProps) {
@@ -116,6 +119,8 @@ export default function EditPanel({ photo, onApplyAll, selectedIds }: EditPanelP
   const [busy, setBusy] = useState(false)
   const [presets, setPresets] = useState<PresetItem[]>([])
   const [presetName, setPresetName] = useState('')
+  const [presetFileType, setPresetFileType] = useState('')
+  const [presetColorType, setPresetColorType] = useState('')
   const [hslColor, setHslColor] = useState(0)
   const [faceRegions, setFaceRegions] = useState<Record<string, number>>({})
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -168,13 +173,23 @@ export default function EditPanel({ photo, onApplyAll, selectedIds }: EditPanelP
     const name = presetName.trim()
     if (!name) return
     window.openshoot
-      .savePreset(name, toJson(values))
+      .savePresetFull(name, toJson(values), presetFileType, presetColorType, 'manual')
       .then(() => {
         setPresetName('')
         loadPresets()
       })
       .catch(() => {})
-  }, [presetName, values, loadPresets])
+  }, [presetName, values, presetFileType, presetColorType, loadPresets])
+
+  const presetBadge = (p: PresetItem): string => {
+    const parts: string[] = []
+    if (p.file_type === 'raw' || p.file_type === 'jpeg') {
+      parts.push(p.file_type.toUpperCase())
+    }
+    if (p.color_type === 'color') parts.push(t('preset.cor'))
+    else if (p.color_type === 'bw') parts.push(t('preset.pb'))
+    return parts.join(' · ')
+  }
 
   const removePreset = useCallback(
     (name: string) => {
@@ -640,6 +655,26 @@ export default function EditPanel({ photo, onApplyAll, selectedIds }: EditPanelP
             {t('edit.salvarPreset')}
           </button>
         </div>
+        <div className="edit-preset-file-actions">
+          <select
+            value={presetFileType}
+            title={t('preset.fileType')}
+            onChange={(e) => setPresetFileType(e.target.value)}
+          >
+            <option value="">{t('preset.fileType')}</option>
+            <option value="raw">RAW</option>
+            <option value="jpeg">JPEG</option>
+          </select>
+          <select
+            value={presetColorType}
+            title={t('preset.colorType')}
+            onChange={(e) => setPresetColorType(e.target.value)}
+          >
+            <option value="">{t('preset.colorType')}</option>
+            <option value="color">{t('preset.cor')}</option>
+            <option value="bw">{t('preset.pb')}</option>
+          </select>
+        </div>
         <button onClick={importLr} className="ghost full">
           {t('edit.importLr')}
         </button>
@@ -661,6 +696,14 @@ export default function EditPanel({ photo, onApplyAll, selectedIds }: EditPanelP
               <li key={p.name}>
                 <button className="edit-preset-load" onClick={() => applyRecipe(p.recipe)}>
                   {p.name}
+                  {presetBadge(p) && (
+                    <span
+                      style={{ opacity: 0.65, fontSize: '0.75em', marginLeft: 6 }}
+                      title={`${t('preset.origem')}: ${p.source || 'manual'}`}
+                    >
+                      {presetBadge(p)}
+                    </span>
+                  )}
                 </button>
                 <button
                   className="edit-preset-del"

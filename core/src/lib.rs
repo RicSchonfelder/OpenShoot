@@ -6,6 +6,7 @@ mod captions;
 mod cr3;
 mod culling;
 mod edit;
+mod gallery;
 mod geometric;
 mod grouping;
 mod imageproc;
@@ -27,9 +28,11 @@ use types::{Album, DuplicateGroup, FilterCounts, PhotoList, PhotoMeta, Preset, S
 /// data_dir: caminho absoluto. Retorna o caminho do banco criado.
 #[napi]
 pub fn setup(data_dir: String) -> Result<String> {
-  catalog::init(&data_dir)
+  let path = catalog::init(&data_dir)
     .map(|p| p.to_string_lossy().to_string())
-    .map_err(|e| Error::from_reason(e))
+    .map_err(|e| Error::from_reason(e))?;
+  ensure_extra_columns()?;
+  Ok(path)
 }
 
 /// Soma de teste da ponte (Fase 0, mantido).
@@ -630,13 +633,17 @@ pub fn export_all_xmp() -> Result<XmpExportResult> {
 
 /// Exporta fotos (com edição aplicada) para uma pasta de destino.
 /// `ids`: fotos a exportar; `dest_dir`: pasta destino; `format`: "jpeg"|"png";
-/// `quality`: 1..100. Retorna { ok, exported, errors, files }.
+/// `quality`: 1..100; `color_profile`: "srgb"|"display-p3";
+/// `naming`: "{original}"|"{n}_{original}"|"{date}_{original}".
+/// Retorna { ok, exported, errors, files }.
 #[napi]
 pub fn export_photos(
   ids: Vec<i64>,
   dest_dir: String,
   format: String,
   quality: i64,
+  color_profile: String,
+  naming: String,
 ) -> Result<serde_json::Value> {
   let dest = PathBuf::from(&dest_dir);
   if let Err(e) = std::fs::create_dir_all(&dest) {
@@ -646,47 +653,77 @@ pub fn export_photos(
   let ext = if fmt == "png" { "png" } else { "jpg" };
   let q = quality.clamp(1, 100) as u8;
 
-  let mut exported = 0i64;
-  let mut errors = 0i64;
-  let mut files: Vec<String> = Vec::new();
-  for id in ids {
-    let photo = match catalog::get_photo(id) {
-      Ok(Some(p)) => p,
-      _ => {
-        errors += 1;
-        continue;
+  // ---- Fase serial: metadados + receita + nome-base ----
+  // SQLite não é thread-safe para conexão compartilhada; get_photo/get_photo_edit
+  // rodam aqui, na thread principal. O trabalho CPU-bound (decode+edit+save)
+  // fica para o par_iter abaixo.
+  struct ExportJob {
+    src: PathBuf,
+    params: edit::EditParams,
+    base_name: String,
+  }
+  let mut jobs: Vec<ExportJob> = Vec::new();
+  let mut skipped = 0i64;
+  {
+    let mut seq = 0usize; // contador global para naming "{n}_{original}"
+    let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for id in ids {
+      let photo = match catalog::get_photo(id) {
+        Ok(Some(p)) => p,
+        _ => {
+          skipped += 1;
+          continue;
+        }
+      };
+      // Carrega a receita de edição salva (se houver).
+      let params = match catalog::get_photo_edit(id) {
+        Ok(json) if !json.is_empty() => {
+          serde_json::from_str::<edit::EditParams>(&json).unwrap_or_default()
+        }
+        _ => edit::EditParams::default(),
+      };
+      let src = PathBuf::from(&photo.path);
+      // Nomeação: gera o nome base antes do sufixo de conflito.
+      seq += 1;
+      let stem = src
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| format!("foto_{id}"));
+      let mut base_name = edit::build_export_name(&naming, seq, photo.taken_at.as_deref(), &stem);
+      // Garante nomes únicos dentro do próprio lote (mesma ordem do modo serial).
+      let mut k = 1;
+      while !used.insert(format!("{base_name}.{ext}")) {
+        base_name = format!("{base_name}_{k}");
+        k += 1;
       }
-    };
-    // Carrega a receita de edição salva (se houver).
-    let params = match catalog::get_photo_edit(id) {
-      Ok(json) if !json.is_empty() => {
-        serde_json::from_str::<edit::EditParams>(&json).unwrap_or_default()
-      }
-      _ => edit::EditParams::default(),
-    };
-    let src = PathBuf::from(&photo.path);
-    // Nome do arquivo com sufixo se já existir (conflito).
-    let stem = src
-      .file_stem()
-      .map(|s| s.to_string_lossy().to_string())
-      .unwrap_or_else(|| format!("foto_{id}"));
-    let mut dest_path = dest.join(format!("{stem}.{ext}"));
-    let mut counter = 1;
-    while dest_path.exists() {
-      dest_path = dest.join(format!("{stem}_{counter}.{ext}"));
-      counter += 1;
-    }
-    match edit::export_photo_to_file(&src, &params, &dest_path, fmt, q) {
-      Ok(()) => {
-        exported += 1;
-        files.push(dest_path.display().to_string());
-      }
-      Err(e) => {
-        crate::catalog::log_debug(&format!("[export] {}: {e}", photo.path));
-        errors += 1;
-      }
+      jobs.push(ExportJob { src, params, base_name });
     }
   }
+
+  // ---- Fase paralela (rayon): decode + edit + save por foto (CPU-bound) ----
+  // Contador atômico global para sufixos de conflito com arquivos já existentes.
+  let next_suffix = std::sync::atomic::AtomicI64::new(1);
+  let results: Vec<Option<String>> = jobs
+    .par_iter()
+    .map(|job| {
+      let mut dest_path = dest.join(format!("{}.{ext}", job.base_name));
+      while dest_path.exists() {
+        let n = next_suffix.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        dest_path = dest.join(format!("{}_{}.{ext}", job.base_name, n));
+      }
+      match edit::export_photo_to_file(&job.src, &job.params, &dest_path, fmt, q, &color_profile) {
+        Ok(()) => Some(dest_path.display().to_string()),
+        Err(e) => {
+          crate::catalog::log_debug(&format!("[export] {}: {e}", job.src.display()));
+          None
+        }
+      }
+    })
+    .collect();
+
+  let exported = results.iter().flatten().count() as i64;
+  let errors = skipped + (results.len() as i64 - exported);
+  let files: Vec<String> = results.into_iter().flatten().collect();
   Ok(serde_json::json!({
     "ok": true,
     "exported": exported,
@@ -729,56 +766,79 @@ pub fn apply_retouch_all(
     }
   }
 
-  let mut exported = 0i64;
-  let mut errors = 0i64;
-  let mut files: Vec<String> = Vec::new();
-  for id in ids {
-    let photo = match catalog::get_photo(id) {
-      Ok(Some(p)) => p,
-      _ => {
-        errors += 1;
-        continue;
-      }
-    };
-    let src = PathBuf::from(&photo.path);
-    let stem = src
-      .file_stem()
-      .map(|s| s.to_string_lossy().to_string())
-      .unwrap_or_else(|| format!("foto_{id}"));
-    let mut dest_path = dest.join(format!("{stem}.{ext}"));
-    let mut counter = 1;
-    while dest_path.exists() {
-      dest_path = dest.join(format!("{stem}_{counter}.{ext}"));
-      counter += 1;
-    }
-    let mut ok = true;
-    // Pele primeiro.
-    if skin > 0.0 {
-      if let Err(e) = retouch::retouch_skin_to_file(&src, skin, &dest_path, fmt, q) {
-        crate::catalog::log_debug(&format!("[retouch] pele {}: {e}", photo.path));
-        ok = false;
-      }
-    }
-    // Depois regiões faciais (empilhadas na mesma saída).
-    if ok {
-      for (region, intensity) in &regions {
-        let tmp = dest.join(format!("__tmp_{}.{}", stem, ext));
-        if let Err(e) = retouch::retouch_face_to_file(&src, region, *intensity, &tmp, fmt, q) {
-          crate::catalog::log_debug(&format!("[retouch] {region} {}: {e}", photo.path));
+  let mut jobs: Vec<(PathBuf, String)> = Vec::new(); // (src, stem único no lote)
+  let mut skipped = 0i64;
+  {
+    let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for id in ids {
+      let photo = match catalog::get_photo(id) {
+        Ok(Some(p)) => p,
+        _ => {
+          skipped += 1;
           continue;
         }
-        // Re-carrega a tmp como base para o próximo ajuste e move para dest.
-        let _ = std::fs::copy(&tmp, &dest_path);
-        let _ = std::fs::remove_file(&tmp);
+      };
+      let src = PathBuf::from(&photo.path);
+      let stem = src
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| format!("foto_{id}"));
+      // Garante nomes únicos dentro do próprio lote (mesma ordem do modo serial).
+      let mut name = stem.clone();
+      let mut k = 1;
+      while !used.insert(format!("{name}.{ext}")) {
+        name = format!("{stem}_{k}");
+        k += 1;
       }
-    }
-    if ok {
-      exported += 1;
-      files.push(dest_path.display().to_string());
-    } else {
-      errors += 1;
+      jobs.push((src, name));
     }
   }
+
+  // ---- Fase paralela (rayon): retouch não toca SQLite no loop ----
+  // Contador atômico global para sufixos de conflito com arquivos já existentes.
+  let next_suffix = std::sync::atomic::AtomicI64::new(1);
+  let results: Vec<Option<String>> = jobs
+    .par_iter()
+    .map(|(src, name)| {
+      let mut dest_path = dest.join(format!("{name}.{ext}"));
+      while dest_path.exists() {
+        let n = next_suffix.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        dest_path = dest.join(format!("{name}_{n}.{ext}"));
+      }
+      let mut ok = true;
+      // Pele primeiro.
+      if skin > 0.0 {
+        if let Err(e) = retouch::retouch_skin_to_file(src, skin, &dest_path, fmt, q) {
+          crate::catalog::log_debug(&format!("[retouch] pele {}: {e}", src.display()));
+          ok = false;
+        }
+      }
+      // Depois regiões faciais (empilhadas na mesma saída).
+      if ok {
+        for (region, intensity) in &regions {
+          // tmp único por thread para não colidir entre workers do rayon.
+          let tmp =
+            dest.join(format!("__tmp_{}_{:?}.{ext}", name, std::thread::current().id()));
+          if let Err(e) = retouch::retouch_face_to_file(src, region, *intensity, &tmp, fmt, q) {
+            crate::catalog::log_debug(&format!("[retouch] {region} {}: {e}", src.display()));
+            continue;
+          }
+          // Re-carrega a tmp como base para o próximo ajuste e move para dest.
+          let _ = std::fs::copy(&tmp, &dest_path);
+          let _ = std::fs::remove_file(&tmp);
+        }
+      }
+      if ok {
+        Some(dest_path.display().to_string())
+      } else {
+        None
+      }
+    })
+    .collect();
+
+  let exported = results.iter().flatten().count() as i64;
+  let errors = skipped + (results.len() as i64 - exported);
+  let files: Vec<String> = results.into_iter().flatten().collect();
   Ok(serde_json::json!({
     "ok": true,
     "exported": exported,
@@ -1238,8 +1298,152 @@ pub async fn scan_folder_progress(
   Ok(summary)
 }
 
+// ---------------- Identidade de perfis (presets, estilo AfterShoot) ----------------
+
+/// Salva um preset com metadados de identidade: file_type ('raw'|'jpeg'|''),
+/// color_type ('color'|'bw'|''), source ('manual'|'learned'|'lightroom'|'imported').
+#[napi]
+pub fn save_preset_full(
+  name: String,
+  recipe: String,
+  file_type: String,
+  color_type: String,
+  source: String,
+) -> Result<()> {
+  catalog::save_preset_full(&name, &recipe, &file_type, &color_type, &source)
+    .map_err(|e| Error::from_reason(e))
+}
+
+/// Atualiza os metadados de identidade de um preset existente.
+#[napi]
+pub fn update_preset_meta(name: String, file_type: String, color_type: String) -> Result<bool> {
+  catalog::update_preset_meta(&name, &file_type, &color_type).map_err(|e| Error::from_reason(e))
+}
+
+// --- Galeria web (agent-05) ---
+
+/// Cria uma galeria web estática (equivalente ao "Criar galeria" do AfterShoot).
+/// Copia as fotos para `dest_dir/photos/`, gera thumbnails 400px em
+/// `dest_dir/thumbs/` e escreve um `index.html` self-contained (dark theme,
+/// grid responsivo, lightbox CSS). Retorna { ok, path, count }.
+#[napi]
+pub fn create_web_gallery(ids: Vec<i64>, dest_dir: String, title: String) -> Result<serde_json::Value> {
+  let title = title.trim().to_string();
+  if title.is_empty() {
+    return Ok(serde_json::json!({ "ok": false, "error": "título vazio" }));
+  }
+  let dest = PathBuf::from(&dest_dir);
+  if let Err(e) = std::fs::create_dir_all(&dest) {
+    return Ok(serde_json::json!({ "ok": false, "error": format!("criar pasta: {e}") }));
+  }
+  let photos_dir = dest.join("photos");
+  let thumbs_dir = dest.join("thumbs");
+  if let Err(e) = std::fs::create_dir_all(&photos_dir) {
+    return Ok(serde_json::json!({ "ok": false, "error": format!("criar photos/: {e}") }));
+  }
+  if let Err(e) = std::fs::create_dir_all(&thumbs_dir) {
+    return Ok(serde_json::json!({ "ok": false, "error": format!("criar thumbs/: {e}") }));
+  }
+
+  let mut items: Vec<(String, String)> = Vec::new();
+  for id in ids {
+    let photo = match catalog::get_photo(id) {
+      Ok(Some(p)) => p,
+      _ => {
+        crate::catalog::log_debug(&format!("[gallery] foto {id} não encontrada"));
+        continue;
+      }
+    };
+    let src = PathBuf::from(&photo.path);
+    // Nome único dentro de photos/ (evita sobrescrever conflitos).
+    let stem = src
+      .file_stem()
+      .map(|s| s.to_string_lossy().to_string())
+      .unwrap_or_else(|| format!("foto_{id}"));
+    let ext = src
+      .extension()
+      .map(|e| e.to_string_lossy().to_lowercase())
+      .unwrap_or_else(|| "jpg".to_string());
+    let mut dest_name = format!("{stem}.{ext}");
+    let mut counter = 1;
+    while photos_dir.join(&dest_name).exists() {
+      dest_name = format!("{stem}_{counter}.{ext}");
+      counter += 1;
+    }
+    let thumb_name = {
+      let stem_thumb = dest_name
+        .rsplit_once('.')
+        .map(|(s, _)| s.to_string())
+        .unwrap_or_else(|| dest_name.clone());
+      format!("{stem_thumb}.jpg")
+    };
+    if std::fs::copy(&src, photos_dir.join(&dest_name)).is_err() {
+      crate::catalog::log_debug(&format!("[gallery] falha ao copiar {}", photo.path));
+      continue;
+    }
+    // Thumbnail ~400px (JPEG). Para RAW, usa o preview JPEG embutido.
+    match image::ImageReader::open(&src)
+      .ok()
+      .and_then(|r| r.with_guessed_format().ok())
+      .and_then(|r| r.decode().ok())
+      .or_else(|| {
+        crate::imageproc::read_embedded_jpeg(&src).and_then(|jpeg| {
+          image::ImageReader::new(std::io::Cursor::new(jpeg))
+            .with_guessed_format()
+            .ok()
+            .and_then(|r| r.decode().ok())
+        })
+      })
+      .map(|d| d.thumbnail(400, 400))
+    {
+      Some(thumb) => {
+        if let Err(e) = thumb.save(thumbs_dir.join(&thumb_name)) {
+          crate::catalog::log_debug(&format!("[gallery] falha ao gravar thumb {}: {e}", dest_name));
+          continue;
+        }
+      }
+      None => {
+        crate::catalog::log_debug(&format!("[gallery] sem thumbnail para {}", photo.path));
+        continue;
+      }
+    }
+    items.push((format!("photos/{dest_name}"), photo.file_name));
+  }
+
+  if items.is_empty() {
+    return Ok(serde_json::json!({ "ok": false, "error": "nenhuma foto pôde ser exportada" }));
+  }
+
+  let html = match gallery::generate_html(&items, &title) {
+    Ok(h) => h,
+    Err(e) => return Ok(serde_json::json!({ "ok": false, "error": e })),
+  };
+  let index_path = dest.join("index.html");
+  if let Err(e) = std::fs::write(&index_path, html) {
+    return Ok(serde_json::json!({ "ok": false, "error": format!("gravar index.html: {e}") }));
+  }
+
+  Ok(serde_json::json!({
+    "ok": true,
+    "path": index_path.display().to_string(),
+    "count": items.len(),
+  }))
+}
+
 #[cfg(test)]
 mod tests {
+  use std::sync::{Mutex, OnceLock};
+
+  /// Serializa os testes que usam o catalog.db (OnceLock compartilhado entre
+  /// eles): evita corridas de contagem global e SQLITE_BUSY.
+  pub fn db_lock() -> std::sync::MutexGuard<'static, ()> {
+    static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    DB_LOCK
+      .get_or_init(|| Mutex::new(()))
+      .lock()
+      .unwrap_or_else(|e| e.into_inner())
+  }
+
   #[test]
   fn hello_contains_name() {
     let msg = super::hello("Test".to_string());
@@ -1265,16 +1469,112 @@ mod tests {
   }
 
   #[test]
+  fn export_photos_parallel_exports_all() {
+    let _db = db_lock();
+    let dir = std::env::temp_dir().join(format!("openshoot_export_test_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).ok();
+    if let Err(e) = super::catalog::init(dir.to_str().unwrap()) {
+      eprintln!("init reutilizado: {e}");
+    }
+    let conn = super::catalog::open().expect("open catalog");
+    conn.busy_timeout(std::time::Duration::from_secs(5)).ok();
+    // Limpa resíduos de execuções anteriores (escopo deste teste — outros
+    // testes rodam em paralelo na mesma thread de BD via OnceLock).
+    conn
+      .execute("DELETE FROM photos WHERE file_name LIKE 'synth_%'", [])
+      .unwrap();
+    let sql = "INSERT INTO photos (path, file_name, ext, file_size, sha256, indexed_at)
+               VALUES (?1, ?2, 'png', 100, ?3, datetime('now'))";
+    let mut ids: Vec<i64> = Vec::new();
+    for i in 0..4 {
+      let img = image::RgbImage::from_fn(8, 8, |x, y| {
+        image::Rgb([
+          ((x * 13 + i * 29) % 255) as u8,
+          ((y * 7 + i * 11) % 255) as u8,
+          ((i * 61) % 255) as u8,
+        ])
+      });
+      let path = dir.join(format!("synth_{i}.png"));
+      image::DynamicImage::ImageRgb8(img)
+        .save_with_format(&path, image::ImageFormat::Png)
+        .expect("gravar PNG sintético");
+      conn
+        .execute(
+          sql,
+          rusqlite::params![
+            path.to_string_lossy(),
+            format!("synth_{i}.png"),
+            format!("SYNTH{i}")
+          ],
+        )
+        .unwrap();
+      let id: i64 = conn
+        .query_row(
+          "SELECT id FROM photos WHERE file_name=?1",
+          [format!("synth_{i}.png")],
+          |r| r.get(0),
+        )
+        .unwrap();
+      ids.push(id);
+    }
+
+    // Exporta os 4 em lote (paralelo com rayon) para uma subpasta.
+    let dest = dir.join("out_parallel");
+    let res = super::export_photos(
+      ids,
+      dest.to_string_lossy().to_string(),
+      "png".to_string(),
+      90,
+      "srgb".to_string(),
+      "{original}".to_string(),
+    )
+    .expect("export_photos");
+    assert_eq!(res["exported"].as_i64(), Some(4), "exported == 4");
+    assert_eq!(res["errors"].as_i64(), Some(0), "sem erros");
+    assert_eq!(res["files"].as_array().map(|a| a.len()), Some(4));
+    for i in 0..4 {
+      assert!(dest.join(format!("synth_{i}.png")).exists(), "arquivo {i} exportado");
+    }
+
+    // Limpeza: apenas os artefatos deste teste — NUNCA remover o diretório
+    // que pode conter o catalog.db ativo compartilhado via OnceLock.
+    conn.execute("DELETE FROM photos WHERE sha256 LIKE 'SYNTH%'", []).unwrap();
+    for i in 0..4 {
+      let _ = std::fs::remove_file(dir.join(format!("synth_{i}.png")));
+    }
+    let _ = std::fs::remove_dir_all(dest);
+  }
+
+  #[test]
   fn duplicates_grouped_by_sha256() {
+    let _db = db_lock();
     let dir = std::env::temp_dir().join(format!("openshoot_test_{}", std::process::id()));
     std::fs::create_dir_all(&dir).ok();
     if let Err(e) = super::catalog::init(dir.to_str().unwrap()) {
       eprintln!("init reutilizado: {e}");
     }
     let conn = super::catalog::open().expect("open catalog");
-    // Limpa resíduos de execuções anteriores.
+    conn.busy_timeout(std::time::Duration::from_secs(5)).ok();
+    // Garante o schema completo (o OnceLock pode ter sido inicializado por
+    // outro teste em paralelo antes das migrations terminarem).
+    for col in [
+      "ALTER TABLE photos ADD COLUMN cull_score REAL",
+      "ALTER TABLE photos ADD COLUMN edit_json TEXT",
+      "ALTER TABLE photos ADD COLUMN has_face INTEGER DEFAULT 0",
+      "ALTER TABLE photos ADD COLUMN review INTEGER DEFAULT 0",
+      "ALTER TABLE photos ADD COLUMN ai_pick INTEGER DEFAULT 0",
+      "ALTER TABLE photos ADD COLUMN session_type TEXT DEFAULT ''",
+      "ALTER TABLE photos ADD COLUMN label TEXT DEFAULT ''",
+    ] {
+      let _ = conn.execute(col, []);
+    }
+    // Limpa resíduos de execuções anteriores (escopo deste teste — outros
+    // testes rodam em paralelo no mesmo BD via OnceLock).
     conn
-      .execute("DELETE FROM photos", [])
+      .execute(
+        "DELETE FROM photos WHERE file_name IN ('dup_a.jpg','dup_b.jpg','uniq.jpg')",
+        [],
+      )
       .unwrap();
     // Duas fotos com o MESMO sha256 e uma única.
     let sql = "INSERT INTO photos (path, file_name, ext, file_size, sha256, indexed_at)
@@ -1403,8 +1703,234 @@ mod tests {
     assert!(super::catalog::matches_photo_type(&tmp.join("sub/b.nef"), "raw"));
     let _ = std::fs::remove_dir_all(&tmp);
 
-    // Limpeza.
-    conn.execute("DELETE FROM photos", []).unwrap();
-    let _ = std::fs::remove_dir_all(&dir);
+    // Limpeza (escopo deste teste; NÃO remover o dir do catalog.db ativo
+    // compartilhado via OnceLock — labels_tests o reutiliza).
+    conn
+      .execute(
+        "DELETE FROM photos WHERE file_name IN ('dup_a.jpg','dup_b.jpg','uniq.jpg')",
+        [],
+      )
+      .unwrap();
+  }
+}
+
+// --- Labels de cor (agent-10) ---
+
+/// Labels de cor válidos (padrão AfterShoot), armazenados em minúsculas.
+const VALID_LABELS: [&str; 6] = ["", "red", "yellow", "green", "blue", "purple"];
+
+/// Migração leve: garante a coluna `label` na tabela photos.
+/// Executada pelo setup() logo após catalog::init (catalog.rs é intocado).
+fn ensure_extra_columns() -> Result<()> {
+  let conn = catalog::open().map_err(|e| Error::from_reason(e))?;
+  let has_label: bool = conn
+    .query_row(
+      "SELECT COUNT(*) FROM pragma_table_info('photos') WHERE name='label'",
+      [],
+      |r| Ok(r.get::<_, i64>(0)? != 0),
+    )
+    .map_err(|e| Error::from_reason(e.to_string()))?;
+  if !has_label {
+    conn
+      .execute("ALTER TABLE photos ADD COLUMN label TEXT DEFAULT ''", [])
+      .map_err(|e| Error::from_reason(e.to_string()))?;
+  }
+  Ok(())
+}
+
+/// Define a etiqueta de cor manual de uma foto.
+/// label: "" | "red" | "yellow" | "green" | "blue" | "purple".
+#[napi]
+pub fn set_photo_label(id: i64, label: String) -> Result<()> {
+  let normalized = label.trim().to_lowercase();
+  if !VALID_LABELS.contains(&normalized.as_str()) {
+    return Err(Error::from_reason(format!(
+      "label inválido: {label} (use '', red, yellow, green, blue ou purple)"
+    )));
+  }
+  let conn = catalog::open().map_err(|e| Error::from_reason(e))?;
+  conn
+    .execute(
+      "UPDATE photos SET label=?2 WHERE id=?1",
+      rusqlite::params![id, normalized],
+    )
+    .map_err(|e| Error::from_reason(e.to_string()))?;
+  Ok(())
+}
+
+/// Retorna a etiqueta de cor de uma foto ("" se não houver ou se não existir).
+#[napi]
+pub fn get_photo_label(id: i64) -> Result<String> {
+  let conn = catalog::open().map_err(|e| Error::from_reason(e))?;
+  match conn.query_row("SELECT label FROM photos WHERE id=?1", [id], |r| {
+    r.get::<_, Option<String>>(0)
+  }) {
+    Ok(v) => Ok(v.unwrap_or_default()),
+    Err(rusqlite::Error::QueryReturnedNoRows) => Ok(String::new()),
+    Err(e) => Err(Error::from_reason(e.to_string())),
+  }
+}
+
+/// Retorna { "<id>": "<label>" } para as fotos informadas (lote, para a grade).
+#[napi]
+pub fn get_labels_bulk(ids: Vec<i64>) -> Result<serde_json::Value> {
+  let mut out = serde_json::Map::new();
+  if ids.is_empty() {
+    return Ok(serde_json::Value::Object(out));
+  }
+  let conn = catalog::open().map_err(|e| Error::from_reason(e))?;
+  // Fatia os ids para respeitar limites de variáveis do SQLite.
+  for chunk in ids.chunks(500) {
+    let placeholders: Vec<String> =
+      chunk.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
+    let sql = format!(
+      "SELECT id, COALESCE(label,'') FROM photos WHERE id IN ({})",
+      placeholders.join(",")
+    );
+    let mut stmt = conn.prepare(&sql).map_err(|e| Error::from_reason(e.to_string()))?;
+    let params: Vec<&dyn rusqlite::ToSql> =
+      chunk.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+    let rows = stmt
+      .query_map(params.as_slice(), |r| {
+        let id: i64 = r.get(0)?;
+        let label: String = r.get::<_, Option<String>>(1)?.unwrap_or_default();
+        Ok((id, label))
+      })
+      .map_err(|e| Error::from_reason(e.to_string()))?;
+    for row in rows {
+      let (id, label) = row.map_err(|e| Error::from_reason(e.to_string()))?;
+      out.insert(id.to_string(), serde_json::Value::String(label));
+    }
+  }
+  Ok(serde_json::Value::Object(out))
+}
+
+#[cfg(test)]
+mod labels_tests {
+  use std::time::Duration;
+
+  /// Uma tentativa do roundtrip. Janela crítica mínima: as linhas de teste só
+  /// existem (visíveis a outras conexões) entre o INSERT e o DELETE final —
+  /// qualquer erro dispara limpeza imediata. Retorna Err com o motivo em vez
+  /// de panicar, para permitir retries caso o teste de catálogo (paralelo,
+  /// mesma DB compartilhada via OnceLock) interferir.
+  fn try_roundtrip() -> Result<(), String> {
+    let dir = std::env::temp_dir().join(format!("openshoot_test_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).ok();
+    if let Err(e) = super::catalog::init(dir.to_str().unwrap()) {
+      // DB_PATH já inicializada pelo outro teste (mesmo arquivo) — segue.
+      let _ = e;
+    }
+    let conn = super::catalog::open().map_err(|e| e)?;
+    let _ = conn.busy_timeout(Duration::from_secs(10));
+    // Aguarda o schema existir (fora da janela crítica; só leitura).
+    let mut ready = false;
+    for _ in 0..100 {
+      let n: i64 = conn
+        .query_row(
+          "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='photos'",
+          [],
+          |r| r.get(0),
+        )
+        .unwrap_or(0);
+      if n > 0 {
+        ready = true;
+        break;
+      }
+      std::thread::sleep(Duration::from_millis(20));
+    }
+    if !ready {
+      return Err("tabela photos não ficou pronta".to_string());
+    }
+    // Garante a coluna label ANTES da janela crítica.
+    super::ensure_extra_columns().map_err(|e| e.to_string())?;
+
+    // Checagens sem tocar em linhas (fora da janela crítica).
+    if super::get_photo_label(-1).map_err(|e| e.to_string())? != "" {
+      return Err("foto inexistente deveria retornar ''".to_string());
+    }
+    if super::set_photo_label(-1, "mauve".to_string()).is_ok() {
+      return Err("label inválido deveria falhar".to_string());
+    }
+    if !super::get_labels_bulk(vec![]).unwrap().as_object().unwrap().is_empty() {
+      return Err("bulk vazio deveria ser {}".to_string());
+    }
+
+    // ---- Janela crítica: linhas visíveis por poucos microssegundos ----
+    let cleanup = |conn: &rusqlite::Connection| {
+      let _ = conn.execute("DELETE FROM photos WHERE file_name LIKE 'label_%'", []);
+    };
+    let run = || -> Result<(), String> {
+      let conn = super::catalog::open().map_err(|e| e)?;
+      let _ = conn.busy_timeout(Duration::from_secs(10));
+      conn
+        .execute("DELETE FROM photos WHERE file_name LIKE 'label_%'", [])
+        .map_err(|e| e.to_string())?;
+      let sql = "INSERT INTO photos (path, file_name, ext, file_size, sha256, indexed_at)
+                 VALUES (?1, ?2, 'jpg', 10, ?3, datetime('now'))";
+      conn
+        .execute(sql, rusqlite::params!["/tmp/label_a.jpg", "label_a.jpg", "LABELA"])
+        .map_err(|e| e.to_string())?;
+      conn
+        .execute(sql, rusqlite::params!["/tmp/label_b.jpg", "label_b.jpg", "LABELB"])
+        .map_err(|e| e.to_string())?;
+      let id_a: i64 = conn
+        .query_row("SELECT id FROM photos WHERE file_name='label_a.jpg'", [], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+      let id_b: i64 = conn
+        .query_row("SELECT id FROM photos WHERE file_name='label_b.jpg'", [], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+
+      if super::get_photo_label(id_a).map_err(|e| e.to_string())? != "" {
+        return Err("label default deveria ser vazio".to_string());
+      }
+      super::set_photo_label(id_a, "red".to_string()).map_err(|e| e.to_string())?;
+      if super::get_photo_label(id_a).map_err(|e| e.to_string())? != "red" {
+        return Err("get_photo_label não retornou 'red'".to_string());
+      }
+      let bulk = super::get_labels_bulk(vec![id_a, id_b]).map_err(|e| e.to_string())?;
+      let m = bulk
+        .as_object()
+        .ok_or_else(|| "bulk não é objeto".to_string())?;
+      if m.get(&id_a.to_string()).and_then(|v| v.as_str()) != Some("red") {
+        return Err("bulk não retornou 'red' para id_a".to_string());
+      }
+      if m.get(&id_b.to_string()).and_then(|v| v.as_str()) != Some("") {
+        return Err("bulk não retornou '' para id_b".to_string());
+      }
+      // Limpar ("" volta ao default).
+      super::set_photo_label(id_a, "".to_string()).map_err(|e| e.to_string())?;
+      if super::get_photo_label(id_a).map_err(|e| e.to_string())? != "" {
+        return Err("limpar label falhou".to_string());
+      }
+      conn
+        .execute("DELETE FROM photos WHERE file_name LIKE 'label_%'", [])
+        .map_err(|e| e.to_string())?;
+      Ok(())
+    };
+    match run() {
+      Ok(()) => Ok(()),
+      Err(e) => {
+        cleanup(&conn);
+        Err(e)
+      }
+    }
+  }
+
+  #[test]
+  fn photo_label_set_get_roundtrip() {
+    let _db = crate::tests::db_lock();
+    let mut last = String::new();
+    for attempt in 0..8 {
+      match try_roundtrip() {
+        Ok(()) => return,
+        Err(e) => {
+          last = e;
+          // Pausa curtíssima: sem backoff longo (nada fica vazado).
+          std::thread::sleep(Duration::from_millis(5 * (attempt + 1)));
+        }
+      }
+    }
+    panic!("roundtrip de labels falhou após 8 tentativas: {last}");
   }
 }

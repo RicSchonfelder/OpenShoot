@@ -148,6 +148,44 @@ fn ensure_schema(conn: &Connection) -> Result<(), String> {
       .execute("ALTER TABLE photos ADD COLUMN session_type TEXT DEFAULT ''", [])
       .map_err(|e| e.to_string())?;
   }
+  // Migrações leves da tabela presets: identidade de perfil (estilo AfterShoot).
+  // file_type: 'raw'|'jpeg'|'' · color_type: 'color'|'bw'|'' · source: 'manual'|'learned'|'lightroom'|'imported'.
+  for (col, def) in [
+    ("file_type", "TEXT DEFAULT ''"),
+    ("color_type", "TEXT DEFAULT ''"),
+    ("source", "TEXT DEFAULT 'manual'"),
+  ] {
+    let has_col: bool = conn
+      .query_row(
+        &format!(
+          "SELECT COUNT(*) FROM pragma_table_info('presets') WHERE name='{}'",
+          col
+        ),
+        [],
+        |r| Ok(r.get::<_, i64>(0)? != 0),
+      )
+      .map_err(|e| e.to_string())?;
+    if !has_col {
+      conn
+        .execute(
+          &format!("ALTER TABLE presets ADD COLUMN {} {}", col, def),
+          [],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+  }
+  let has_eyes: bool = conn
+    .query_row(
+      "SELECT COUNT(*) FROM pragma_table_info('photos') WHERE name='eyes_score'",
+      [],
+      |r| Ok(r.get::<_, i64>(0)? != 0),
+    )
+    .map_err(|e| e.to_string())?;
+  if !has_eyes {
+    conn
+      .execute("ALTER TABLE photos ADD COLUMN eyes_score REAL DEFAULT -1", [])
+      .map_err(|e| e.to_string())?;
+  }
   Ok(())
 }
 
@@ -438,6 +476,20 @@ pub fn set_photo_has_face(id: i64, has_face: bool) -> Result<(), String> {
   Ok(())
 }
 
+/// Persiste o score de olhos abertos (0..1) de uma foto.
+/// -1 significa "ainda não calculado" (default da coluna).
+#[allow(dead_code)]
+pub fn set_photo_eyes(id: i64, score: f64) -> Result<(), String> {
+  let conn = open()?;
+  conn
+    .execute(
+      "UPDATE photos SET eyes_score=?2 WHERE id=?1",
+      rusqlite::params![id, score.clamp(-1.0, 1.0)],
+    )
+    .map_err(|e| e.to_string())?;
+  Ok(())
+}
+
 /// Registra se a foto está no bucket "Para revisão" (score ambíguo).
 pub fn set_photo_review(id: i64, review: bool) -> Result<(), String> {
   let conn = open()?;
@@ -563,29 +615,61 @@ pub fn remove_photo(id: i64) -> Result<(), String> {
 // ---- Presets nomeados de edição ----
 
 /// Salva um preset (upsert por nome). Receita = JSON dos parâmetros de edição.
+/// Sem identidade: file_type/color_type vazios, source 'manual'.
 pub fn save_preset(name: &str, recipe: &str) -> Result<(), String> {
+  save_preset_full(name, recipe, "", "", "manual")
+}
+
+/// Salva um preset com metadados de identidade (estilo AfterShoot):
+/// - `file_type`: tipo de arquivo em que o perfil foi treinado ('raw'|'jpeg'|'')
+/// - `color_type`: tipo de cor do perfil ('color'|'bw'|'')
+/// - `source`: origem ('manual'|'learned'|'lightroom'|'imported')
+pub fn save_preset_full(
+  name: &str,
+  recipe: &str,
+  file_type: &str,
+  color_type: &str,
+  source: &str,
+) -> Result<(), String> {
   let conn = open()?;
   conn
     .execute(
-      "INSERT INTO presets (name, recipe, created_at) VALUES (?1, ?2, datetime('now'))
-       ON CONFLICT(name) DO UPDATE SET recipe=excluded.recipe, created_at=datetime('now')",
-      rusqlite::params![name.trim(), recipe],
+      "INSERT INTO presets (name, recipe, created_at, file_type, color_type, source)
+       VALUES (?1, ?2, datetime('now'), ?3, ?4, ?5)
+       ON CONFLICT(name) DO UPDATE SET recipe=excluded.recipe, created_at=datetime('now'),
+         file_type=excluded.file_type, color_type=excluded.color_type, source=excluded.source",
+      rusqlite::params![name.trim(), recipe, file_type, color_type, source],
     )
     .map_err(|e| e.to_string())?;
   Ok(())
 }
 
-/// Lista presets (nome + receita JSON).
+/// Atualiza apenas os metadados de identidade de um preset existente.
+pub fn update_preset_meta(name: &str, file_type: &str, color_type: &str) -> Result<bool, String> {
+  let conn = open()?;
+  let n = conn
+    .execute(
+      "UPDATE presets SET file_type=?2, color_type=?3 WHERE name=?1",
+      rusqlite::params![name.trim(), file_type, color_type],
+    )
+    .map_err(|e| e.to_string())?;
+  Ok(n > 0)
+}
+
+/// Lista presets (nome + receita JSON + metadados de identidade).
 pub fn list_presets() -> Result<Vec<crate::types::Preset>, String> {
   let conn = open()?;
   let mut stmt = conn
-    .prepare("SELECT name, recipe FROM presets ORDER BY name")
+    .prepare("SELECT name, recipe, file_type, color_type, source FROM presets ORDER BY name")
     .map_err(|e| e.to_string())?;
   let rows = stmt
     .query_map([], |row| {
       Ok(crate::types::Preset {
         name: row.get(0)?,
         recipe: row.get(1)?,
+        file_type: row.get(2).unwrap_or_default(),
+        color_type: row.get(3).unwrap_or_default(),
+        source: row.get(4).unwrap_or_default(),
       })
     })
     .map_err(|e| e.to_string())?;
@@ -912,4 +996,82 @@ pub fn matches_photo_type(path: &std::path::Path, types: &str) -> bool {
 
 pub fn log_debug(msg: &str) {
   eprintln!("[openshoot-core] {msg}");
+}
+
+#[cfg(test)]
+mod tests {
+  #[test]
+  fn preset_identity_roundtrip() {
+    let dir = std::env::temp_dir().join(format!(
+      "openshoot_catalog_preset_test_{}",
+      std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).ok();
+    if let Err(e) = super::init(dir.to_str().unwrap()) {
+      eprintln!("init reutilizado: {e}");
+    }
+    // Limpa resíduos de execuções anteriores.
+    super::open()
+      .unwrap()
+      .execute("DELETE FROM presets", [])
+      .unwrap();
+
+    // save_preset_full grava os metadados de identidade.
+    super::save_preset_full(
+      "Perfil Casamento RAW",
+      r#"{"contrast":10}"#,
+      "raw",
+      "color",
+      "learned",
+    )
+    .unwrap();
+    let presets = super::list_presets().expect("list_presets");
+    let p = presets
+      .iter()
+      .find(|p| p.name == "Perfil Casamento RAW")
+      .expect("preset com identidade");
+    assert_eq!(p.file_type, "raw");
+    assert_eq!(p.color_type, "color");
+    assert_eq!(p.source, "learned");
+
+    // save_preset antigo delega com defaults (source 'manual', tipos vazios).
+    super::save_preset("Só Receita", r#"{"exposure":0.3}"#).unwrap();
+    let presets = super::list_presets().unwrap();
+    let plain = presets.iter().find(|p| p.name == "Só Receita").unwrap();
+    assert_eq!(plain.source, "manual");
+    assert_eq!(plain.file_type, "");
+    assert_eq!(plain.color_type, "");
+
+    // Upsert via save_preset_full atualiza receita E metadados.
+    super::save_preset_full(
+      "Perfil Casamento RAW",
+      r#"{"contrast":15}"#,
+      "jpeg",
+      "bw",
+      "manual",
+    )
+    .unwrap();
+    let presets = super::list_presets().unwrap();
+    let p = presets
+      .iter()
+      .find(|p| p.name == "Perfil Casamento RAW")
+      .unwrap();
+    assert_eq!(p.recipe, r#"{"contrast":15}"#);
+    assert_eq!(p.file_type, "jpeg");
+    assert_eq!(p.color_type, "bw");
+    assert_eq!(presets.iter().filter(|p| p.name == "Perfil Casamento RAW").count(), 1);
+
+    // update_preset_meta muda só file_type/color_type.
+    assert!(super::update_preset_meta("Só Receita", "raw", "color").unwrap());
+    let presets = super::list_presets().unwrap();
+    let plain = presets.iter().find(|p| p.name == "Só Receita").unwrap();
+    assert_eq!(plain.file_type, "raw");
+    assert_eq!(plain.color_type, "color");
+    // Preset inexistente → false.
+    assert!(!super::update_preset_meta("Nao Existe", "raw", "color").unwrap());
+
+    // Limpeza.
+    assert!(super::delete_preset("Perfil Casamento RAW").unwrap());
+    assert!(super::delete_preset("Só Receita").unwrap());
+  }
 }
