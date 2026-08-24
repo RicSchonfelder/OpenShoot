@@ -180,3 +180,10 @@ OpenShoot/
 - [ ] Botão "Cull" ranqueia as fotos em <30s p/ 500 imagens; picks viram XMP.
 - [ ] `cargo test` verde + `tsc --noEmit` limpo.
 - [ ] Nenhuma imagem sai da máquina.
+
+
+## 9. Multi-plataforma (Windows/Linux)
+
+O core resolve caminhos em runtime (modelos, cache, lixeira nativa via crate
+`trash`, EP de ONNX por SO: CoreML no macOS, DirectML no Windows). Detalhes da
+auditoria e dos fixes em docs/MULTIPLATAFORMA.md.

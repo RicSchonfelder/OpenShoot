@@ -334,10 +334,11 @@ pub fn photo_count() -> Result<i64> {
 }
 
 /// Diretório de cache de thumbnails (liberável — pode apagar para liberar espaço).
+/// Multi-plataforma: ~/Library/Caches (mac), %LOCALAPPDATA% (win), XDG (linux).
 fn thumb_cache_dir() -> PathBuf {
-  dirs::home_dir()
-    .unwrap_or_else(|| PathBuf::from("."))
-    .join("Library/Caches/OpenShoot/thumbs")
+  dirs::cache_dir()
+    .unwrap_or_else(|| std::env::temp_dir())
+    .join("OpenShoot/thumbs")
 }
 
 /// Gera um thumbnail JPEG (base64 data-uri) para uma foto do catálogo por id.
@@ -1118,40 +1119,10 @@ pub fn set_rating(id: i64, rating: i64) -> Result<()> {
 
 /// Move uma foto para a LIXEIRA do sistema (não-destrutivo) e remove do catálogo.
 /// Retorna true se moveu, false se a foto não existia.
-/// Move um arquivo para a Lixeira do macOS sem disparar permissão de Automação
-/// do Finder. Usa a pasta ~/.Trash diretamente (100% nativo, sem AppleScript).
-/// Retorna o destino ou erro.
+/// Move um arquivo para a LIXEIRA nativa do sistema (macOS Finder, Windows
+/// Recycle Bin, Linux freedesktop). Multi-plataforma via crate `trash`.
 fn move_to_trash(src: &std::path::Path) -> std::result::Result<(), String> {
-  let trash_dir = dirs::home_dir()
-    .ok_or_else(|| "sem home dir".to_string())?
-    .join(".Trash");
-  std::fs::create_dir_all(&trash_dir).map_err(|e| e.to_string())?;
-  let name = src
-    .file_name()
-    .ok_or_else(|| "arquivo sem nome".to_string())?
-    .to_string_lossy()
-    .to_string();
-  // Nome único na Lixeira (evita sobrescrever).
-  let mut dest = trash_dir.join(&name);
-  if dest.exists() {
-    let stem = src.file_stem().unwrap_or_default().to_string_lossy().to_string();
-    let ext = src.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
-    let mut i = 1;
-    loop {
-      let candidate = if ext.is_empty() {
-        trash_dir.join(format!("{stem} ({i})"))
-      } else {
-        trash_dir.join(format!("{stem} ({i}).{ext}"))
-      };
-      if !candidate.exists() {
-        dest = candidate;
-        break;
-      }
-      i += 1;
-    }
-  }
-  std::fs::rename(src, &dest).map_err(|e| format!("falha ao mover p/ lixeira: {e}"))?;
-  Ok(())
+  trash::delete(src).map_err(|e| format!("falha ao mover p/ lixeira: {e}"))
 }
 
 #[napi]

@@ -41,9 +41,9 @@ app.whenReady().then(() => {
   try {
     core.setup(app.getPath('userData'))
   } catch (e) {
-    // fallback: se o userData nao tiver permissao, tenta diretorio padrao do app
+    // fallback multi-plataforma: home do usuário (Program Files bloqueia escrita)
     try {
-      core.setup(join(app.getAppPath(), '.data'))
+      core.setup(join(app.getPath('home'), '.openshoot-data'))
     } catch (e2) {
       console.error('Falha ao inicializar catálogo:', e2)
     }

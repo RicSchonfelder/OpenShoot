@@ -9,11 +9,13 @@ directories:
 files:
   - out/**/*
   - package.json
-  - core/**/*
+  - core/models/**
+  - core/*.node
   - '!**/.DS_Store'
 
 asarUnpack:
   - core/**/*.node
+  - core/models/**
 
 mac:
   target:
@@ -22,6 +24,19 @@ mac:
     - target: zip
       arch: [arm64, x64]
   category: public.app-category.photography
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: ${productName}-Setup-${version}.${ext}
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+  category: Graphics
   artifactName: ${productName}-${version}-${arch}.${ext}
 
 dmg:
@@ -33,5 +48,9 @@ dmg:
       y: 220
       type: link
       path: /Applications
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
 
 npmRebuild: false

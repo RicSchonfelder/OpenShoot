@@ -6,8 +6,26 @@ use ort::session::Session;
 use ort::value::Tensor;
 
 /// Diretório onde os modelos ONNX ficam (core/models).
+/// Multi-plataforma: resolve em runtime (dev, empacotado e via env override).
 pub fn models_dir() -> PathBuf {
-  PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("models")
+  if let Ok(dir) = std::env::var("OPENSHOOT_MODELS_DIR") {
+    return PathBuf::from(dir);
+  }
+  // Dev: caminho do crate no build (funciona para cargo test/build local).
+  let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("models");
+  if dev.join("scrfd_2.5g_bnkps.onnx").exists() {
+    return dev;
+  }
+  // Empacotado/outra máquina: sobe a partir do executável procurando core/models.
+  if let Ok(exe) = std::env::current_exe() {
+    for anc in exe.ancestors().skip(1).take(5) {
+      let cand = anc.join("core").join("models");
+      if cand.join("scrfd_2.5g_bnkps.onnx").exists() {
+        return cand;
+      }
+    }
+  }
+  dev
 }
 
 struct MlEngine {
@@ -65,9 +83,9 @@ fn build_session(model: &Path) -> Result<Session, Box<dyn std::error::Error>> {
   let mut builder = Session::builder()?;
   #[cfg(target_os = "macos")]
   {
-    let cache = dirs::home_dir()
-      .unwrap_or_default()
-      .join("Library/Caches/OpenShoot/coreml");
+    let cache = dirs::cache_dir()
+      .unwrap_or_else(|| std::env::temp_dir())
+      .join("OpenShoot/coreml");
     let _ = std::fs::create_dir_all(&cache);
     builder = builder.with_execution_providers([
       ort::ep::CoreML::default()
@@ -76,6 +94,12 @@ fn build_session(model: &Path) -> Result<Session, Box<dyn std::error::Error>> {
         .with_model_cache_dir(cache.to_string_lossy())
         .build()
         .error_on_failure(),
+    ])?;
+  }
+  #[cfg(target_os = "windows")]
+  {
+    builder = builder.with_execution_providers([
+      ort::ep::DirectML::default().build().error_on_failure(),
     ])?;
   }
   let session = builder.commit_from_file(model)?;

@@ -8,8 +8,12 @@ on:
 
 jobs:
   rust:
-    name: Rust tests (core)
-    runs-on: macos-latest
+    name: Rust tests (core) — ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -42,7 +46,7 @@ jobs:
 
   clippy:
     name: Rust fmt & clippy (non-blocking)
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4

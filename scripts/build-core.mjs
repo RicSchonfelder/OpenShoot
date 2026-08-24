@@ -4,9 +4,18 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const triple = execSync('rustc -vV', { encoding: 'utf8' })
-  .match(/host: (\S+)/)?.[1]
-  .trim()
+
+let triple
+try {
+  triple = execSync('rustc -vV', { encoding: 'utf8' }).match(/host: (\S+)/)?.[1]
+} catch {
+  console.error('[build-core] rustc não encontrado — instale o Rust via https://rustup.rs')
+  process.exit(1)
+}
+if (!triple) {
+  console.error('[build-core] não foi possível detectar a toolchain Rust (rustc -vV)')
+  process.exit(1)
+}
 
 const isMac = process.platform === 'darwin'
 const isWindows = process.platform === 'win32'
