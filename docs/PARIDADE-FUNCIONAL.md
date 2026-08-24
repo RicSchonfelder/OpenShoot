@@ -30,9 +30,9 @@
 | **Filtro Tipo de Arquivo** (RAW / JPEG-TIFF) | filtros `raw`/`jpeg` no dropdown | ✅ |
 | **Filtro Orientação** (retrato/paisagem) | filtros `portrait`/`landscape` no dropdown | ✅ |
 | **Reiniciar filtros** | botão reset no dropdown | ✅ |
-| **"Destaques IA" vs "Selecionado manual"** | ⬜ separar origem do rating (IA vs manual) |
-| **Filtro "Editar status"** | ⬜ coluna `edited` + filtro |
-| **Contadores vivos no painel de filtros** | ⬜ painel lateral com contagens por bucket |
+| **"Destaques IA" vs "Selecionado manual"** | coluna `ai_pick` + filtros `destaques`/`selecionado` | ✅ |
+| **Filtro "Editar status"** | filtros `edited`/`unedited` (via `edit_json`) | ✅ |
+| **Contadores vivos no painel de filtros** | FilterPanel lateral com `filterCounts()` | ✅ |
 
 ## Tranche B — Edição (expansão tonal)
 
@@ -47,8 +47,8 @@
 | **Redução de ruído** (bilateral leve) | `denoise` | ✅ |
 | **Ajuste de horizonte com IA** | Hough `autoLevelPhoto` | ✅ |
 | **Recorte por IA** (suave/padrão) | faces + centralização `aiCropPhoto` | ✅ |
-| **Máscara de IA** (sujeito/fundo) | ⬜ SelfieSegmentation ONNX |
-| **Perfil de IA por álbum** (estilo aprendido) | ⬜ v1: média de tom de amostras |
+| **Máscara de IA** (sujeito/fundo) | máscara de sujeito (face+pele nítido, fundo desfocado) — heurística local | ✅ |
+| **Perfil de IA por álbum** (estilo aprendido) | "Aprender perfil" (média das edições → preset) | ✅ |
 
 ## Tranche C — Importação (wizard)
 

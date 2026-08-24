@@ -2,42 +2,46 @@
 
 > Arquivo de continuidade: registra o estado atual, o que funciona, o que falta e
 > possíveis pontos de retomada caso o ambiente/agente reinicie.
+> **Ações pendentes:** ver `docs/ROADMAP.md` (fonte única de tarefas).
 
-**Última atualização:** 2026-08-21
+**Última atualização:** 2026-08-24
 
 ## Estado atual
 
-### Concluído
-- **Fase 0** ✅ — Esqueleto Electron (React/TS) + core Rust (napi-rs) com ponte IPC
-  validada E2E. Repo público no GitHub.
-- **Fase 1** ✅ — Catálogo + decode + thumbnails + grid virtualizado:
-  - `core/src/catalog.rs` — Catálogo SQLite (`photos`), schema, upsert, listagem
-    com paginação/busca, `scan_folder` recursivo com `walkdir`.
-- **Fase 2 (heurístico + ML local)** ✅ — Culling com IA local (ONNX):
-  - **SCRFD multi-escala + NMS** implementado e validado; **NIMA** (estética) +
-    **SCRFD** (faces), engine **ort 2.0.0-rc.13** EP **CoreML** + fallback CPU.
-  - Score final: heurística (Laplacian) + NIMA + bônus por rostos; fallback p/
-    heurística se modelo ausente. `cullPhotos()` → quantis → rating 1-5.
-  - `core/src/xmp.rs` — sidecar XMP compatível Lightroom/Capture One.
-- **Fase 3** ✅ — Edição em lote não-destrutiva (exposição, WB, contraste, saturação,
-  sombras, realces, brilho) com preview e persistência por foto (`edit_json`).
-- **Fase 4** ✅ — Retoque local: suavização de pele (YCbCr + blur seletivo) +
-  remoção de distrações (inpainting por difusão, bbox central MVP).
-- **Fase 4b (edição geométrica)** ✅ — **Ajuste de horizonte com IA** (Hough:
-  detecta linhas dominantes, rotaciona) e **Recorte por IA** (centraliza em faces
-  SCRFD, recorte 80%) — `geometric.rs`.
-- **Fase 4c (retoque facial)** ✅ — **Patch por arrasto** no loupe (overlay +
-  inpaint da região) e **sliders faciais** (acne, olhos, dentes, cabelo) via
-  `retouch_face_region` (bbox do rosto + blur/clarear por região).
-- **Fase 6 parcial** ✅ — Captions locais offline (`captions.rs`) + empacotamento
-  macOS (electron-builder) → `/Applications/OpenShoot.app` (arm64).
-- **UX de culling** ✅ (alinhada à auditoria referência externa):
-  - **i18n pt-BR + en** (`src/renderer/src/i18n/`): `useT()`, detecção por
-    `navigator.language`, "Cull"→"Selecionar" (pt).
-  - **Loupe integrado**: duplo clique / Enter abre; setas navegam; P/X/U/1-5 aplicam
-    rating e avançam; Esc fecha.
-  - **Flags coloridos no grid** (verde P / vermelho X) + **★1-5 clicável por foto**.
-  - **Toolbar de culling**: contadores P/X/U/total + "Selecionar todas (⌘A)".
+### Concluído (visão consolidada)
+- **Base (Fases 0-6)** ✅ — Electron+React ⇄ napi-rs ⇄ ONNX/CoreML; catálogo SQLite;
+  RAW decode (NEF/ARW/CR3 via parser BMFF); culling IA (NIMA+SCRFD, quantis → ★1-5);
+  XMP sidecar LR/C1; edição em lote; retoque; captions locais; empacotamento macOS.
+- **Álbuns + fluxo** ✅ — Tela Lar (grid de álbuns com capa/contagem), criar/deletar
+  álbum, abas **IMPORT → CULL → EDIT → RETOUCH** por álbum, tipo de sessão,
+  import wizard (subpastas + tipo de fotos), "Um clique" (cull + preset).
+- **Culling completo** ✅ — ★1-5 clicável, P/X/U, loupe com patch por arrasto e
+  moldura de rosto, flags coloridos, meta de nº de picks, buckets "Para revisão" /
+  "Destaques IA" / "Selecionado", painel de filtros com contagens vivas, filtros
+  duplicatas (sha256) / rosto / orientação / tipo de arquivo / status de edição.
+- **Edição completa** ✅ — 8 sliders + curva de tom (4 pontos) + HSL (8 cores) +
+  nitidez (unsharp) + redução de ruído (bilateral) + horizonte IA (Hough) +
+  recorte IA (faces) + máscara de sujeito (fundo desfocado) + presets nomeados
+  com regras (file_type/color_type/source) + aprender perfil (média de edições) +
+  importar preset Lightroom (.xmp/.lrtemplate) + mercado JSON (export/import).
+- **Retoque completo** ✅ — Pele (YCbCr), acne/olhos/dentes/cabelo por região da
+  bbox facial, patch por arrasto, **aplicar retoque em lote ("Colar")**.
+- **Exportação** ✅ — Diálogo destino/tipo (JPEG-PNG)/qualidade, edição aplicada +
+  orientação EXIF, resolução nativa, sufixo de conflito, **paralela (rayon)**,
+  espaço de cor (sRGB / P3 aproximado), templates de nomeação.
+- **Reconhecimento facial** ✅ — MobileFaceNet embeddings + agrupamento por
+  similaridade + **UI Pessoas** (agrupar/exportar pastas por pessoa) + olhos
+  fechados (funções `detect_faces_with_kps`/`eyes_open_score` — integração ao
+  culling pendente, ver ROADMAP P2).
+- **Extras** ✅ — Labels de cor com menu de contexto, zoom Fit/100% no loupe,
+  galeria web estática exportável, modo edição em tela grande, orientação EXIF,
+  i18n pt-BR/en, CI GitHub Actions, README/THIRD_PARTY.
+- **Qualidade** ✅ — **60 testes Rust**, typecheck limpo, ~11k linhas.
+
+### Como os 10 agentes paralelos contribuíram (2026-08-24)
+Jobs `os-agent` (opencode CLI, modelo x-preview-f-free): Pessoas, olhos fechados,
+sRGB/nomeação, perfis com regras, galeria web, zoom loupe, CI, docs, export
+paralela, labels de cor — integrados e validados (commit `c77a57d`).
   - **Diálogo de deletar 3 opções**: remover só do catálogo / mover p/ Lixeira /
     cancelar (`removePhotoFromCatalog` / `deletePhoto` com `move_to_trash` manual).
   - **⌘A/Ctrl+A** seleciona todas.
@@ -88,12 +92,12 @@
   ★1-5 por foto, filtros avançados (dropdown), detecção de duplicatas, loupe,
   flags, i18n, toolbar de culling.
 
-## Próximos passos (ordem sugerida)
-1. **Máscara de IA (sujeito/fundo)** — requer SelfieSegmentation ONNX (baixar modelo).
-2. **Tipo de sessão/gênero** no wizard de importação (casamento, retrato, família...).
-3. **Mostrar moldura do rosto** (overlay de landmarks no loupe).
-4. **Mercado de perfis** (pasta local de estilos compartilháveis + metadados de regras).
-5. **Olhos fechados** (SCRFD landmarks) + flag de aviso.
+## Próximos passos
+Ver **`docs/ROADMAP.md`** (fonte única, priorizado). Resumo:
+1. 🔴 P1 — Portabilidade Windows/Linux (EP de IA, caminhos, lixeira, electron-builder, CI matriz).
+2. 🔴 P2 — Olhos fechados integrado ao culling + filtros de aviso.
+3. 🟡 P3-P5 — Filtros por cor, refinamentos de exportação, assinatura/auto-update.
+4. 🟢 P6-P8 — E2E, OpenRouter opt-in, polimento de UX.
 
 ## Como retomar (recuperação de crash)
 1. `cd ~/OpenShoot`
