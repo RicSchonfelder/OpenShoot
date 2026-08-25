@@ -23,7 +23,8 @@ curl -sSf https://sh.rustup.rs -o /tmp/rustup.sh && sh /tmp/rustup.sh -y --profi
 rustc --version
 
 cd /work
-npm ci --ignore-scripts > /dev/null 2>&1
+# SEM --ignore-scripts: o postinstall do Electron baixa o binário da plataforma.
+npm ci > /dev/null 2>&1
 echo "=== build:core (release, pode demorar) ==="
 npm run build:core 2>&1 | tail -2
 
@@ -31,9 +32,8 @@ echo "=== smoke:core ==="
 npm run smoke:core 2>&1 | tail -6 || true
 
 echo "=== Electron headless via xvfb ==="
-# electron-vite dev compila e sobe o app; --no-sandbox obrigatório como root;
-# remote debugging permite validar que a janela/renderer subiu.
-ELECTRON_EXTRA_ARGS="--no-sandbox --disable-gpu" xvfb-run -a npm run dev -- --no-sandbox --disable-gpu --remote-debugging-port=9222 > /tmp/electron.log 2>&1 &
+# Args após `--` são repassados ao Electron pelo electron-vite.
+xvfb-run -a npm run dev -- -- --no-sandbox --disable-gpu --remote-debugging-port=9222 > /tmp/electron.log 2>&1 &
 APP_PID=$!
 sleep 45
 echo "=== CDP endpoints ==="

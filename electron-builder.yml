@@ -40,17 +40,13 @@ linux:
       arch: [x64]
   category: Graphics
   artifactName: ${productName}-${version}-${arch}.${ext}
-  desktop:
-    Name: OpenShoot
-    Comment: AI photo culling, editing & retouching — 100% local & offline
-    StartupWMClass: OpenShoot
 
 deb:
   packageCategory: graphics
   depends:
     - libgtk-3-0
     - libnss3
-    - libasound2
+    - libasound2t64
 
 dmg:
   title: ${productName}

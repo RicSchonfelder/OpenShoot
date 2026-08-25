@@ -4,7 +4,7 @@
   "private": true,
   "description": "Open-source AI culling, editing & retouching for photographers. Electron UI + Rust core (ONNX).",
   "main": "./out/main/index.js",
-  "author": "OpenShoot contributors",
+  "author": "OpenShoot contributors <openshoot@users.noreply.github.com>",
   "license": "MIT",
   "engines": {
     "node": ">=18"
@@ -45,5 +45,6 @@
     "electron@33.4.11": true,
     "esbuild@0.21.5": true,
     "fsevents@2.3.3": true
-  }
+  },
+  "homepage": "https://github.com/RicSchonfelder/OpenShoot"
 }

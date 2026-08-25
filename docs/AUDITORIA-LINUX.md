@@ -194,36 +194,47 @@ isso na prática para usuários finais.
 - macOS: EP CoreML, cache e lixeira permanecem idênticos aos anteriores.
 - Pilares do AGENTS.md (offline, MIT, não-destrutivo) intactos.
 
-## 4. Inferência em CPUs antigas / glibc antigo (opt-in `ort-load-dynamic`)
+## 4. Inferência em CPUs antigas / glibc antigo (opt-in `ort-load-dynamic`) ✅ VALIDADO
 
 Os binários pré-compilados do ONNX Runtime (pyke/ms@1.28.0) exigem AVX2+ e
 glibc ≥ 2.38. Para hardwares/distros sem esses requisitos existe a feature
 opt-in `ort-load-dynamic` (core/Cargo.toml), que carrega uma biblioteca
-externa via `ORT_DYLIB_PATH` em vez de linkar os binários estáticos:
+externa via `ORT_DYLIB_PATH`.
+
+**Resultado validado nesta máquina de teste** (i5-2430M Sandy Bridge sem
+AVX2/FMA, Ubuntu 22.04 glibc 2.35): compilação do ONNX Runtime 1.28.0 direto
+no host com cmake ≥ 3.26 e baseline genérico → **60/60 testes passando COM
+inferência ML real** (sessões SCRFD e MobileFaceNet carregadas e executadas).
+Com os binários pré-compilados o mesmo teste dá SIGILL; com wheel pip 1.23.2
+o ort rejeita (`BadVersion`, exige 1.28 exata).
+
+Receita reproduzível:
 
 ```bash
-# Exemplo com o wheel oficial do pip (manylinux, baseline compatível):
-pip3 download onnxruntime==1.23.2 --no-deps -d /tmp/ortw
-unzip /tmp/ortw/onnxruntime-*.whl -d /tmp/ortw/x
-export ORT_DYLIB_PATH=/tmp/ortw/x/onnxruntime/capi/libonnxruntime.so.1.23.2
-cargo test --manifest-path core/Cargo.toml --features ort-load-dynamic
-
-# Para o app:
-ORT_DYLIB_PATH=... npm run dev   # (o main process herda a env var)
-```
-
-A C API do ONNX Runtime é retrocompatível: ort-sys pede OrtApi v17 (default) e
-dylibs ≥ 1.17 servem. Se nem o wheel rodar (CPU sem as instruções usadas pelo
-build oficial), compile o ONNX Runtime do zero com baseline genérico:
-
-```bash
+# 1. Compilar ORT no PRÓPRIO host (dylib fica linkada ao glibc local — não
+#    usar container mais novo que o host alvo):
 git clone --depth 1 --branch v1.28.0 --recursive --shallow-submodules \
   https://github.com/microsoft/onnxruntime.git
-cd onnxruntime
-./build.sh --config Release --build_shared_lib --parallel $(nproc) \
-  --skip_tests --allow_running_as_root
-# → build/Linux/Release/libonnxruntime.so (use como ORT_DYLIB_PATH)
+cd onnxruntime && pip3 install --user "cmake>=3.28" ninja
+export PATH=$HOME/.local/bin:$PATH
+./build.sh --config Release --build_shared_lib --parallel $(nproc) --skip_tests
+# → build/Linux/Release/libonnxruntime.so (ignora binários de teste que sobram)
+
+# 2. Testar o core com inferência real:
+cd <repo>/OpenShoot
+ORT_DYLIB_PATH=$PWD/../onnxruntime/build/Linux/Release/libonnxruntime.so \
+  cargo test --manifest-path core/Cargo.toml --features ort-load-dynamic
+
+# 3. Rodar o app:
+ORT_DYLIB_PATH=... npm run dev
 ```
+
+Notas:
+- A C API é retrocompatível (ort pede OrtApi v17), mas ort rc.13 valida a
+  **versão exata da dylib** (`BadVersion`) — precisa ser 1.28.x.
+- O wheel oficial do pip NÃO serve (versão ≠ 1.28 e alguns builds exigem AVX2).
+- Em containers: compile dentro de um container cuja glibc seja ≤ a do host
+  onde a dylib vai rodar.
 
 
 ## 5. Pendências relacionadas (para outros agentes)
@@ -236,3 +247,25 @@ Ver `docs/ROADMAP.md`:
 - [ ] Linux: CUDA/TensorRT opt-in.
 - [ ] Release workflow multiplataforma com artefatos (ROADMAP P5).
 - [ ] aarch64-unknown-linux-gnu (build core p/ ARM Linux).
+
+## 6. Validação E2E e empacotamento (2026-08-25)
+
+| Teste | Resultado |
+|---|---|
+| `cargo test` (60) — Ubuntu 24.04 container | ✅ 60/60 (fallback heurístico; ORT pré-compilado exige AVX2) |
+| `cargo test` (60) + inferência ML real — host Ubuntu 22.04 i5 sem AVX2, via §4 | ✅ 60/60 com sessões SCRFD/MobileFaceNet |
+| `npm run typecheck` — Linux | ✅ |
+| `npm run smoke:core` — Ubuntu 24.04 | ✅ addon carrega, cataloga e envia p/ lixeira (`trash` crate OK) |
+| **E2E headless** (`scripts/e2e-headless.sh`, xvfb + CDP) | ✅ Electron bootou, renderer OpenShoot carregado |
+| **Empacotamento** `dist:linux` | ✅ `OpenShoot-0.1.0-x86_64.AppImage` (141 MB) + `OpenShoot-0.1.0-amd64.deb` (114 MB) |
+| **Instalação do .deb** em Ubuntu 24.04 limpo | ✅ `dpkg` OK → `/opt/OpenShoot` |
+| **App empacotado rodando** (xvfb + CDP) | ✅ renderer de produção carregado de `app.asar` |
+
+Correções necessárias descobertas no empacotamento (aplicadas):
+- `package.json`: `author` com e-mail + `homepage` (exigidos pelo fpm/.deb).
+- `electron-builder.yml`: bloco `linux.desktop` removido (schema v26 rejeita);
+  depends do .deb usa `libasound2t64` (Ubuntu 24.04).
+- Container p/ gerar .deb precisa de: `xz-utils binutils libarchive-tools`.
+
+Limitações de CPU/glibc para usuários finais continuam cobertas pela §4
+(ort-load-dynamic) — o AppImage embute o ORT pré-compilado padrão.
