@@ -68,7 +68,7 @@ pub fn scan_folder(
 }
 
 /// Lista fotos do catálogo com paginação, busca e filtro de rating.
-/// filter: "all" | "picks" (>=4) | "rejects" (<=1, >0) | "unrated" (==0)
+/// filter: "all" | "picks" (>=4) | "rejects" (>=1 e <=2) | "unrated" (==0)
 #[napi]
 pub fn list_photos(
   search: Option<String>,

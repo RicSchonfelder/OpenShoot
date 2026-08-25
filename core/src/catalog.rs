@@ -278,7 +278,7 @@ fn row_to_photo(row: &rusqlite::Row) -> rusqlite::Result<PhotoMeta> {
 }
 
 /// Lista fotos com paginação, busca e filtro de rating.
-/// filter: "all" | "picks" (>=4) | "rejects" (<=1, >0) | "unrated" (==0) |
+/// filter: "all" | "picks" (>=4) | "rejects" (>=1 e <=2) | "unrated" (==0) |
 ///         "duplicates" (sha256 repetido) | "faces" (fotos com rosto)
 pub fn list_photos(
   search: &str,
@@ -302,7 +302,7 @@ pub fn list_photos(
       conds.push("rating >= 4".to_string());
     }
     "rejects" => {
-      conds.push("rating >= 1 AND rating <= 1".to_string());
+      conds.push("rating >= 1 AND rating <= 2".to_string());
     }
     "unrated" => {
       conds.push("rating = 0".to_string());

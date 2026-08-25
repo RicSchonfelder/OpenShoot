@@ -3,6 +3,7 @@ import Gallery from './components/Gallery'
 import EditPanel from './components/EditPanel'
 import EditViewPhoto from './components/EditViewPhoto'
 import ExportDialog from './components/ExportDialog'
+import GalleryExport from './components/GalleryExport'
 import LoupeView from './components/LoupeView'
 import FilterPanel from './components/FilterPanel'
 import HomeView from './components/HomeView'
@@ -63,6 +64,7 @@ export default function App() {
   const [albumPhotoIds, setAlbumPhotoIds] = useState<Set<number> | null>(null)
   const [mode, setMode] = useState<'import' | 'cull' | 'edit' | 'retouch'>('import')
   const [exportOpen, setExportOpen] = useState(false)
+  const [galleryOpen, setGalleryOpen] = useState(false)
   const [showPeople, setShowPeople] = useState(false)
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>('none')
   const [moreOpen, setMoreOpen] = useState(false)
@@ -341,15 +343,11 @@ export default function App() {
       setPendingImport(null)
       setScanning(true)
       setScanProgress({ processed: 0, total: 0 })
+      const offImportProgress = window.openshoot.onImportProgress((p) => {
+        setScanProgress({ processed: p.processed, total: p.total })
+      })
       try {
-        const res = await window.openshoot.scanFolderProgress(
-          opts.dir,
-          opts.includeSubdirs,
-          opts.types,
-          (p) => {
-            setScanProgress({ processed: p.processed, total: p.total })
-          }
-        )
+        const res = await window.openshoot.scanFolderProgress(opts.dir, opts.includeSubdirs, opts.types)
         let r
         try {
           r = JSON.parse(res)
@@ -379,6 +377,7 @@ export default function App() {
       } catch (e) {
         setError(String(e))
       } finally {
+        offImportProgress()
         setScanning(false)
         setScanProgress(null)
       }
@@ -671,6 +670,14 @@ export default function App() {
             title={t('export.hint')}
           >
             {t('export.exportarBtn')}
+          </button>
+          <button
+            onClick={() => setGalleryOpen(true)}
+            disabled={selectedIds.size === 0}
+            className="ghost"
+            title={t('galleryweb.hintBtn')}
+          >
+            {t('galleryweb.btn')}
           </button>
           <button onClick={exportXmp} disabled={exporting || photos.length === 0} className="ghost">
             {exporting ? t('app.exportando') : t('app.exportarXmp')}
@@ -1054,6 +1061,13 @@ export default function App() {
         <ExportDialog
           ids={Array.from(selectedIds)}
           onClose={() => setExportOpen(false)}
+          onDone={(msg) => setScanMsg(msg)}
+        />
+      )}
+      {galleryOpen && (
+        <GalleryExport
+          ids={Array.from(selectedIds)}
+          onClose={() => setGalleryOpen(false)}
           onDone={(msg) => setScanMsg(msg)}
         />
       )}

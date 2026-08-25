@@ -454,15 +454,19 @@ app.whenReady().then(() => {
       return { ok: false, error: String(e) }
     }
   })
+  // Functions cannot cross ipcRenderer.invoke's structured-clone boundary.
+  const IMPORT_PROGRESS_CHANNEL = 'core:import-progress'
   ipcMain.handle(
     'core:scanFolderProgress',
-    async (
-      _event,
-      dir: string,
-      includeSubdirs: boolean,
-      types: string,
-      onProgress: (p: any) => void
-    ) => {
+    async (_event, dir: string, includeSubdirs: boolean, types: string) => {
+      const sender = _event.sender
+      const onProgress = (p: { processed: number; total: number; currentFile: string }): void => {
+        try {
+          if (!sender.isDestroyed()) sender.send(IMPORT_PROGRESS_CHANNEL, p)
+        } catch {
+          // The window may close while a scan is running.
+        }
+      }
       try {
         return await getCore().scanFolderProgress(dir, includeSubdirs, types, onProgress)
       } catch (e) {

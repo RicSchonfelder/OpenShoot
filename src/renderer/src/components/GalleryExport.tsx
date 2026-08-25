@@ -4,9 +4,10 @@ import { useT } from '../i18n/I18nContext'
 interface GalleryExportProps {
   ids: number[]
   onClose: () => void
+  onDone: (msg: string) => void
 }
 
-export default function GalleryExport({ ids, onClose }: GalleryExportProps) {
+export default function GalleryExport({ ids, onClose, onDone }: GalleryExportProps) {
   const { t } = useT()
   const [title, setTitle] = useState('')
   const [destDir, setDestDir] = useState<string | null>(null)
@@ -28,6 +29,7 @@ export default function GalleryExport({ ids, onClose }: GalleryExportProps) {
         title.trim() || t('galleryweb.tituloPadrao')
       )
       if (res.ok) {
+        onDone(t('galleryweb.feito', { path: res.path ?? destDir }))
         onClose()
       } else {
         setError(res.error ?? 'erro')

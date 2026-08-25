@@ -20,6 +20,12 @@ export interface PeopleExportResult {
   error?: string
 }
 
+export interface ImportProgress {
+  processed: number
+  total: number
+  currentFile?: string
+}
+
 const api = {
   hello: (name: string): Promise<string> => ipcRenderer.invoke('core:hello', name),
   add: (a: number, b: number): Promise<number> => ipcRenderer.invoke('core:add', a, b),
@@ -130,13 +136,13 @@ const api = {
     ipcRenderer.invoke('core:retouchFacePhoto', id, region, intensity, maxDim),
   learnProfile: (): Promise<{ ok: boolean; name?: string; photos?: number; error?: string }> =>
     ipcRenderer.invoke('core:learnProfile'),
-  scanFolderProgress: (
-    dir: string,
-    includeSubdirs: boolean,
-    types: string,
-    onProgress: (p: { processed: number; total: number; currentFile: string }) => void
-  ): Promise<string> =>
-    ipcRenderer.invoke('core:scanFolderProgress', dir, includeSubdirs, types, onProgress),
+  scanFolderProgress: (dir: string, includeSubdirs: boolean, types: string): Promise<string> =>
+    ipcRenderer.invoke('core:scanFolderProgress', dir, includeSubdirs, types),
+  onImportProgress: (cb: (p: ImportProgress) => void): (() => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, p: ImportProgress): void => cb(p)
+    ipcRenderer.on('core:import-progress', listener)
+    return () => ipcRenderer.removeListener('core:import-progress', listener)
+  },
   clearThumbCache: (): Promise<number> => ipcRenderer.invoke('core:clearThumbCache'),
   // Pessoas (agrupamento facial)
   groupBySimilarity: (
