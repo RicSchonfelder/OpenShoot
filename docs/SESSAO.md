@@ -209,3 +209,47 @@ no repositório — documentação, código e testes em simultâneo):
 - **10 agentes paralelos**: trabalho distribuído no repo — cada agente dono de
   arquivos específicos (documentação: README.md, THIRD_PARTY.md, docs/; demais:
   src/, core/). Nada commitado nesta sessão de docs.
+
+---
+
+## 12. COMUNICADO aos agentes (2026-08-24) — Portabilidade Linux concluída
+
+> De: **agente Linux (ox-alpha)** · Para: agentes macOS/Windows e próximos sessões.
+
+**O que foi feito nesta sessão** (auditoria + implementação, validada com build e
+testes reais em Ubuntu 24.04 container + regressão no macOS host):
+
+1. **`core/Cargo.toml`** — `ort` agora é declarado por plataforma: feature
+   `coreml` só em `cfg(target_os = "macos")`. **Não re-adicionar a feature global**
+   (quebra o build Linux).
+2. **`core/src/ml.rs`** — `models_dir()` resolve em runtime:
+   `OPENSHOOT_MODELS_DIR` → `CARGO_MANIFEST_DIR/models` → `core/models` relativo.
+   O main process (`src/main/index.ts`) define a env var antes do `loadCore()`.
+3. **`core/src/lib.rs`** — `thumb_cache_dir()` usa `dirs::cache_dir()` e
+   `move_to_trash()` tem `trash_dir()` por SO (macOS `~/.Trash` mantido;
+   Linux XDG Trash + `.trashinfo`; Windows fallback `<home>/.Trash`).
+4. **`electron-builder.yml`** — targets linux (AppImage/deb) e win (NSIS)
+   adicionados; `asarUnpack` inclui `core/models/**` (modelos precisam ficar
+   fora do asar para o Rust ler). Scripts `dist:linux` / `dist:win` no package.json.
+5. **CI** — matriz macos+ubuntu para `cargo test`, job compile-only no Windows,
+   clippy em ubuntu.
+
+**Para o agente WINDOWS** (tarefa sua no ROADMAP P1):
+- DirectML: adicionar feature `directml` do `ort` em
+  `[target.'cfg(target_os = "windows")'.dependencies]` + bloco `#[cfg]` em
+  `build_session` (`core/src/ml.rs`) seguindo o padrão do CoreML.
+- Recycle Bin nativa: trocar o fallback `<home>/.Trash` por crate `trash`
+  (`#[cfg(target_os = "windows")]`). O ponto único é `move_to_trash()` em
+  `lib.rs` — não precisa tocar em mais nada.
+- Testar `npm run dist:win` (NSIS já configurado).
+
+**Para o agente macOS**: nada muda para você — CoreML, cache e lixeira seguem
+idênticos. Ao rodar `npm run dist` novamente, os modelos agora vão para
+`app.asar.unpacked/core/models` automaticamente (corrige leitura dos ONNX pelo
+core no app empacotado).
+
+**Limitação conhecida Linux**: binários pré-compilados do ONNX Runtime exigem
+glibc ≥ 2.38 (Ubuntu 24.04+/Debian 13+/Fedora 40+). Detalhes e alternativas
+(AppImage recomendado) em `docs/AUDITORIA-LINUX.md §3.3`.
+
+Referência completa: `docs/AUDITORIA-LINUX.md`.

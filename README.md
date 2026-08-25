@@ -80,9 +80,15 @@ See [docs/DESIGN.md](docs/DESIGN.md) for the full design document.
 
 ## Requirements
 
-- **macOS** (Apple Silicon, arm64)
+- **Linux** x86_64 (glibc ≥ 2.38 — Ubuntu 24.04+, Debian 13+, Fedora 40+) · **macOS** (Apple Silicon) · **Windows** 10+ (core compiles; installer experimental)
 - **Rust ≥ 1.88**
 - **Node.js ≥ 20**
+
+Platform notes:
+
+- **Inference**: CoreML on macOS (Apple Neural Engine / Metal); CPU ONNX Runtime on Linux/Windows (CUDA/DirectML planned as opt-in).
+- **Paths**: caches and trash follow each platform's convention (`~/.cache`, XDG Trash on Linux; `~/Library/Caches`, `~/.Trash` on macOS).
+- Linux build deps: `build-essential`, `pkg-config`, `libssl-dev`; runtime dep: `libgomp1`. Requires glibc ≥ 2.38 (Ubuntu 24.04+ / Debian 13+ / Fedora 40+).
 
 ## Getting Started
 
@@ -100,6 +106,8 @@ Other useful commands:
 npm run typecheck   # TypeScript checks (main/preload + renderer)
 npm test            # Rust tests (cargo)
 npm run dist:mac    # build a packaged .app/.dmg into release/
+npm run dist:linux  # build AppImage/.deb into release/
+npm run dist:win    # build NSIS installer into release/
 ```
 
 ## ONNX Models
@@ -136,7 +144,8 @@ you're ready to go.
 - [x] Albums, workflow tabs (IMPORT/CULL/EDIT/RETOUCH), face recognition grouping
 - [ ] CR3 dimensions from BMFF header for photos without EXIF
 - [ ] Opt-in text features (keywords/captions via user-provided API key)
-- [ ] Windows/Linux builds
+- [x] Linux support (CPU inference, XDG paths/trash, AppImage/deb targets)
+- [ ] Windows builds (DirectML + native Recycle Bin)
 
 ## Contributing
 

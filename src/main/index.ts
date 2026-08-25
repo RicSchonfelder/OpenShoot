@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadCore, getCore } from './core'
 
@@ -34,6 +35,15 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  // Modelos ONNX: aponta o core Rust para core/models antes de carregar o addon.
+  // No app empacotado os modelos ficam em app.asar.unpacked (asarUnpack).
+  const modelsCandidates = [
+    join(app.getAppPath(), 'core/models'),
+    join(app.getAppPath().replace('app.asar', 'app.asar.unpacked'), 'core/models')
+  ]
+  const modelsDir = modelsCandidates.find((p) => existsSync(p))
+  if (modelsDir) process.env.OPENSHOOT_MODELS_DIR = modelsDir
+
   loadCore()
 
   // Inicializa o catálogo SQLite no diretório de dados do usuário.

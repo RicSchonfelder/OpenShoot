@@ -21,6 +21,9 @@ ONNX Runtime. Repo público: https://github.com/RicSchonfelder/OpenShoot
 UI (Electron/React, `src/`) ⇄ IPC (`electron-vite`, `src/main`) ⇄ core Rust
 (`core/`, crate `openshoot-core`) via napi-rs. O addon é compilado para
 `core/openshoot_core.<platform>.<arch>.node` por `scripts/build-core.mjs`.
+Inferência: CoreML no macOS; CPU ONNX Runtime em Linux/Windows (ver
+`docs/AUDITORIA-LINUX.md`). Os modelos ONNX são resolvidos em runtime pela env
+var `OPENSHOOT_MODELS_DIR` (definida pelo main process).
 
 ## Comandos
 
@@ -30,7 +33,13 @@ npm run build:core    # cargo build --release + copia para core/*.node
 npm run dev           # roda o app em desenvolvimento
 npm run typecheck     # tsc para main/preload e renderer (AMBOS devem passar)
 npm test              # cargo test no core
+npm run dist:linux    # empacota AppImage/.deb (Linux)
+npm run dist:mac      # empacota .app/.dmg (macOS)
+npm run dist:win      # empacota NSIS (Windows)
 ```
+
+Plataformas: Linux x86_64 (glibc ≥ 2.38), macOS arm64/x64, Windows x64.
+Caminhos de cache/lixeira são multiplataforma (`dirs::cache_dir()`, XDG Trash).
 
 ## Regras para agentes
 
@@ -48,5 +57,7 @@ npm test              # cargo test no core
 
 ## Estado atual
 
-Fase 0 concluída (esqueleto + ponte IPC). Próximas: Fase 1 (catálogo + RAW decode
-+ thumbnails) e Fase 2 (culling com IA local). Ver roadmap em docs/DESIGN.md.
+Fases 0–6 concluídas (catálogo, culling IA, edição, retoque, álbuns, export,
+reconhecimento facial) + **portabilidade Linux concluída** (2026-08-24, ver
+`docs/AUDITORIA-LINUX.md`). Pendências priorizadas em `docs/ROADMAP.md`:
+P2 olhos fechados no culling; Windows DirectML/Recycle Bin; release workflow.

@@ -16,11 +16,12 @@
     "start": "electron-vite preview",
     "dist": "npm run build:core && electron-vite build && electron-builder",
     "dist:mac": "npm run build:core && electron-vite build && electron-builder --mac",
+    "dist:linux": "npm run build:core && electron-vite build && electron-builder --linux",
     "dist:win": "npm run build:core && electron-vite build && electron-builder --win",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
-    "smoke:core": "node scripts/smoke-core.mjs",
     "test": "cargo test --manifest-path core/Cargo.toml",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "smoke:core": "node scripts/smoke-core.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

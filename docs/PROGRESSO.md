@@ -4,9 +4,26 @@
 > possíveis pontos de retomada caso o ambiente/agente reinicie.
 > **Ações pendentes:** ver `docs/ROADMAP.md` (fonte única de tarefas).
 
-**Última atualização:** 2026-08-24
+**Última atualização:** 2026-08-24 (portabilidade Linux)
 
 ## Estado atual
+
+### Portabilidade multiplataforma ✅ (2026-08-24)
+Dois trabalhos paralelos integrados: **Linux** (agente ox-alpha,
+`docs/AUDITORIA-LINUX.md`) + **Windows** (agente Windows,
+`docs/MULTIPLATAFORMA.md`):
+- `ort` por plataforma: CoreML (macOS), **DirectML (Windows)**, CPU (Linux).
+- Cache multiplataforma via `dirs::cache_dir()` (Linux: `~/.cache/OpenShoot`).
+- Lixeira nativa nas 3 plataformas via crate `trash` (Recycle Bin / Finder /
+  freedesktop) — corrige também rename entre volumes.
+- `models_dir()` resolvido em runtime (`OPENSHOOT_MODELS_DIR` definida pelo
+  main process + busca por ancestrais do exe) — corrige bug latente de path
+  compilado e modelos empacotados dentro do asar (`asarUnpack: core/models/**`).
+- electron-builder com targets AppImage/**deb** (Linux) e NSIS (Windows) +
+  scripts `dist:linux`/`dist:win`/`smoke:core`.
+- CI em matriz macos+ubuntu+windows (+ deps Linux pkg-config/libssl-dev/libgomp1).
+- Validação: 60/60 testes Rust em Ubuntu 24.04 container e macOS host;
+  typecheck limpo; smoke test do addon no Windows.
 
 ### Concluído (visão consolidada)
 - **Base (Fases 0-6)** ✅ — Electron+React ⇄ napi-rs ⇄ ONNX/CoreML; catálogo SQLite;

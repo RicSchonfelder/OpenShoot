@@ -9,14 +9,18 @@
 
 ## 🔴 P1 — Portabilidade multiplataforma (Windows / Linux)
 
-Hoje o app **só roda em macOS**. Pontos a corrigir (verificados no código):
+> **CONCLUÍDA (2026-08-24)** — dois agentes em paralelo: **Linux**
+> (`docs/AUDITORIA-LINUX.md`, validado em Ubuntu 24.04 + regressão macOS) e
+> **Windows** (`docs/MULTIPLATAFORMA.md`, validado no Windows 11 com DirectML).
+> Integração dos dois trabalhos neste commit.
 
-- [ ] **EP de IA por plataforma** (`core/src/ml.rs:66`): macOS mantém CoreML; Windows usa **DirectML** (`ort` feature `directml`); Linux usa CPU (CUDA opcional). Estruturar `#[cfg]` por SO.
-- [ ] **Caminhos de cache** (`core/src/lib.rs:340`, `ml.rs:70`): trocar `~/Library/Caches/...` hardcoded por `dirs::cache_dir()` (multiplataforma).
-- [ ] **Lixeira** (`core/src/lib.rs:1127`): `~/.Trash` só existe no macOS. Usar crate `trash` com `#[cfg(not(target_os = "macos"))]` (no macOS mantém a implementação manual que evita a permissão do Finder).
-- [ ] **electron-builder.yml**: adicionar `win: { target: nsis }` e `linux: { target: [AppImage, deb] }`.
-- [ ] **CI com matriz**: build de instaladores em macos/windows/ubuntu + upload de artifacts.
-- [ ] Testar build do core nos 3 targets napi: `x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`.
+- [x] **EP de IA por plataforma** (`core/Cargo.toml` + `ml.rs`): `coreml` só no macOS, **DirectML no Windows** (testado), CPU no Linux. *(pendente: CUDA opt-in no Linux)*
+- [x] **Caminhos de cache** (`dirs::cache_dir()`): thumbs + cache CoreML multiplataforma.
+- [x] **Lixeira nativa**: crate `trash` (Recycle Bin / Finder / freedesktop) — corrige também `fs::rename` entre volumes.
+- [x] **models_dir() em runtime**: `OPENSHOOT_MODELS_DIR` (main process) → dev → busca por ancestrais do exe; `asarUnpack: core/models/**`.
+- [x] **electron-builder.yml**: NSIS (win) + AppImage/**deb** (linux) + scripts `dist:linux`/`dist:win`/`smoke:core`.
+- [x] **CI com matriz**: `cargo test` em macos+ubuntu+windows (+ deps Linux); typecheck; clippy ubuntu. *(pendente: upload de instaladores — P5)*
+- [ ] Testar build do core nos 3 targets napi: `x86_64-pc-windows-msvc` ✓ (agente Windows) · `x86_64-unknown-linux-gnu` ✓ (agente Linux) · `aarch64-unknown-linux-gnu` ⬜ pendente.
 
 ## 🔴 P2 — Olhos fechados integrado ao culling
 
@@ -76,4 +80,6 @@ Labels (Red/Yellow/Green/Blue/Purple) já existem com menu de contexto no grid (
 - **100% local/offline** — pixels nunca saem da máquina (P7 é opt-in explícito).
 - **Não-destrutivo** — originais intocados; edições em sidecar/receita.
 - **Open source MIT** — sem pesos proprietários.
-- **macOS manual-trash** — manter implementação própria no macOS (evita permissão do Finder); crate `trash` só fora do macOS.
+- ~~macOS manual-trash~~ **SUPERADA (2026-08-24)** — lixeira nativa via crate
+  `trash` nas 3 plataformas (corrige rename cross-volume; validada no Windows;
+  sem relatos de permissão Finder com a API usada pelo crate).
