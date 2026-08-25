@@ -186,6 +186,47 @@ fn ensure_schema(conn: &Connection) -> Result<(), String> {
       .execute("ALTER TABLE photos ADD COLUMN eyes_score REAL DEFAULT -1", [])
       .map_err(|e| e.to_string())?;
   }
+  let has_fe: bool = conn
+    .query_row(
+      "SELECT COUNT(*) FROM pragma_table_info('photos') WHERE name='face_embedding'",
+      [],
+      |r| Ok(r.get::<_, i64>(0)? != 0),
+    )
+    .map_err(|e| e.to_string())?;
+  if !has_fe {
+    conn
+      .execute("ALTER TABLE photos ADD COLUMN face_embedding BLOB", [])
+      .map_err(|e| e.to_string())?;
+  }
+  Ok(())
+}
+
+/// Embeddings faciais em cache da foto (BLOB com todos os rostos), se houver.
+pub fn get_face_embedding(id: i64) -> Result<Option<Vec<u8>>, String> {
+  let conn = open()?;
+  let blob: Option<Vec<u8>> = conn
+    .query_row(
+      "SELECT face_embedding FROM photos WHERE id=?1 AND face_embedding IS NOT NULL",
+      rusqlite::params![id],
+      |r| r.get(0),
+    )
+    .map(Some)
+    .or_else(|e| match e {
+      rusqlite::Error::QueryReturnedNoRows => Ok(None),
+      other => Err(other.to_string()),
+    })?;
+  Ok(blob)
+}
+
+/// Salva os embeddings faciais (todos os rostos) de uma foto em cache.
+pub fn set_face_embedding(id: i64, blob: &[u8]) -> Result<(), String> {
+  let conn = open()?;
+  conn
+    .execute(
+      "UPDATE photos SET face_embedding=?2 WHERE id=?1",
+      rusqlite::params![id, blob],
+    )
+    .map_err(|e| e.to_string())?;
   Ok(())
 }
 

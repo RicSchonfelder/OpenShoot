@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use rayon::prelude::*;
 use serde::Serialize;
 
 use crate::catalog::PhotoPath;
@@ -35,37 +36,66 @@ pub fn group_by_similarity(
     return Err("modelo MobileFaceNet ausente (reconhecimento facial indisponível)".to_string());
   }
 
-  // 1) Detecta faces + embeddings de cada foto.
-  let mut faces: Vec<FaceItem> = Vec::new();
-  for p in photos {
-    let path = Path::new(&p.path);
-    let rgb_result = crate::ml::load_rgb(path, 512);
-    let (rgb, w, h) = match rgb_result {
-      Ok(v) => v,
-      Err(e) => {
-        crate::catalog::log_debug(&format!("[group] {}: {}", p.path, e));
-        continue;
-      }
-    };
-    // Detecta faces.
-    let bboxes = match crate::ml::detect_faces(&rgb, w, h, 0.5) {
-      Ok(f) => f,
-      Err(e) => {
-        crate::catalog::log_debug(&format!("[group] faces {}: {}", p.path, e));
-        continue;
-      }
-    };
-    for bbox in bboxes {
-      match crate::ml::face_embedding(&rgb, w, h, bbox) {
-        Ok(emb) => faces.push(FaceItem {
-          photo_id: p.id,
-          photo_path: p.path.clone(),
-          embedding: emb,
-        }),
-        Err(e) => {
-          crate::catalog::log_debug(&format!("[group] emb {}: {}", p.path, e));
+  // 1) Detecta faces + embeddings de cada foto — em paralelo (rayon) e com
+  // cache persistente no catálogo (gap G2: 59s/foto → reuso entre execuções).
+  // O SCRFD/MobileFaceNet continuam serializados (Mutex da sessão ONNX), mas
+  // decode + letterbox + crop rodam em todos os cores.
+  let per_photo: Vec<(i64, String, Vec<Vec<f32>>)> = photos
+    .par_iter()
+    .filter_map(|p| {
+      let cached = crate::catalog::get_face_embedding(p.id)
+        .ok()
+        .flatten()
+        .and_then(|blob| parse_embeddings(&blob));
+      let embs = match cached {
+        Some(e) if !e.is_empty() => e,
+        _ => {
+          let path = Path::new(&p.path);
+          let (rgb, w, h) = match crate::ml::load_rgb(path, 512) {
+            Ok(v) => v,
+            Err(e) => {
+              crate::catalog::log_debug(&format!("[group] {}: {}", p.path, e));
+              return None;
+            }
+          };
+          let bboxes = match crate::ml::detect_faces(&rgb, w, h, 0.5) {
+            Ok(f) => f,
+            Err(e) => {
+              crate::catalog::log_debug(&format!("[group] faces {}: {}", p.path, e));
+              return None;
+            }
+          };
+          let mut embs: Vec<Vec<f32>> = Vec::new();
+          for bbox in bboxes {
+            match crate::ml::face_embedding(&rgb, w, h, bbox) {
+              Ok(emb) => embs.push(emb),
+              Err(e) => {
+                crate::catalog::log_debug(&format!("[group] emb {}: {}", p.path, e));
+              }
+            }
+          }
+          if !embs.is_empty() {
+            let _ = crate::catalog::set_face_embedding(p.id, &serialize_embeddings(&embs));
+          }
+          embs
         }
+      };
+      if embs.is_empty() {
+        None
+      } else {
+        Some((p.id, p.path.clone(), embs))
       }
+    })
+    .collect();
+
+  let mut faces: Vec<FaceItem> = Vec::new();
+  for (photo_id, photo_path, embs) in per_photo {
+    for emb in embs {
+      faces.push(FaceItem {
+        photo_id,
+        photo_path: photo_path.clone(),
+        embedding: emb,
+      });
     }
   }
 
@@ -112,6 +142,47 @@ pub fn group_by_similarity(
     });
   }
   Ok(out)
+}
+
+/// Serializa N embeddings (todos com o mesmo dim) num BLOB:
+ /// [count: u32 LE][f32 LE × count × dim].
+fn serialize_embeddings(embs: &[Vec<f32>]) -> Vec<u8> {
+  let dim = embs.first().map(|e| e.len()).unwrap_or(0);
+  let mut out = Vec::with_capacity(4 + embs.len() * dim * 4);
+  out.extend_from_slice(&(embs.len() as u32).to_le_bytes());
+  for e in embs {
+    for v in e {
+      out.extend_from_slice(&v.to_le_bytes());
+    }
+  }
+  out
+}
+
+/// Inverso de `serialize_embeddings`; None se o blob estiver corrompido.
+fn parse_embeddings(blob: &[u8]) -> Option<Vec<Vec<f32>>> {
+  if blob.len() < 4 {
+    return None;
+  }
+  let count = u32::from_le_bytes([blob[0], blob[1], blob[2], blob[3]]) as usize;
+  let rest = &blob[4..];
+  if count == 0 || rest.len() % 4 != 0 {
+    return None;
+  }
+  let total = rest.len() / 4;
+  if total % count != 0 {
+    return None;
+  }
+  let dim = total / count;
+  let vals: Vec<f32> = rest
+    .chunks_exact(4)
+    .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+    .collect();
+  Some(
+    vals
+      .chunks(dim)
+      .map(|c| c.to_vec())
+      .collect::<Vec<Vec<f32>>>(),
+  )
 }
 
 /// Similaridade de cosseno entre dois vetores normalizados.
@@ -188,8 +259,18 @@ mod tests {
 
   #[test]
   fn cosine_orthogonal_is_zero() {
-    let a = vec![1.0, 0.0];
-    let b = vec![0.0, 1.0];
+    let a = vec![0.0, 1.0];
+    let b = vec![1.0, 0.0];
     assert!(cosine(&a, &b).abs() < 1e-4);
+  }
+
+  #[test]
+  fn embedding_blob_roundtrip() {
+    let embs = vec![vec![0.1f32, -0.2, 0.3], vec![1.0, 2.0, -3.0]];
+    let blob = serialize_embeddings(&embs);
+    let parsed = parse_embeddings(&blob).unwrap();
+    assert_eq!(parsed, embs);
+    assert!(parse_embeddings(&blob[..6]).is_none()); // truncado
+    assert!(parse_embeddings(&[]).is_none());
   }
 }

@@ -30,9 +30,13 @@ Benchmark completo e método de reprodução: `docs/TESTES/METRICAS-BASELINE.md`
 - [ ] **G1 — Import**: 15,6 s/foto com arquivos em iCloud Drive (~2 h para 459 fotos).
   Paralelizar scan (rayon); detectar placeholders `.icloud` e avisar/baixar antes;
   SHA-256 lazy (após import, em background).
-- [ ] **G2 — Face grouping**: 59 s/foto (59 min para 60 fotos — inviável).
-  Paralelizar com rayon; decodificar direto no tamanho do modelo (evitar decode
-  full-res); cachear embeddings no catálogo (coluna `face_embedding` BLOB).
+- [x] **G2 — Face grouping**: ✅ **Feito (2026-08-25, Windows)**: `group_by_similarity`
+  paralelizado com rayon (decode+letterbox em todos os cores; inferência segue
+  serializada pelo Mutex da sessão ONNX) + **cache persistente de embeddings** no
+  catálogo (`photos.face_embedding` BLOB, migração automática; formato
+  `[count u32][f32...]` — todos os rostos da foto). Execuções repetidas pulam
+  SCRFD+embedding das fotos já processadas. Sintético 20 fotos: 1,52 s → 0,30 s.
+  Ganho real depende de fotos COM rostos (o baseline de 59 s/foto era Mac+RAW).
 - [x] **G3 — Culling**: decodificar 1× em 640px e reusar nos 3 estágios. ✅ **Feito
   (2026-08-25, Windows)**: `cull_photos` agora faz decode único (`ml::load_rgb` 640)
   compartilhado por SCRFD + NIMA + heurística (nova `heuristic_score_rgb` em culling.rs,
