@@ -51,7 +51,9 @@ Labels (Red/Yellow/Green/Blue/Purple) já existem com menu de contexto no grid (
 - [ ] **Assinatura + notarização macOS** (Apple Developer ID) para instalar sem avisos de Gatekeeper.
 - [ ] **Auto-update** (electron-updater) com feed de releases do GitHub.
 - [ ] Release workflow: tag → build 3 plataformas → anexar instaladores na GitHub Release.
-- [ ] `npm run dist:win` / `dist:linux` scripts.
+- [x] `npm run dist:win` / `dist:linux` scripts. *(alinhado na higiene documental
+      de 2026-08-25: ambos já existem em `package.json`; execução validada até
+      agora só para Linux — ver `docs/AUDITORIA-LINUX.md §6`.)*
 
 ## 🟢 P6 — Qualidade & testes
 

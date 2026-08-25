@@ -104,8 +104,10 @@ paralela, labels de cor — integrados e validados (commit `c77a57d`).
   coluna `has_face` populada no culling (SCRFD).
 
 ## Auditoria referência externa (2026-08-18/20)
-- Documento de referência: `docs/AUDITORIA-referência externa.md` (mapa completo + gap
-  analysis com 15 itens priorizados). Implementados até agora:
+- Documento de referência: `docs/AUDITORIA-FUNCIONAL.md` *(referência corrigida
+  na higiene documental de 2026-08-25; antes citado como
+  `docs/AUDITORIA-referência externa.md`, arquivo inexistente no repo atual —
+  mesmo documento: mapa completo + gap analysis com 15 itens priorizados)*. Implementados até agora:
   ★1-5 por foto, filtros avançados (dropdown), detecção de duplicatas, loupe,
   flags, i18n, toolbar de culling.
 

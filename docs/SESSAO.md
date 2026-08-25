@@ -1,5 +1,16 @@
 # OpenShoot — Contexto de Sessão (para retomada após reinício)
 
+> ⚠️ **SNAPSHOT HISTÓRICO** — este documento registra o estado das sessões de
+> 2026-08-18 a 2026-08-24 e foi **preservado verbatim** como registro histórico
+> (banner adicionado na higiene documental de 2026-08-25; nenhum fato foi
+> reescrito). Caminhos locais, contagens de testes e referências a commits
+> refletem o momento de cada sessão e podem não corresponder ao estado atual.
+> **Para o estado corrente, usar:** `docs/ROADMAP.md` (pendências),
+> `docs/PROGRESSO.md` (consolidado), `docs/MULTIPLATAFORMA.md` (portabilidade)
+> e `AGENTS.md` (visão geral). Alguns caminhos citados abaixo (ex.: `~/OpenShoot`,
+> commits `229d8b6`–`b025000`, `9776371`) pertencem a máquinas/histórico
+> anteriores ao re-baselinamento local (`2752c48`) e não são resolvíveis aqui.
+
 > Este documento é o **ponto de retomada**. Leia primeiro antes de continuar
 > qualquer trabalho. Complementa `DESIGN.md` (arquitetura) e `PROGRESSO.md`
 > (histórico técnico/detalhes).

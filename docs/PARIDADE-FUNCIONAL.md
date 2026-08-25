@@ -3,7 +3,9 @@
 > **Objetivo:** deixar o OpenShoot com o mesmo conjunto de features/UX da referência externa
 > (v2.21.4, auditado em 2026-08-18/20). Cada item = feature da referência externa → plano de
 > implementação no OpenShoot, com prioridade e esforço.
-> **Fonte:** `docs/AUDITORIA-referência externa.md` (mapa completo + gap analysis).
+> **Fonte:** `docs/AUDITORIA-FUNCIONAL.md` *(referência corrigida na higiene
+> documental de 2026-08-25; antes citado como `docs/AUDITORIA-referência externa.md`,
+> arquivo inexistente no repo atual)* — mapa completo + gap analysis.
 > **Atualizado:** 2026-08-21
 
 **Legenda de status:** ✅ feito · 🟡 em andamento · ⬜ pendente
