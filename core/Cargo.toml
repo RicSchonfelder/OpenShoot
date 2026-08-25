@@ -38,6 +38,13 @@ ort = { version = "2.0.0-rc.13", features = ["directml"] }
 [build-dependencies]
 napi-build = "2"
 
+[features]
+# Opt-in: usa libonnxruntime.so/.dylib/.dll externa via ORT_DYLIB_PATH em vez
+# dos binários pré-compilados (estáticos). Útil para CPUs sem AVX2 e distros
+# com glibc antigo (< 2.38) — compile o ONNX Runtime do zero com baseline
+# x86-64 ou aponte para um build compatível. Ver docs/AUDITORIA-LINUX.md §4.
+ort-load-dynamic = ["ort/load-dynamic"]
+
 [dev-dependencies]
 tempfile = "3"
 anyhow = "1"
