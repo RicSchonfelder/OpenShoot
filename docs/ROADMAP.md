@@ -1,13 +1,14 @@
 # OpenShoot — Roadmap de Ações Pendentes
 
-> **Atualizado:** 2026-08-24 · Fonte única de tarefas pendentes (consolida PARIDADE-FUNCIONAL.md e sessões anteriores).
-> **Estado geral:** paridade funcional com a referência ~completa (álbuns, fluxo IMPORT→CULL→EDIT→RETOUCH, culling IA, edição completa, retoque, exportação, reconhecimento facial). 60 testes Rust, typecheck limpo, CI ativo.
+> **Atualizado:** 2026-08-25 · Fonte única de tarefas pendentes (consolida PARIDADE-FUNCIONAL.md e sessões anteriores).
+> **Estado geral:** paridade funcional com a referência ~completa. **P1 concluído** — app compila e roda em Windows (60 testes Rust, smoke test OK, culling IA via DirectML validado). Detalhes: docs/MULTIPLATAFORMA.md.
+> **Ambiente principal de desenvolvimento:** Windows 11 (`D:\Programas\OpenShoot`). O macOS foi desativado da rede.
 
 **Prioridades:** 🔴 alta · 🟡 média · 🟢 baixa
 
 ---
 
-## 🔴 P1 — Portabilidade multiplataforma (Windows / Linux)
+## ✅ P1 — Portabilidade multiplataforma (Windows / Linux) — CONCLUÍDO 2026-08-25
 
 > **CONCLUÍDA (2026-08-24)** — dois agentes em paralelo: **Linux**
 > (`docs/AUDITORIA-LINUX.md`, validado em Ubuntu 24.04 + regressão macOS) e
@@ -39,7 +40,7 @@ Benchmark completo e método de reprodução: `docs/TESTES/METRICAS-BASELINE.md`
   (hoje usa limiar score≥70 → mostra 0 enquanto o filtro mostra 184; confunde o
   usuário com fotos escuras).
 
-## 🔴 P2 — Olhos fechados integrado ao culling
+## 🔴 P2 — Olhos fechados integrado ao culling (PRÓXIMA)
 
 As funções existem (`core/src/ml.rs`: `detect_faces_with_kps`, `eyes_open_score`) mas **não estão no fluxo**:
 
@@ -68,7 +69,7 @@ Labels (Red/Yellow/Green/Blue/Purple) já existem com menu de contexto no grid (
 - [ ] **Assinatura + notarização macOS** (Apple Developer ID) para instalar sem avisos de Gatekeeper.
 - [ ] **Auto-update** (electron-updater) com feed de releases do GitHub.
 - [ ] Release workflow: tag → build 3 plataformas → anexar instaladores na GitHub Release.
-- [ ] `npm run dist:win` / `dist:linux` scripts.
+- [x] `npm run dist:win` script (dist:linux ainda pendente).
 
 ## 🟢 P6 — Qualidade & testes
 
