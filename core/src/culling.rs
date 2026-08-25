@@ -17,6 +17,11 @@ fn to_gray_luma(path: &Path, target_height: u32) -> Result<(u32, u32, Vec<f32>),
       .decode()
       .map_err(|e| e.to_string())?,
   };
+  gray_luma_from(&img, target_height)
+}
+
+/// Cinza redimensionado a partir de uma imagem já decodificada (decode único no culling).
+fn gray_luma_from(img: &image::DynamicImage, target_height: u32) -> Result<(u32, u32, Vec<f32>), String> {
   let img = img.to_luma8();
   let (w, h) = img.dimensions();
   if h == 0 {
@@ -112,14 +117,32 @@ fn histogram_spread(gray: &[f32]) -> f64 {
 /// Pesos: nitidez 50%, exposição 25%, contraste 25%.
 pub fn heuristic_score(path: &Path, target_height: u32) -> Result<f64, String> {
   let (w, h, gray) = to_gray_luma(path, target_height)?;
-  let sharp = laplacian_variance(&gray, w, h);
-  let expo = exposure_score(&gray);
-  let spread = histogram_spread(&gray);
+  Ok(heuristic_from_gray(w, h, &gray))
+}
+
+/// Score composto a partir de um RGB já decodificado — evita re-decodificar
+/// o arquivo no culling (decode único, gap G3 do roadmap).
+pub fn heuristic_score_rgb(
+  rgb: &[u8],
+  width: u32,
+  height: u32,
+  target_height: u32,
+) -> Result<f64, String> {
+  let img = image::RgbImage::from_raw(width, height, rgb.to_vec())
+    .ok_or_else(|| "dimensões incompatíveis com o buffer".to_string())?;
+  let (w, h, gray) = gray_luma_from(&image::DynamicImage::ImageRgb8(img), target_height)?;
+  Ok(heuristic_from_gray(w, h, &gray))
+}
+
+fn heuristic_from_gray(w: u32, h: u32, gray: &[f32]) -> f64 {
+  let sharp = laplacian_variance(gray, w, h);
+  let expo = exposure_score(gray);
+  let spread = histogram_spread(gray);
 
   // Laplacian variance escala com o tamanho; normalizamos por um teto empírico.
   let sharp_norm = (sharp / 1200.0).min(1.0);
   let score = sharp_norm * 50.0 + expo * 25.0 + spread * 25.0;
-  Ok(score.max(0.0).min(100.0))
+  score.max(0.0).min(100.0)
 }
 
 /// Score de nitidez puro (para mostrar no UI).

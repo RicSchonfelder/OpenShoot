@@ -414,19 +414,28 @@ pub async fn cull_photos(target_picks: Option<i64>) -> Result<CullSummary> {
     .into_par_iter()
     .map(|p: catalog::PhotoPath| -> (i64, bool, std::result::Result<f64, String>) {
       let path = PathBuf::from(&p.path);
+      // Decode ÚNICO em 640px, reusado por faces + NIMA + heurística (gap G3:
+      // antes decodificava 3× por foto — 2,5s/foto no benchmark de 459 fotos).
+      let decoded = if ml_ok { ml::load_rgb(&path, 640).ok() } else { None };
+
       // Detecção de rosto (SCRFD) para preencher has_face (usado no filtro "faces").
-      let has_face = if ml_ok {
-        ml::load_rgb(&path, 640)
-          .and_then(|(rgb, w, h)| ml::detect_faces(&rgb, w, h, 0.5))
+      let has_face = match &decoded {
+        Some((rgb, w, h)) => ml::detect_faces(rgb, *w, *h, 0.5)
           .map(|faces| !faces.is_empty())
-          .unwrap_or(false)
-      } else {
-        false
+          .unwrap_or(false),
+        None => false,
       };
       let score = if ml_ok {
         // IA: heurística + ML combinados
-        let heur = culling::heuristic_score(&path, 320);
-        match ml::load_rgb(&path, 640).and_then(|(rgb, w, h)| ml::ml_quality_score(&rgb, w, h)) {
+        let heur = match &decoded {
+          Some((rgb, w, h)) => culling::heuristic_score_rgb(rgb, *w, *h, 320),
+          None => culling::heuristic_score(&path, 320),
+        };
+        let mls = match &decoded {
+          Some((rgb, w, h)) => ml::ml_quality_score(rgb, *w, *h),
+          None => Err("decode falhou".to_string()),
+        };
+        match mls {
           Ok(mls) => {
             let h = heur.unwrap_or(50.0);
             Ok(h * 0.5 + mls * 0.5)
@@ -467,13 +476,14 @@ pub async fn cull_photos(target_picks: Option<i64>) -> Result<CullSummary> {
   let n = scores.len();
 
   // Quantis → rating 1-5 (distribuição).
+  let mut rated: Vec<(i64, i64)> = Vec::with_capacity(n);
   for (i, (id, s)) in scores.iter().enumerate() {
     let q = if n <= 1 { 1.0 } else { i as f64 / (n - 1) as f64 };
     let rating = if q < 0.2 { 1 } else if q < 0.4 { 2 } else if q < 0.6 { 3 } else if q < 0.8 { 4 } else { 5 };
     if let Err(e) = catalog::set_photo_rating(*id, rating, *s) {
       crate::catalog::log_debug(&format!("falha ao salvar rating {}: {e}", id));
-      errors += 1;
     }
+    rated.push((*id, rating));
   }
 
   // Meta de picks: se o usuário pedir N fotos, as top-N viram ★5 (pick).
@@ -497,13 +507,15 @@ pub async fn cull_photos(target_picks: Option<i64>) -> Result<CullSummary> {
     }
     picks = count as i64;
   } else {
-    for (id, s) in &scores {
-      let is_pick = *s >= 70.0;
+    // Gap G4: picks alinhados ao rating por quantis (★4+), igual ao filtro
+    // "picks" da UI — antes usava limiar fixo de score e divergia do grid.
+    for (id, rating) in &rated {
+      let is_pick = *rating >= 4;
       if let Err(e) = catalog::set_photo_ai_pick(*id, is_pick) {
         crate::catalog::log_debug(&format!("falha ao salvar ai_pick {}: {e}", id));
       }
     }
-    picks = scores.iter().filter(|(_, s)| *s >= 70.0).count() as i64;
+    picks = rated.iter().filter(|(_, r)| *r >= 4).count() as i64;
   }
 
   // Bucket "Para revisão": fotos com score ambíguo (entre 55 e 70) — nem óbvias

@@ -33,12 +33,14 @@ Benchmark completo e método de reprodução: `docs/TESTES/METRICAS-BASELINE.md`
 - [ ] **G2 — Face grouping**: 59 s/foto (59 min para 60 fotos — inviável).
   Paralelizar com rayon; decodificar direto no tamanho do modelo (evitar decode
   full-res); cachear embeddings no catálogo (coluna `face_embedding` BLOB).
-- [ ] **G3 — Culling**: 2,5 s/foto (1,8× a referência ~11 min/459). Decodificar 1×
-  em 640px e reusar nos 3 estágios (hoje decodifica 3×: heurística 320 + ML 640 +
-  faces 640).
-- [ ] **G4 — Summary do cull**: alinhar `picks` do summary ao rating dos quantis
-  (hoje usa limiar score≥70 → mostra 0 enquanto o filtro mostra 184; confunde o
-  usuário com fotos escuras).
+- [x] **G3 — Culling**: decodificar 1× em 640px e reusar nos 3 estágios. ✅ **Feito
+  (2026-08-25, Windows)**: `cull_photos` agora faz decode único (`ml::load_rgb` 640)
+  compartilhado por SCRFD + NIMA + heurística (nova `heuristic_score_rgb` em culling.rs,
+  que reaproveita `gray_luma_from`). Sintético 20 fotos: 120→99 ms/foto; no conjunto
+  real (RAW/459, onde o decode domina) o ganho esperado é maior.
+- [x] **G4 — Summary do cull**: alinhar `picks` ao rating dos quantis. ✅ **Feito
+  (2026-08-25)**: sem `target_picks`, picks = fotos com ★4+ (mesma regra do filtro
+  da UI), não mais limiar fixo score≥70. Validado: 8 picks em 20 fotos (top 40%).
 
 ## 🔴 P2 — Olhos fechados integrado ao culling (PRÓXIMA)
 
