@@ -22,6 +22,23 @@
 - [x] **CI com matriz**: `cargo test` em macos+ubuntu+windows (+ deps Linux); typecheck; clippy ubuntu. *(pendente: upload de instaladores — P5)*
 - [ ] Testar build do core nos 3 targets napi: `x86_64-pc-windows-msvc` ✓ (agente Windows) · `x86_64-unknown-linux-gnu` ✓ (agente Linux) · `aarch64-unknown-linux-gnu` ⬜ pendente.
 
+## 🔴 P1.5 — Performance (gaps medidos com 459 fotos reais)
+
+Benchmark completo e método de reprodução: `docs/TESTES/METRICAS-BASELINE.md`.
+
+- [ ] **G1 — Import**: 15,6 s/foto com arquivos em iCloud Drive (~2 h para 459 fotos).
+  Paralelizar scan (rayon); detectar placeholders `.icloud` e avisar/baixar antes;
+  SHA-256 lazy (após import, em background).
+- [ ] **G2 — Face grouping**: 59 s/foto (59 min para 60 fotos — inviável).
+  Paralelizar com rayon; decodificar direto no tamanho do modelo (evitar decode
+  full-res); cachear embeddings no catálogo (coluna `face_embedding` BLOB).
+- [ ] **G3 — Culling**: 2,5 s/foto (1,8× a referência ~11 min/459). Decodificar 1×
+  em 640px e reusar nos 3 estágios (hoje decodifica 3×: heurística 320 + ML 640 +
+  faces 640).
+- [ ] **G4 — Summary do cull**: alinhar `picks` do summary ao rating dos quantis
+  (hoje usa limiar score≥70 → mostra 0 enquanto o filtro mostra 184; confunde o
+  usuário com fotos escuras).
+
 ## 🔴 P2 — Olhos fechados integrado ao culling
 
 As funções existem (`core/src/ml.rs`: `detect_faces_with_kps`, `eyes_open_score`) mas **não estão no fluxo**:
