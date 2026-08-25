@@ -1,0 +1,32 @@
+# Node
+node_modules/
+dist/
+out/
+*.log
+npm-debug.log*
+
+# Rust
+target/
+
+# Empacotamento (electron-builder) — binários grandes, não commitar
+release/
+*.dmg
+*.zip
+
+# TypeScript
+*.tsbuildinfo
+
+# Core .node binaries (built locally per platform)
+core/*.node
+
+# macOS
+.DS_Store
+
+# Env / secrets — NEVER commit
+.env
+.env.*
+!.env.example
+
+# Editor
+.vscode/
+.idea/
