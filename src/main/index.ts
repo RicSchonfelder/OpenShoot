@@ -454,14 +454,11 @@ app.whenReady().then(() => {
   })
   ipcMain.handle(
     'core:scanFolderProgress',
-    async (
-      _event,
-      dir: string,
-      includeSubdirs: boolean,
-      types: string,
-      onProgress: (p: any) => void
-    ) => {
+    async (event, dir: string, includeSubdirs: boolean, types: string) => {
       try {
+        // Callbacks não atravessam ipcRenderer.invoke (structured clone).
+        // Progresso vai por evento no canal dedicado.
+        const onProgress = (p: any) => event.sender.send('core:scanProgress', p)
         return await getCore().scanFolderProgress(dir, includeSubdirs, types, onProgress)
       } catch (e) {
         return JSON.stringify({ error: String(e), scanned: 0, added: 0, updated: 0 })

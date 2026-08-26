@@ -135,8 +135,16 @@ const api = {
     includeSubdirs: boolean,
     types: string,
     onProgress: (p: { processed: number; total: number; currentFile: string }) => void
-  ): Promise<string> =>
-    ipcRenderer.invoke('core:scanFolderProgress', dir, includeSubdirs, types, onProgress),
+  ): Promise<string> => {
+    // Callbacks não atravessam invoke (structured clone) — progresso via evento.
+    const ch = 'core:scanProgress'
+    const listener = (_e: Electron.IpcRendererEvent, p: { processed: number; total: number; currentFile: string }) =>
+      onProgress(p)
+    ipcRenderer.on(ch, listener)
+    return ipcRenderer
+      .invoke('core:scanFolderProgress', dir, includeSubdirs, types)
+      .finally(() => ipcRenderer.removeListener(ch, listener)) as Promise<string>
+  },
   clearThumbCache: (): Promise<number> => ipcRenderer.invoke('core:clearThumbCache'),
   // Pessoas (agrupamento facial)
   groupBySimilarity: (
