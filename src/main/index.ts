@@ -679,12 +679,12 @@ app.whenReady().then(() => {
     }
   })
   ipcMain.handle(
-    'core:exportUp scaled',
+    'core:exportUpscaled',
     async (event, ids: number[], destDir: string, model?: string, scale?: number, format?: string, quality?: number) => {
       try {
         // Callback de progresso não cruza invoke (structured clone) — vai por evento.
         const onProgress = (p: any) => event.sender.send('core:upscaleProgress', p)
-        return await (getCore() as any).exportUp scaled(
+        return await (getCore() as any).exportUpscaled(
           ids,
           destDir,
           model,

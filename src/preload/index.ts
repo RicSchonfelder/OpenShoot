@@ -165,7 +165,7 @@ const api = {
     ipcRenderer.invoke('core:upscaleAvailable', model),
   upscalePhoto: (id: number, model?: string, scale?: number, maxDim?: number): Promise<string | null> =>
     ipcRenderer.invoke('core:upscalePhoto', id, model, scale, maxDim),
-  exportUp scaled: (
+  exportUpscaled: (
     ids: number[],
     destDir: string,
     model: string | undefined,
@@ -179,7 +179,7 @@ const api = {
       onProgress(p)
     ipcRenderer.on(ch, listener)
     return ipcRenderer
-      .invoke('core:exportUp scaled', ids, destDir, model, scale, format, quality)
+      .invoke('core:exportUpscaled', ids, destDir, model, scale, format, quality)
       .finally(() => ipcRenderer.removeListener(ch, listener)) as Promise<string>
   },
   // Pessoas (agrupamento facial)
