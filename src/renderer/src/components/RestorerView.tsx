@@ -53,6 +53,7 @@ export default function RestorerView({ onBack, photoIds }: RestorerViewProps) {
   const beforeViewportRef = useRef<HTMLDivElement | null>(null)
   const afterViewportRef = useRef<HTMLDivElement | null>(null)
   const panStateRef = useRef<{ source: 'before' | 'after'; x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null)
+  const splitDraggingRef = useRef(false)
 
   const photo = useMemo(() => photos.find((item) => item.id === photoId) ?? null, [photos, photoId])
 
@@ -219,6 +220,29 @@ export default function RestorerView({ onBack, photoIds }: RestorerViewProps) {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
     panStateRef.current = null
     setPanningViewport(null)
+  }
+
+  const setSplitFromPointer = (event: React.PointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    setSplitPosition(Math.min(100, Math.max(0, ((event.clientX - rect.left) / rect.width) * 100)))
+  }
+
+  const startSplitDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    splitDraggingRef.current = true
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setSplitFromPointer(event)
+  }
+
+  const moveSplitDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!splitDraggingRef.current || !event.currentTarget.hasPointerCapture(event.pointerId)) return
+    event.preventDefault()
+    setSplitFromPointer(event)
+  }
+
+  const stopSplitDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    splitDraggingRef.current = false
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
   }
 
   const cloudPrompt = `Restore and enhance this photograph while preserving the original image, people, environment, composition, and moment exactly as captured.
@@ -445,9 +469,9 @@ Use structural references such as stage edges, table lines, walls, floors and ar
           <div className={`restorer-images comparison-${comparisonMode}`} onWheel={(event) => { event.preventDefault(); setZoom((current) => Math.min(3, Math.max(0.5, current * Math.exp(-event.deltaY * 0.0015)))) }}>
             {comparisonMode === 'slider' ? <div className="restorer-slider-comparison">
               <span>Comparação deslizante</span>
-              <div className="restorer-slider-viewport" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); const rect = event.currentTarget.getBoundingClientRect(); setSplitPosition(Math.min(100, Math.max(0, ((event.clientX - rect.left) / rect.width) * 100))) }} onPointerMove={(event) => { if (event.buttons === 1) { const rect = event.currentTarget.getBoundingClientRect(); setSplitPosition(Math.min(100, Math.max(0, ((event.clientX - rect.left) / rect.width) * 100))) } }}>
-                {original && <img className="restorer-slider-before" src={original} alt="Original" style={{ transform: `scale(${zoom})` }} />}
-                {preview && <img className="restorer-slider-after" src={preview} alt="Restaurada" style={{ clipPath: `inset(0 ${100 - splitPosition}% 0 0)`, transform: `scale(${zoom})` }} />}
+              <div className="restorer-slider-viewport" onPointerDown={startSplitDrag} onPointerMove={moveSplitDrag} onPointerUp={stopSplitDrag} onPointerCancel={stopSplitDrag}>
+                {original && <img className="restorer-slider-before" src={original} alt="Original" draggable={false} style={{ transform: `scale(${zoom})` }} />}
+                {preview && <img className="restorer-slider-after" src={preview} alt="Restaurada" draggable={false} style={{ clipPath: `inset(0 ${100 - splitPosition}% 0 0)`, transform: `scale(${zoom})` }} />}
                 <div className="restorer-slider-handle" style={{ left: `${splitPosition}%` }}><span>↔</span></div>
               </div>
             </div> : <>
