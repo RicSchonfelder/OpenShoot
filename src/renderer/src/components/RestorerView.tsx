@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PhotoMeta } from '../../../types/photo'
-import { useRef } from 'react'
 
 type Operation = 'sharpen' | 'denoise' | 'exposure' | 'color' | 'horizon'
 type ProcessStatus = 'idle' | 'processing' | 'done' | 'error'
@@ -203,6 +202,8 @@ export default function RestorerView({ onBack, photoIds }: RestorerViewProps) {
   }
 
   const startPan = (source: 'before' | 'after', event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || zoom <= 1) return
+    event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
     panStateRef.current = { source, x: event.clientX, y: event.clientY, scrollLeft: event.currentTarget.scrollLeft, scrollTop: event.currentTarget.scrollTop }
     setPanningViewport(source)
@@ -243,6 +244,25 @@ export default function RestorerView({ onBack, photoIds }: RestorerViewProps) {
   const stopSplitDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     splitDraggingRef.current = false
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+  }
+
+  const handleWheel = (source: 'before' | 'after', event: React.WheelEvent<HTMLDivElement>) => {
+    const viewport = event.currentTarget
+    const oldZoom = zoom
+    const nextZoom = Math.min(3, Math.max(0.5, oldZoom * Math.exp(-event.deltaY * 0.0015)))
+    if (nextZoom === oldZoom) return
+    event.preventDefault()
+    const rect = viewport.getBoundingClientRect()
+    const localX = event.clientX - rect.left
+    const localY = event.clientY - rect.top
+    const imageX = (viewport.scrollLeft + localX) / oldZoom
+    const imageY = (viewport.scrollTop + localY) / oldZoom
+    setZoom(nextZoom)
+    requestAnimationFrame(() => {
+      viewport.scrollLeft = Math.max(0, imageX * nextZoom - localX)
+      viewport.scrollTop = Math.max(0, imageY * nextZoom - localY)
+      syncViewport(source)
+    })
   }
 
   const cloudPrompt = `Restore and enhance this photograph while preserving the original image, people, environment, composition, and moment exactly as captured.
@@ -466,7 +486,7 @@ Use structural references such as stage edges, table lines, walls, floors and ar
               <button onClick={() => setZoom(1)}>1:1</button>
             </div>
           </div>
-          <div className={`restorer-images comparison-${comparisonMode}`} onWheel={(event) => { event.preventDefault(); setZoom((current) => Math.min(3, Math.max(0.5, current * Math.exp(-event.deltaY * 0.0015)))) }}>
+          <div className={`restorer-images comparison-${comparisonMode}`}>
             {comparisonMode === 'slider' ? <div className="restorer-slider-comparison">
               <span>Comparação deslizante</span>
               <div className="restorer-slider-viewport" onPointerDown={startSplitDrag} onPointerMove={moveSplitDrag} onPointerUp={stopSplitDrag} onPointerCancel={stopSplitDrag}>
@@ -475,8 +495,8 @@ Use structural references such as stage edges, table lines, walls, floors and ar
                 <div className="restorer-slider-handle" style={{ left: `${splitPosition}%` }}><span>↔</span></div>
               </div>
             </div> : <>
-            {comparisonMode !== 'after' && <div><span>Antes · original</span>{originalLoading ? <div className="restorer-empty"><span className="restorer-spinner" /> Carregando original…</div> : original ? <div ref={beforeViewportRef} className={`restorer-image-viewport ${panningViewport === 'before' ? 'is-panning' : ''}`} onScroll={() => syncViewport('before')} onPointerDown={(event) => startPan('before', event)} onPointerMove={movePan} onPointerUp={stopPan} onPointerCancel={stopPan}><img src={original} alt="Original" style={{ transform: `scale(${zoom})` }} /></div> : <div className="restorer-empty">Selecione uma foto</div>}</div>}
-            {comparisonMode !== 'before' && <div><span>Depois · restaurada</span>{preview ? <div ref={afterViewportRef} className={`restorer-image-viewport ${panningViewport === 'after' ? 'is-panning' : ''}`} onScroll={() => syncViewport('after')} onPointerDown={(event) => startPan('after', event)} onPointerMove={movePan} onPointerUp={stopPan} onPointerCancel={stopPan}><img src={preview} alt="Prévia restaurada" style={{ transform: `scale(${zoom})` }} /></div> : <div className="restorer-empty">Restaure para comparar</div>}</div>}
+            {comparisonMode !== 'after' && <div><span>Antes · original</span>{originalLoading ? <div className="restorer-empty"><span className="restorer-spinner" /> Carregando original…</div> : original ? <div ref={beforeViewportRef} className={`restorer-image-viewport ${panningViewport === 'before' ? 'is-panning' : ''}`} onWheel={(event) => handleWheel('before', event)} onScroll={() => syncViewport('before')} onPointerDown={(event) => startPan('before', event)} onPointerMove={movePan} onPointerUp={stopPan} onPointerCancel={stopPan}><img src={original} alt="Original" style={{ width: `${zoom * 100}%`, height: `${zoom * 100}%` }} /></div> : <div className="restorer-empty">Selecione uma foto</div>}</div>}
+            {comparisonMode !== 'before' && <div><span>Depois · restaurada</span>{preview ? <div ref={afterViewportRef} className={`restorer-image-viewport ${panningViewport === 'after' ? 'is-panning' : ''}`} onWheel={(event) => handleWheel('after', event)} onScroll={() => syncViewport('after')} onPointerDown={(event) => startPan('after', event)} onPointerMove={movePan} onPointerUp={stopPan} onPointerCancel={stopPan}><img src={preview} alt="Prévia restaurada" style={{ width: `${zoom * 100}%`, height: `${zoom * 100}%` }} /></div> : <div className="restorer-empty">Restaure para comparar</div>}</div>}
             </>}
           </div>
           <div className="restorer-filmstrip">

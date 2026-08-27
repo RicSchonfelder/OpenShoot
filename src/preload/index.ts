@@ -7,6 +7,7 @@ export interface PersonGroup {
   person_id: number
   count: number
   sample_path: string
+  sample_face?: [number, number, number, number] | null
   photo_ids: number[]
   photo_paths: string[]
 }
@@ -86,8 +87,8 @@ const api = {
   createWebGallery: (ids: number[], destDir: string, title: string): Promise<{ ok: boolean; path?: string; count?: number; error?: string }> =>
     ipcRenderer.invoke('core:createWebGallery', ids, destDir, title),
   // Fase 2
-  cullPhotos: (targetPicks?: number): Promise<{ processed: number; errors: number; avgScore: number; picks: number; review: number }> =>
-    ipcRenderer.invoke('core:cullPhotos', targetPicks),
+  cullPhotos: (targetPicks?: number, photoIds?: number[]): Promise<{ processed: number; errors: number; avgScore: number; picks: number; review: number }> =>
+    ipcRenderer.invoke('core:cullPhotos', targetPicks, photoIds),
   writeXmpForPhoto: (id: number): Promise<string> =>
     ipcRenderer.invoke('core:writeXmpForPhoto', id),
   exportAllXmp: (): Promise<{ exported: number; errors: number; total: number }> =>
@@ -121,8 +122,8 @@ const api = {
     ipcRenderer.invoke('core:removePhotoFromCatalog', id),
   findDuplicates: (): Promise<Array<{ hash: string; photo_ids: number[]; photo_names: string[]; photo_paths: string[] }>> =>
     ipcRenderer.invoke('core:findDuplicates'),
-  filterCounts: (): Promise<{ all: number; picks: number; rejects: number; unrated: number; review: number; destaques: number; selecionado: number; duplicates: number; faces: number; edited: number } | null> =>
-    ipcRenderer.invoke('core:filterCounts'),
+  filterCounts: (photoIds?: number[]): Promise<{ all: number; picks: number; rejects: number; unrated: number; review: number; destaques: number; selecionado: number; duplicates: number; faces: number; edited: number } | null> =>
+    ipcRenderer.invoke('core:filterCounts', photoIds),
   savePreset: (name: string, recipe: string): Promise<boolean> =>
     ipcRenderer.invoke('core:savePreset', name, recipe),
   savePresetFull: (
@@ -185,11 +186,12 @@ const api = {
   },
   // Pessoas (agrupamento facial)
   groupBySimilarity: (
-    threshold?: number
+    threshold?: number,
+    photoIds?: number[]
   ): Promise<PersonGroup[] | { groups?: PersonGroup[] } | { error: string }> =>
-    ipcRenderer.invoke('core:groupBySimilarity', threshold),
-  exportPeopleToFolders: (outDir: string, threshold?: number): Promise<PeopleExportResult> =>
-    ipcRenderer.invoke('core:exportPeopleToFolders', outDir, threshold),
+    ipcRenderer.invoke('core:groupBySimilarity', threshold, photoIds),
+  exportPeopleToFolders: (outDir: string, threshold?: number, photoIds?: number[]): Promise<PeopleExportResult> =>
+    ipcRenderer.invoke('core:exportPeopleToFolders', outDir, threshold, photoIds),
   // Labels de cor (agent-10)
   setPhotoLabel: (id: number, label: string): Promise<void> =>
     ipcRenderer.invoke('core:setPhotoLabel', id, label),

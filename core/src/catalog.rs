@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::{params_from_iter, Connection, OptionalExtension};
 
 use crate::types::{DuplicateGroup, PhotoList, PhotoMeta, ScanResult};
 
@@ -482,6 +482,26 @@ pub fn all_photo_paths() -> Result<Vec<PhotoPath>, String> {
   Ok(out)
 }
 
+/// Caminhos de um conjunto explícito de fotos, preservando o escopo do álbum.
+pub fn photo_paths_for_ids(ids: &[i64]) -> Result<Vec<PhotoPath>, String> {
+  if ids.is_empty() {
+    return Ok(Vec::new());
+  }
+  let conn = open()?;
+  let placeholders = std::iter::repeat("?").take(ids.len()).collect::<Vec<_>>().join(",");
+  let sql = format!("SELECT id, path FROM photos WHERE id IN ({placeholders})");
+  let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+  let rows = stmt
+    .query_map(params_from_iter(ids.iter()), |r| {
+      Ok(PhotoPath {
+        id: r.get(0)?,
+        path: r.get(1)?,
+      })
+    })
+    .map_err(|e| e.to_string())?;
+  rows.map(|r| r.map_err(|e| e.to_string())).collect()
+}
+
 /// Persiste o rating (0-5) e o score bruto de uma foto.
 pub fn set_photo_rating(id: i64, rating: i64, cull_score: f64) -> Result<(), String> {
   let conn = open()?;
@@ -570,25 +590,37 @@ pub fn set_session_type_for_path(path_prefix: &str, session_type: &str) -> Resul
 }
 
 /// Contagens por bucket (para painel de filtros com números vivos).
-pub fn filter_counts() -> Result<crate::types::FilterCounts, String> {  let conn = open()?;
+pub fn filter_counts(photo_ids: Option<&[i64]>) -> Result<crate::types::FilterCounts, String> {
+  let conn = open()?;
+  let scope = if let Some(ids) = photo_ids {
+    conn.execute("CREATE TEMP TABLE IF NOT EXISTS openshoot_scope_ids (id INTEGER PRIMARY KEY)", [])
+      .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM openshoot_scope_ids", [])
+      .map_err(|e| e.to_string())?;
+    for id in ids {
+      conn.execute("INSERT OR IGNORE INTO openshoot_scope_ids (id) VALUES (?1)", rusqlite::params![id])
+        .map_err(|e| e.to_string())?;
+    }
+    "id IN (SELECT id FROM openshoot_scope_ids)"
+  } else {
+    "1=1"
+  };
   let one = |sql: &str| -> Result<i64, String> {
     conn
       .query_row(sql, [], |r| r.get::<_, i64>(0))
       .map_err(|e| e.to_string())
   };
   Ok(crate::types::FilterCounts {
-    all: one("SELECT COUNT(*) FROM photos")?,
-    picks: one("SELECT COUNT(*) FROM photos WHERE rating >= 4")?,
-    rejects: one("SELECT COUNT(*) FROM photos WHERE rating >= 1 AND rating <= 2")?,
-    unrated: one("SELECT COUNT(*) FROM photos WHERE rating = 0")?,
-    review: one("SELECT COUNT(*) FROM photos WHERE review = 1")?,
-    destaques: one("SELECT COUNT(*) FROM photos WHERE ai_pick = 1")?,
-    selecionado: one("SELECT COUNT(*) FROM photos WHERE rating >= 4 AND ai_pick = 0")?,
-    duplicates: one(
-      "SELECT COUNT(*) FROM photos WHERE sha256 IN (SELECT sha256 FROM photos WHERE sha256 <> '' GROUP BY sha256 HAVING COUNT(*) > 1)",
-    )?,
-    faces: one("SELECT COUNT(*) FROM photos WHERE has_face = 1")?,
-    edited: one("SELECT COUNT(*) FROM photos WHERE edit_json IS NOT NULL AND edit_json <> ''")?,
+    all: one(&format!("SELECT COUNT(*) FROM photos WHERE {scope}"))?,
+    picks: one(&format!("SELECT COUNT(*) FROM photos WHERE {scope} AND rating >= 4"))?,
+    rejects: one(&format!("SELECT COUNT(*) FROM photos WHERE {scope} AND rating >= 1 AND rating <= 2"))?,
+    unrated: one(&format!("SELECT COUNT(*) FROM photos WHERE {scope} AND rating = 0"))?,
+    review: one(&format!("SELECT COUNT(*) FROM photos WHERE {scope} AND review = 1"))?,
+    destaques: one(&format!("SELECT COUNT(*) FROM photos WHERE {scope} AND ai_pick = 1"))?,
+    selecionado: one(&format!("SELECT COUNT(*) FROM photos WHERE {scope} AND rating >= 4 AND ai_pick = 0"))?,
+    duplicates: one(&format!("SELECT COUNT(*) FROM photos WHERE {scope} AND sha256 IN (SELECT sha256 FROM photos WHERE {scope} AND sha256 <> '' GROUP BY sha256 HAVING COUNT(*) > 1)"))?,
+    faces: one(&format!("SELECT COUNT(*) FROM photos WHERE {scope} AND has_face = 1"))?,
+    edited: one(&format!("SELECT COUNT(*) FROM photos WHERE {scope} AND edit_json IS NOT NULL AND edit_json <> ''"))?,
   })
 }
 

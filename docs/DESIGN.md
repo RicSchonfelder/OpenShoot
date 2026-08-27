@@ -113,6 +113,20 @@ OpenShoot/
 | Upscale/denoise | Real-ESRGAN x2/x4 (ONNX) | .onnx | Fase 5, opcional |
 | Inpainting (remover objeto) | LaMa | .onnx | Fase 5, opcional |
 
+### Agrupamento de pessoas
+
+`PeopleView` exibe uma capa por grupo facial. O core retorna, além da foto de
+amostra, a caixa da face que corresponde ao embedding representativo do grupo
+(`sample_face`, em coordenadas normalizadas). A UI usa esse enquadramento para
+ampliar o rosto correto mesmo quando a foto contém várias pessoas; não deve
+escolher simplesmente a maior face da imagem.
+Quando aberta dentro de um álbum, a lista de IDs do álbum é enviada pelo IPC e
+é usada tanto no agrupamento quanto na exportação; sem álbum aberto, o catálogo
+completo continua sendo o escopo padrão.
+
+O culling e os contadores do painel também recebem esse escopo. Assim, as
+quantidades e as marcações de seleção não misturam fotos de outros álbuns.
+
 > Modelos até ~100 MB baixados sob demanda (CRCs verificados) em `core/models/` — nunca viajar no repo.
 
 ---
@@ -163,6 +177,8 @@ ela tem precedência sobre a chave criptografada e nunca é persistida pelo app.
 
 O preview da bancada mantém o mesmo zoom para original e resultado, aceita
 zoom pela roda do mouse e oferece comparação deslizante com divisor arrastável.
+O modo de edição do álbum oferece os modos original, modificada, lado a lado e
+comparação deslizante, com fallback para a foto original quando não há edição.
 
 ### Fase 0 — Esqueleto (fundação)
 - [ ] Workspace electron-forge + crate Rust, napi-rs integrado

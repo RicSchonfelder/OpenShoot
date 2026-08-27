@@ -100,8 +100,8 @@ pub fn find_duplicates() -> Result<Vec<DuplicateGroup>> {
 
 /// Contagens por bucket (painel de filtros com números vivos).
 #[napi]
-pub fn filter_counts() -> Result<FilterCounts> {
-  catalog::filter_counts().map_err(|e| Error::from_reason(e))
+pub fn filter_counts(photo_ids: Option<Vec<i64>>) -> Result<FilterCounts> {
+  catalog::filter_counts(photo_ids.as_deref()).map_err(|e| Error::from_reason(e))
 }
 
 // ---- Presets de edição ----
@@ -292,8 +292,15 @@ pub async fn subject_mask_photo(
 /// Agrupa fotos por pessoa (similaridade facial via MobileFaceNet).
 /// Retorna JSON { ok, groups: [{person_id, count, sample_path, photo_ids, photo_paths}] }.
 #[napi]
-pub async fn group_by_similarity_async(threshold: Option<f64>) -> Result<serde_json::Value> {
-  let paths = match catalog::all_photo_paths() {
+pub async fn group_by_similarity_async(
+  threshold: Option<f64>,
+  photo_ids: Option<Vec<i64>>,
+) -> Result<serde_json::Value> {
+  let paths_result = match photo_ids.as_deref() {
+    Some(ids) => catalog::photo_paths_for_ids(ids),
+    None => catalog::all_photo_paths(),
+  };
+  let paths = match paths_result {
     Ok(p) => p,
     Err(e) => return Err(Error::from_reason(e)),
   };
@@ -314,8 +321,13 @@ pub async fn group_by_similarity_async(threshold: Option<f64>) -> Result<serde_j
 pub async fn export_people_to_folders(
   out_dir: String,
   threshold: Option<f64>,
+  photo_ids: Option<Vec<i64>>,
 ) -> Result<serde_json::Value> {
-  let paths = match catalog::all_photo_paths() {
+  let paths_result = match photo_ids.as_deref() {
+    Some(ids) => catalog::photo_paths_for_ids(ids),
+    None => catalog::all_photo_paths(),
+  };
+  let paths = match paths_result {
     Ok(p) => p,
     Err(e) => return Err(Error::from_reason(e)),
   };
@@ -399,8 +411,12 @@ pub struct CullSummary {
   pub review: i64,
 }
 #[napi]
-pub async fn cull_photos(target_picks: Option<i64>) -> Result<CullSummary> {
-  let paths = match catalog::all_photo_paths() {
+pub async fn cull_photos(target_picks: Option<i64>, photo_ids: Option<Vec<i64>>) -> Result<CullSummary> {
+  let paths_result = match photo_ids.as_deref() {
+    Some(ids) => catalog::photo_paths_for_ids(ids),
+    None => catalog::all_photo_paths(),
+  };
+  let paths = match paths_result {
     Ok(p) => p,
     Err(e) => return Err(Error::from_reason(e)),
   };

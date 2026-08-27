@@ -48,7 +48,7 @@ declare module '*.node' {
   export function photoCount(): number
   export function thumbForPhoto(id: number, maxDim: number): Promise<string | null>
   export function thumbForPath(path: string, maxDim: number): Promise<string | null>
-  export function cullPhotos(targetPicks?: number): Promise<NativeCullSummary>
+  export function cullPhotos(targetPicks?: number, photoIds?: number[] | null): Promise<NativeCullSummary>
   export function writeXmpForPhoto(id: number): string
   export function exportAllXmp(): { exported: number; errors: number; total: number }
   export function detectFacesInPath(path: string): unknown
@@ -65,7 +65,7 @@ declare module '*.node' {
   export function deletePhoto(id: number): boolean
   export function removePhotoFromCatalog(id: number): boolean
   export function findDuplicates(): Array<{ hash: string; photo_ids: number[]; photo_names: string[]; photo_paths: string[] }>
-  export function filterCounts(): { all: number; picks: number; rejects: number; unrated: number; review: number; destaques: number; selecionado: number; duplicates: number; faces: number; edited: number }
+  export function filterCounts(photoIds?: number[] | null): { all: number; picks: number; rejects: number; unrated: number; review: number; destaques: number; selecionado: number; duplicates: number; faces: number; edited: number }
   export function savePreset(name: string, recipe: string): void
   export function savePresetFull(name: string, recipe: string, fileType: string, colorType: string, source: string): void
   export function updatePresetMeta(name: string, fileType: string, colorType: string): boolean

@@ -102,6 +102,7 @@ interface EditPanelProps {
   onApplyAll: (json: string) => void
   selectedIds?: Set<number>
   onPreviewChange?: (preview: string | null) => void
+  onModification?: () => void
 }
 
 interface PresetItem {
@@ -112,7 +113,20 @@ interface PresetItem {
   source?: string
 }
 
-export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewChange }: EditPanelProps) {
+function AccordionSection({ title, className, defaultOpen = false, children }: { title: string; className?: string; defaultOpen?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <section className={`edit-accordion ${className ?? ''}`}>
+      <button type="button" className="edit-accordion-toggle" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+        <span>{title}</span>
+        <span aria-hidden="true">{open ? '▾' : '▸'}</span>
+      </button>
+      {open && <div className="edit-accordion-content">{children}</div>}
+    </section>
+  )
+}
+
+export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewChange, onModification }: EditPanelProps) {
   const { t } = useT()
   const [values, setValues] = useState<EditValues>(EMPTY)
   const [skinIntensity, setSkinIntensity] = useState(0)
@@ -242,6 +256,7 @@ export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewCha
 
   const subjectMask = () => {
     if (!photo) return
+    onModification?.()
     setBusy(true)
     window.openshoot
       .subjectMaskPhoto(photo.id, 0.9, 500)
@@ -286,6 +301,7 @@ export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewCha
   const updatePreview = useCallback(
     (vals: EditValues) => {
       if (!photo) return
+      onModification?.()
       const json = toJson(vals)
       setBusy(true)
       window.openshoot
@@ -294,7 +310,7 @@ export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewCha
         .catch(() => {})
         .finally(() => setBusy(false))
     },
-    [photo?.id]
+    [photo?.id, onModification]
   )
 
   const onSlider = (key: SliderDef['key'], val: number, neutral: number) => {
@@ -330,6 +346,7 @@ export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewCha
 
   const applyCurrent = () => {
     if (!photo) return
+    onModification?.()
     const json = toJson(values)
     setBusy(true)
     window.openshoot
@@ -341,6 +358,7 @@ export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewCha
 
   const removeDistraction = () => {
     if (!photo) return
+    onModification?.()
     setBusy(true)
     // MVP: remove uma região central (bbox normalizada). Seleção por arrasto
     // virá numa próxima iteração.
@@ -353,6 +371,7 @@ export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewCha
 
   const autoLevel = () => {
     if (!photo) return
+    onModification?.()
     setBusy(true)
     window.openshoot
       .autoLevelPhoto(photo.id, 400)
@@ -365,6 +384,7 @@ export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewCha
 
   const aiCrop = () => {
     if (!photo) return
+    onModification?.()
     setBusy(true)
     window.openshoot
       .aiCropPhoto(photo.id, 400)
@@ -422,7 +442,7 @@ export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewCha
           </div>
         )}
       </div>
-      <div className="edit-sliders">
+      <AccordionSection title="BÁSICO" className="edit-sliders" defaultOpen>
         {SLIDERS.map((s) => {
           const neutral = s.key === 'temperature' ? 6500 : 0
           const v = values[s.key] ?? neutral
@@ -442,14 +462,14 @@ export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewCha
                 step={s.step}
                 value={v}
                 onChange={(e) => onSlider(s.key, Number(e.target.value), neutral)}
+                onDoubleClick={() => onSlider(s.key, neutral, neutral)}
               />
             </label>
           )
         })}
-      </div>
+      </AccordionSection>
 
-      <div className="edit-tonecurve">
-        <h4>{t('edit.curvaTitulo')}</h4>
+      <AccordionSection title={t('edit.curvaTitulo')} className="edit-tonecurve">
         {TONE_SLIDERS.map((s) => {
           const v = values[s.key] ?? 0
           return (
@@ -465,14 +485,14 @@ export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewCha
                 step={1}
                 value={v}
                 onChange={(e) => onToneSlider(s.key, Number(e.target.value))}
+                onDoubleClick={() => onToneSlider(s.key, 0)}
               />
             </label>
           )
         })}
-      </div>
+      </AccordionSection>
 
-      <div className="edit-hsl">
-        <h4>{t('edit.hslTitulo')}</h4>
+      <AccordionSection title={t('edit.hslTitulo')} className="edit-hsl">
         <div className="hsl-colors">
           {HSL_COLORS.map((c, i) => (
             <button
@@ -505,14 +525,14 @@ export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewCha
                 step={1}
                 value={v}
                 onChange={(e) => onHslSlider(channel, Number(e.target.value))}
+                onDoubleClick={() => onHslSlider(channel, 0)}
               />
             </label>
           )
         })}
-      </div>
+      </AccordionSection>
 
-      <div className="edit-sharp">
-        <h4>{t('edit.nitidezTitulo')}</h4>
+      <AccordionSection title={t('edit.nitidezTitulo')} className="edit-sharp">
         {(
           [
             ['edit.nitidez', 'sharpen'],
@@ -533,14 +553,14 @@ export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewCha
                 step={1}
                 value={v}
                 onChange={(e) => onDetailSlider(key, Number(e.target.value))}
+                onDoubleClick={() => onDetailSlider(key, 0)}
               />
             </label>
           )
         })}
-      </div>
+      </AccordionSection>
 
-      <div className="edit-retouch">
-        <h4>{t('edit.retoque')}</h4>
+      <AccordionSection title={t('edit.retoque')} className="edit-retouch">
         <label className="edit-slider">
           <span>
             {t('edit.suavizacaoPele')}
@@ -555,6 +575,7 @@ export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewCha
             onChange={(e) => {
               const v = Number(e.target.value) / 100
               setSkinIntensity(v)
+              onModification?.()
               if (debounce.current) clearTimeout(debounce.current)
               debounce.current = setTimeout(() => {
                 setBusy(true)
@@ -563,6 +584,15 @@ export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewCha
                   .then((t) => t && setPreview(t))
                   .catch(() => {})
                   .finally(() => setBusy(false))
+              }, 200)
+            }}
+            onDoubleClick={() => {
+              setSkinIntensity(0)
+              onModification?.()
+              if (debounce.current) clearTimeout(debounce.current)
+              debounce.current = setTimeout(() => {
+                setBusy(true)
+                window.openshoot.retouchSkinPhoto(photo.id, 0, 400).then((t) => t && setPreview(t)).catch(() => {}).finally(() => setBusy(false))
               }, 200)
             }}
           />
@@ -591,6 +621,7 @@ export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewCha
                 onChange={(e) => {
                   const val = Number(e.target.value) / 100
                   setFaceRegions((prev) => ({ ...prev, [region]: val }))
+                  onModification?.()
                   if (debounce.current) clearTimeout(debounce.current)
                   debounce.current = setTimeout(() => {
                     setBusy(true)
@@ -601,31 +632,42 @@ export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewCha
                       .finally(() => setBusy(false))
                   }, 200)
                 }}
+                onDoubleClick={() => {
+                  setFaceRegions((prev) => ({ ...prev, [region]: 0 }))
+                  onModification?.()
+                  if (debounce.current) clearTimeout(debounce.current)
+                  debounce.current = setTimeout(() => {
+                    setBusy(true)
+                    window.openshoot.retouchFacePhoto(photo.id, region, 0, 400).then((t) => t && setPreview(t)).catch(() => {}).finally(() => setBusy(false))
+                  }, 200)
+                }}
               />
             </label>
           )
         })}
+      </AccordionSection>
+
+      <div className="edit-action-stack">
+        <button onClick={applyCurrent} disabled={busy}>
+          {t('edit.aplicarLote')}
+        </button>
+        <button onClick={removeDistraction} disabled={busy} className="ghost full">
+          {t('edit.removerDistracao')}
+        </button>
+        <button onClick={subjectMask} disabled={busy} className="ghost full" title={t('edit.subjectMaskHint')}>
+          {t('edit.subjectMask')}
+        </button>
+        <button
+          onClick={applyRetouchBatch}
+          disabled={busy || (!photo && (!selectedIds || selectedIds.size === 0))}
+          className="ghost full"
+          title={t('retouch.batchHint')}
+        >
+          {t('retouch.batch')}
+        </button>
       </div>
 
-      <button onClick={applyCurrent} disabled={busy}>
-        {t('edit.aplicarLote')}
-      </button>
-      <button onClick={removeDistraction} disabled={busy} className="ghost full">
-        {t('edit.removerDistracao')}
-      </button>
-      <button onClick={subjectMask} disabled={busy} className="ghost full" title={t('edit.subjectMaskHint')}>
-        {t('edit.subjectMask')}
-      </button>
-      <button
-        onClick={applyRetouchBatch}
-        disabled={busy || (!photo && (!selectedIds || selectedIds.size === 0))}
-        className="ghost full"
-        title={t('retouch.batchHint')}
-      >
-        {t('retouch.batch')}
-      </button>
-
-      <div className="edit-geo">
+      <AccordionSection title="FERRAMENTAS" className="edit-geo">
         <button
           onClick={autoLevel}
           disabled={busy}
@@ -642,7 +684,7 @@ export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewCha
         >
           {t('edit.aiCrop')}
         </button>
-      </div>
+      </AccordionSection>
 
       <div className="edit-presets">
         <h4>{t('edit.presets')}</h4>

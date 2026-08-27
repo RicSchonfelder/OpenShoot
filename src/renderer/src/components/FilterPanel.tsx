@@ -16,6 +16,7 @@ export type FilterKey =
 interface FilterPanelProps {
   active: string
   onSelect: (f: FilterKey) => void
+  photoIds?: number[]
 }
 
 interface Counts {
@@ -31,13 +32,13 @@ interface Counts {
   edited: number
 }
 
-export default function FilterPanel({ active, onSelect }: FilterPanelProps) {
+export default function FilterPanel({ active, onSelect, photoIds }: FilterPanelProps) {
   const { t } = useT()
   const [counts, setCounts] = useState<Counts | null>(null)
 
   useEffect(() => {
     let activeFlag = true
-    const load = () => window.openshoot.filterCounts().then((c) => {
+    const load = () => window.openshoot.filterCounts(photoIds).then((c) => {
       if (activeFlag && c) setCounts(c)
     })
     load()
@@ -47,7 +48,7 @@ export default function FilterPanel({ active, onSelect }: FilterPanelProps) {
       activeFlag = false
       clearInterval(id)
     }
-  }, [])
+  }, [photoIds])
 
   const items: Array<{ key: FilterKey; label: string; icon: string; count: number }> = [
     { key: 'all', label: t('app.todos'), icon: '☰', count: counts?.all ?? 0 },

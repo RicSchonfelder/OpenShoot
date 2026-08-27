@@ -62,7 +62,7 @@ export default function App() {
   const [loupeIndex, setLoupeIndex] = useState(0)
   const [editViewId, setEditViewId] = useState<number | null>(null)
   const [editPreview, setEditPreview] = useState<{ id: number; src: string } | null>(null)
-  const [editCompareMode, setEditCompareMode] = useState<'single' | 'side-by-side'>('single')
+  const [editCompareMode, setEditCompareMode] = useState<'original' | 'modified' | 'side-by-side' | 'slider'>('modified')
   const [currentAlbum, setCurrentAlbum] = useState<number | null>(null)
   const [albumPhotoIds, setAlbumPhotoIds] = useState<Set<number> | null>(null)
   const [mode, setMode] = useState<'import' | 'cull' | 'edit' | 'retouch'>('import')
@@ -181,13 +181,20 @@ export default function App() {
 
   const handleActivate = useCallback((id: number) => {
     const idx = photosRef.current.findIndex((p) => p.id === id)
+    if (mode === 'import' || mode === 'edit' || mode === 'retouch') {
+      setEditViewId(id)
+      setSelectedIds(new Set([id]))
+      setAnchorId(id)
+      setMode('edit')
+      return
+    }
     if (idx >= 0) {
       setLoupeIndex(idx)
       setLoupeOpen(true)
     }
     setAnchorId(id)
     setSelectedIds(new Set([id]))
-  }, [])
+    }, [mode])
 
   // ---- Loupe ----
   const loupeNavigate = useCallback((index: number) => {
@@ -260,9 +267,13 @@ export default function App() {
   const handleRate = useCallback(
     async (id: number, rating: number) => {
       await persistRating([id], rating)
-      await loadPhotos()
+      if (filter === 'all') {
+        setPhotos((current) => current.map((photo) => photo.id === id ? { ...photo, rating } : photo))
+      } else {
+        await loadPhotos()
+      }
     },
-    [persistRating, loadPhotos]
+    [filter, persistRating, loadPhotos]
   )
 
   // ---- Atalhos de teclado globais ----
@@ -398,7 +409,7 @@ export default function App() {
     setError(null)
     setCulling(true)
     try {
-      const res = await window.openshoot.cullPhotos(targetPicks > 0 ? targetPicks : undefined)
+      const res = await window.openshoot.cullPhotos(targetPicks > 0 ? targetPicks : undefined, albumPhotoIds ? Array.from(albumPhotoIds) : undefined)
       if ('error' in res) {
         setError(String(res.error))
       } else {
@@ -424,7 +435,7 @@ export default function App() {
     setCulling(true)
     try {
       // 1) Cull com meta (se definida) — seleção automática.
-      const res = await window.openshoot.cullPhotos(targetPicks > 0 ? targetPicks : undefined)
+      const res = await window.openshoot.cullPhotos(targetPicks > 0 ? targetPicks : undefined, albumPhotoIds ? Array.from(albumPhotoIds) : undefined)
       if ('error' in res) {
         setError(String(res.error))
         return
@@ -585,7 +596,7 @@ export default function App() {
 
   // Tela Pessoas (agrupamento facial) em tela cheia.
   if (showPeople) {
-    return <PeopleView onBack={() => setShowPeople(false)} />
+    return <PeopleView onBack={() => setShowPeople(false)} photoIds={albumPhotoIds ? Array.from(albumPhotoIds) : undefined} />
   }
 
   if (loupeOpen) {
@@ -612,26 +623,37 @@ export default function App() {
       <div className="app">
         <header className="topbar">
           <span className="logo">OpenShoot</span>
+          <div className="mode-tabs">
+            {(
+              [
+                ['import', t('app.modeImport')],
+                ['cull', t('app.modeCull')],
+                ['edit', t('app.modeEdit')],
+                ['retouch', t('app.modeRetouch')]
+              ] as Array<['import' | 'cull' | 'edit' | 'retouch', string]>
+            ).map(([m, label]) => (
+              <button key={m} className={`mode-tab ${mode === m ? 'active' : ''}`} onClick={() => { setMode(m); if (m !== 'edit') setEditViewId(null) }}>
+                {label}
+              </button>
+            ))}
+          </div>
           <div className="topbar-right">
             <button onClick={() => setEditViewId(null)} className="ghost">
-              ← {t('app.voltarGaleria')}
+              {t('app.voltarGaleria')}
             </button>
             <button onClick={exportXmp} disabled={exporting} className="ghost">
               {exporting ? t('app.exportando') : t('app.exportarXmp')}
-            </button>
-            <button onClick={() => setEditCompareMode((mode) => mode === 'single' ? 'side-by-side' : 'single')} className="ghost">
-              {editCompareMode === 'single' ? 'Comparar lado a lado' : 'Ver foto ampliada'}
             </button>
           </div>
         </header>
         <main className="content editview">
           <div className="editview-stage">
             <div className="editview-photo-area">
-              <EditViewPhoto photoId={editPhoto.id} modifiedSrc={editPreview?.id === editPhoto.id ? editPreview.src : null} compareMode={editCompareMode} />
+            <EditViewPhoto photoId={editPhoto.id} modifiedSrc={editPreview?.id === editPhoto.id ? editPreview.src : null} compareMode={editCompareMode} onCompareModeChange={setEditCompareMode} />
             </div>
             <EditViewFilmstrip photos={photos} activeId={editPhoto.id} onSelect={selectEditPhoto} />
           </div>
-          <EditPanel photo={editPhoto} onApplyAll={handleApplyAll} onPreviewChange={handleEditPreviewChange} />
+            <EditPanel photo={editPhoto} onApplyAll={handleApplyAll} onPreviewChange={handleEditPreviewChange} onModification={() => setEditCompareMode('modified')} />
         </main>
         <div className="shortcuts-bar">
           <span dangerouslySetInnerHTML={{ __html: t('app.editViewShortcuts') }} />
@@ -699,14 +721,6 @@ export default function App() {
           <button onClick={exportXmp} disabled={exporting || photos.length === 0} className="ghost">
             {exporting ? t('app.exportando') : t('app.exportarXmp')}
           </button>
-          <button
-            onClick={runOneClick}
-            disabled={culling || photos.length === 0}
-            className="ghost"
-            title={t('app.oneClickHint')}
-          >
-            {culling ? t('app.importando') : t('app.oneClick')}
-          </button>
           <button onClick={runCull} disabled={culling || photos.length === 0} className="primary">
             {culling ? t('app.cullRun') : t('app.cull')}
           </button>
@@ -747,18 +761,6 @@ export default function App() {
       )}
       {error && <div className="toast error">{error}</div>}
 
-      {mode === 'import' && (
-        <div className="import-banner">
-          <div>
-            <strong>{t('import.bannerTitulo')}</strong>
-            <p>{t('import.bannerTexto')}</p>
-          </div>
-          <button onClick={importFolder} disabled={scanning} className="primary">
-            {scanning ? t('app.importando') : t('app.importar')}
-          </button>
-        </div>
-      )}
-
       {mode === 'cull' && (
       <div className="cull-toolbar">
         <span className={`toolbar-count picks ${filter === 'picks' ? 'active' : ''}`}>
@@ -794,6 +796,14 @@ export default function App() {
           />
           <em>{targetPicks === 0 ? '∞' : targetPicks}</em>
         </label>
+        <button
+          className="toolbar-one-click"
+          onClick={runOneClick}
+          disabled={culling || photos.length === 0}
+          title={t('app.oneClickHint')}
+        >
+          {culling ? t('app.importando') : t('app.oneClick')}
+        </button>
         <button
           className="toolbar-select-all"
           onClick={() => {
@@ -965,6 +975,7 @@ export default function App() {
             <FilterPanel
               active={filter}
               onSelect={(f) => setFilter(f as Filter)}
+              photoIds={albumPhotoIds ? Array.from(albumPhotoIds) : undefined}
             />
           )}
           <Gallery

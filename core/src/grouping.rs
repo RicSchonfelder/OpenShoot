@@ -13,8 +13,30 @@ pub struct PersonGroup {
   pub count: usize,
   /// Foto representativa (caminho).
   pub sample_path: String,
+  /// Face da pessoa representada na foto de amostra (coordenadas normalizadas).
+  pub sample_face: Option<[f32; 4]>,
   pub photo_ids: Vec<i64>,
   pub photo_paths: Vec<String>,
+}
+
+fn representative_face(path: &str, embedding: &[f32]) -> Option<[f32; 4]> {
+  let (rgb, width, height) = crate::ml::load_rgb(Path::new(path), 512).ok()?;
+  let boxes = crate::ml::detect_faces(&rgb, width, height, 0.5).ok()?;
+  let candidates = boxes.into_iter().filter_map(|bbox| {
+    let face_embedding = crate::ml::face_embedding(&rgb, width, height, bbox).ok()?;
+    Some((bbox, face_embedding))
+  });
+  best_matching_face(candidates, embedding)
+}
+
+fn best_matching_face(
+  candidates: impl IntoIterator<Item = ([f32; 4], Vec<f32>)>,
+  target: &[f32],
+) -> Option<[f32; 4]> {
+  candidates
+    .into_iter()
+    .max_by(|a, b| cosine(target, &a.1).total_cmp(&cosine(target, &b.1)))
+    .map(|(bbox, _)| bbox)
 }
 
 /// Uma face detectada com embedding e metadados.
@@ -137,6 +159,7 @@ pub fn group_by_similarity(
       person_id: gi,
       count: photo_ids.len(),
       sample_path: faces[g[0]].photo_path.clone(),
+      sample_face: representative_face(&faces[g[0]].photo_path, &faces[g[0]].embedding),
       photo_ids,
       photo_paths,
     });
@@ -262,6 +285,15 @@ mod tests {
     let a = vec![0.0, 1.0];
     let b = vec![1.0, 0.0];
     assert!(cosine(&a, &b).abs() < 1e-4);
+  }
+
+  #[test]
+  fn representative_face_matches_group_embedding() {
+    let candidates = vec![
+      ([0.1, 0.1, 0.2, 0.2], vec![0.0, 1.0]),
+      ([0.7, 0.2, 0.8, 0.3], vec![1.0, 0.0]),
+    ];
+    assert_eq!(best_matching_face(candidates, &[1.0, 0.0]), Some([0.7, 0.2, 0.8, 0.3]));
   }
 
   #[test]

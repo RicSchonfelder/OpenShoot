@@ -3,12 +3,14 @@ import { useT } from '../i18n/I18nContext'
 
 interface PeopleViewProps {
   onBack: () => void
+  photoIds?: number[]
 }
 
 interface PersonGroup {
   person_id: number
   count: number
   sample_path: string
+  sample_face?: [number, number, number, number] | null
   photo_ids: number[]
   photo_paths: string[]
 }
@@ -23,7 +25,7 @@ function extractGroups(res: unknown): PersonGroup[] {
   return []
 }
 
-export default function PeopleView({ onBack }: PeopleViewProps) {
+export default function PeopleView({ onBack, photoIds }: PeopleViewProps) {
   const { t } = useT()
   const [threshold, setThreshold] = useState(0.5)
   const [grouping, setGrouping] = useState(false)
@@ -32,22 +34,30 @@ export default function PeopleView({ onBack }: PeopleViewProps) {
   const [covers, setCovers] = useState<Record<number, string>>({})
   const [error, setError] = useState<string | null>(null)
 
-  // Carrega a capa de cada pessoa (thumbnail da foto representativa).
+  // Carrega a capa e usa a face representativa retornada pelo agrupamento.
   useEffect(() => {
-    const missing = people.filter((p) => p.sample_path && !covers[p.person_id])
-    missing.forEach((p) => {
-      window.openshoot
-        .thumbForPath(p.sample_path, 300)
-        .then((t) => t && setCovers((c) => ({ ...c, [p.person_id]: t })))
-        .catch(() => {})
+    let active = true
+    Promise.all(people.map(async (p) => {
+      if (!p.sample_path) return null
+      try {
+        const cover = await window.openshoot.thumbForPath(p.sample_path, 500)
+        return { id: p.person_id, cover }
+      } catch {
+        return null
+      }
+    })).then((entries) => {
+      if (!active) return
+      const valid = entries.filter((entry): entry is { id: number; cover: string } => Boolean(entry?.cover))
+      setCovers(Object.fromEntries(valid.map((entry) => [entry.id, entry.cover])))
     })
-  }, [people, covers])
+    return () => { active = false }
+  }, [people])
 
   const runGrouping = useCallback(async () => {
     setGrouping(true)
     setError(null)
     try {
-      const res = await window.openshoot.groupBySimilarity(threshold)
+      const res = await window.openshoot.groupBySimilarity(threshold, photoIds)
       setPeople(extractGroups(res))
       setCovers({})
     } catch (e) {
@@ -55,7 +65,7 @@ export default function PeopleView({ onBack }: PeopleViewProps) {
     } finally {
       setGrouping(false)
     }
-  }, [threshold])
+  }, [photoIds, threshold])
 
   const runExport = useCallback(async () => {
     const outDir = await window.openshoot.pickExportFolder()
@@ -63,7 +73,7 @@ export default function PeopleView({ onBack }: PeopleViewProps) {
     setExporting(true)
     setError(null)
     try {
-      const res = await window.openshoot.exportPeopleToFolders(outDir, threshold)
+      const res = await window.openshoot.exportPeopleToFolders(outDir, threshold, photoIds)
       if (!res.ok) {
         setError(res.error ?? 'erro')
       } else {
@@ -74,7 +84,7 @@ export default function PeopleView({ onBack }: PeopleViewProps) {
     } finally {
       setExporting(false)
     }
-  }, [threshold, t])
+  }, [photoIds, threshold, t])
 
   return (
     <div className="people">
@@ -123,7 +133,14 @@ export default function PeopleView({ onBack }: PeopleViewProps) {
               <div key={p.person_id} className="person-card">
                 <div className="person-cover">
                   {covers[p.person_id] ? (
-                    <img src={covers[p.person_id]} alt={t('people.pessoa', { n: p.person_id + 1 })} />
+                    <img
+                      src={covers[p.person_id]}
+                      alt={t('people.pessoa', { n: p.person_id + 1 })}
+                      style={p.sample_face ? {
+                        transform: 'scale(1.75)',
+                        transformOrigin: `${((p.sample_face[0] + p.sample_face[2]) / 2) * 100}% ${((p.sample_face[1] + p.sample_face[3]) / 2) * 100}%`
+                      } : undefined}
+                    />
                   ) : (
                     <div className="person-cover-empty">👤</div>
                   )}

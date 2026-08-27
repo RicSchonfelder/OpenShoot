@@ -379,9 +379,9 @@ app.whenReady().then(() => {
   })
 
   // ---- Fase 2: culling + XMP ----
-  ipcMain.handle('core:cullPhotos', async (_e, targetPicks?: number) => {
+  ipcMain.handle('core:cullPhotos', async (_e, targetPicks?: number, photoIds?: number[]) => {
     try {
-      return await getCore().cullPhotos(targetPicks)
+      return await getCore().cullPhotos(targetPicks, photoIds ?? null)
     } catch (e) {
       return { processed: 0, errors: 1, avgScore: 0, picks: 0, review: 0, error: String(e) }
     }
@@ -491,9 +491,9 @@ app.whenReady().then(() => {
       return []
     }
   })
-  ipcMain.handle('core:filterCounts', async () => {
+  ipcMain.handle('core:filterCounts', async (_e, photoIds?: number[]) => {
     try {
-      return await getCore().filterCounts()
+      return await getCore().filterCounts(photoIds ?? null)
     } catch (e) {
       return null
     }
@@ -742,19 +742,19 @@ app.whenReady().then(() => {
 
   // ---- Pessoas: agrupamento facial + exportação por pessoa ----
   type CoreWithPeople = typeof import('*.node') & {
-    groupBySimilarityAsync(threshold: number | null | undefined): Promise<unknown>
-    exportPeopleToFolders(outDir: string, threshold: number | null | undefined): Promise<unknown>
+    groupBySimilarityAsync(threshold: number | null | undefined, photoIds?: number[] | null): Promise<unknown>
+    exportPeopleToFolders(outDir: string, threshold: number | null | undefined, photoIds?: number[] | null): Promise<unknown>
   }
-  ipcMain.handle('core:groupBySimilarity', async (_e, threshold?: number) => {
+  ipcMain.handle('core:groupBySimilarity', async (_e, threshold?: number, photoIds?: number[]) => {
     try {
-      return await (getCore() as CoreWithPeople).groupBySimilarityAsync(threshold ?? null)
+      return await (getCore() as CoreWithPeople).groupBySimilarityAsync(threshold ?? null, photoIds ?? null)
     } catch (e) {
       return { error: String(e) }
     }
   })
-  ipcMain.handle('core:exportPeopleToFolders', async (_e, outDir: string, threshold?: number) => {
+  ipcMain.handle('core:exportPeopleToFolders', async (_e, outDir: string, threshold?: number, photoIds?: number[]) => {
     try {
-      return await (getCore() as CoreWithPeople).exportPeopleToFolders(outDir, threshold ?? null)
+      return await (getCore() as CoreWithPeople).exportPeopleToFolders(outDir, threshold ?? null, photoIds ?? null)
     } catch (e) {
       return { ok: false, error: String(e) }
     }
