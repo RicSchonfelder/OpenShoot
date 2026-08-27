@@ -226,11 +226,13 @@ app.whenReady().then(() => {
     return entries
   })
 
-  ipcMain.handle('app:cloudRestorePhoto', async (event, sourcePath: string, prompt: string) => {
+  ipcMain.handle('app:cloudRestorePhoto', async (event, sourcePath: string, prompt: string, requestedModel?: string) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     const key = await readOpenAiKey()
     if (!key) return { ok: false, error: 'Configure uma chave da OpenAI antes de usar a IA online.' }
     if (!win || typeof sourcePath !== 'string' || typeof prompt !== 'string') return { ok: false, error: 'Entrada inválida.' }
+    const supportedModels = new Set(['gpt-image-2', 'gpt-image-1', 'gpt-image-1-mini'])
+    const model = typeof requestedModel === 'string' && supportedModels.has(requestedModel) ? requestedModel : 'gpt-image-2'
     const allowance = cloudConfirmations.get(event.sender.id) ?? 0
     if (allowance < 1) return { ok: false, error: 'Confirme o envio do lote antes de iniciar.' }
     if (allowance === 1) cloudConfirmations.delete(event.sender.id)
@@ -245,7 +247,7 @@ app.whenReady().then(() => {
     const baseRecord = {
       timestamp: new Date().toISOString(),
       operation: 'image_edit',
-      model: 'gpt-image-2',
+      model,
       quality: 'high',
       size: 'auto',
       inputFile: sourcePath.split(/[\\/]/).pop() || 'photo',
@@ -256,7 +258,7 @@ app.whenReady().then(() => {
     try {
       const bytes = await readFile(sourcePath)
       const form = new FormData()
-      form.append('model', 'gpt-image-2')
+      form.append('model', model)
       form.append('image', new Blob([bytes], { type: 'image/jpeg' }), sourcePath.split(/[\\/]/).pop() || 'photo.jpg')
       form.append('prompt', prompt)
       form.append('quality', 'high')

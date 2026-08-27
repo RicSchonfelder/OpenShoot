@@ -44,12 +44,15 @@ export default function RestorerView({ onBack, photoIds }: RestorerViewProps) {
   const [comparisonMode, setComparisonMode] = useState<ComparisonMode>('side-by-side')
   const [splitPosition, setSplitPosition] = useState(50)
   const [outputDir, setOutputDir] = useState<string | null>(null)
+  const [cloudModel, setCloudModel] = useState('gpt-image-2')
   const [message, setMessage] = useState<string | null>(null)
   const [openAiKey, setOpenAiKey] = useState('')
   const [keyConfigured, setKeyConfigured] = useState(false)
   const [editingKey, setEditingKey] = useState(false)
+  const [panningViewport, setPanningViewport] = useState<'before' | 'after' | null>(null)
   const beforeViewportRef = useRef<HTMLDivElement | null>(null)
   const afterViewportRef = useRef<HTMLDivElement | null>(null)
+  const panStateRef = useRef<{ source: 'before' | 'after'; x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null)
 
   const photo = useMemo(() => photos.find((item) => item.id === photoId) ?? null, [photos, photoId])
 
@@ -198,6 +201,26 @@ export default function RestorerView({ onBack, photoIds }: RestorerViewProps) {
     }
   }
 
+  const startPan = (source: 'before' | 'after', event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId)
+    panStateRef.current = { source, x: event.clientX, y: event.clientY, scrollLeft: event.currentTarget.scrollLeft, scrollTop: event.currentTarget.scrollTop }
+    setPanningViewport(source)
+  }
+
+  const movePan = (event: React.PointerEvent<HTMLDivElement>) => {
+    const pan = panStateRef.current
+    if (!pan || !event.currentTarget.hasPointerCapture(event.pointerId)) return
+    event.currentTarget.scrollLeft = pan.scrollLeft - (event.clientX - pan.x)
+    event.currentTarget.scrollTop = pan.scrollTop - (event.clientY - pan.y)
+    syncViewport(pan.source)
+  }
+
+  const stopPan = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    panStateRef.current = null
+    setPanningViewport(null)
+  }
+
   const cloudPrompt = `Restore and enhance this photograph while preserving the original image, people, environment, composition, and moment exactly as captured.
 
 This is a PHOTO RESTORATION task, not an image recreation.
@@ -321,7 +344,7 @@ Preserve the original aspect ratio whenever possible.
 The final image should look exactly like the same photograph taken with the camera properly leveled at the moment of capture.
 
 Use structural references such as stage edges, table lines, walls, floors and architectural lines. Do not use individual people as references for determining the horizon.` : ''
-      const result = await window.openshoot.cloudRestorePhoto(item.path, cloudPrompt + horizonPrompt)
+      const result = await window.openshoot.cloudRestorePhoto(item.path, cloudPrompt + horizonPrompt, cloudModel)
       if (!result.ok || !result.dataUrl) throw new Error(result.error ?? 'A API não retornou uma imagem.')
       setPreviews((current) => ({ ...current, [item.id]: result.dataUrl! }))
       await window.openshoot.saveRestorationCache(item.path, result.dataUrl)
@@ -378,6 +401,13 @@ Use structural references such as stage edges, table lines, walls, floors and ar
           <div className="restorer-online">
             <h3>IA online experimental</h3>
             <p>Envia a foto à OpenAI e pode gerar cobrança. Só funciona após confirmação.</p>
+            <label className="restorer-field">Modelo para este lote
+              <select value={cloudModel} onChange={(event) => setCloudModel(event.target.value)} disabled={busy}>
+                <option value="gpt-image-2">gpt-image-2 · atual</option>
+                <option value="gpt-image-1">gpt-image-1 · qualidade</option>
+                <option value="gpt-image-1-mini">gpt-image-1-mini · econômico</option>
+              </select>
+            </label>
             {keyConfigured && !editingKey && <>
               <p className="restorer-key-status">Chave configurada com segurança. O valor nunca é exibido.</p>
               <button className="ghost" onClick={() => { setOpenAiKey(''); setEditingKey(true); setMessage(null) }} disabled={busy}>Trocar chave</button>
@@ -415,14 +445,14 @@ Use structural references such as stage edges, table lines, walls, floors and ar
           <div className={`restorer-images comparison-${comparisonMode}`} onWheel={(event) => { event.preventDefault(); setZoom((current) => Math.min(3, Math.max(0.5, current * Math.exp(-event.deltaY * 0.0015)))) }}>
             {comparisonMode === 'slider' ? <div className="restorer-slider-comparison">
               <span>Comparação deslizante</span>
-              <div className="restorer-slider-viewport" onPointerMove={(event) => { if (event.buttons === 1) { const rect = event.currentTarget.getBoundingClientRect(); setSplitPosition(Math.min(100, Math.max(0, ((event.clientX - rect.left) / rect.width) * 100))) } }} onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setSplitPosition(Math.min(100, Math.max(0, ((event.clientX - rect.left) / rect.width) * 100))) }}>
+              <div className="restorer-slider-viewport" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); const rect = event.currentTarget.getBoundingClientRect(); setSplitPosition(Math.min(100, Math.max(0, ((event.clientX - rect.left) / rect.width) * 100))) }} onPointerMove={(event) => { if (event.buttons === 1) { const rect = event.currentTarget.getBoundingClientRect(); setSplitPosition(Math.min(100, Math.max(0, ((event.clientX - rect.left) / rect.width) * 100))) } }}>
                 {original && <img className="restorer-slider-before" src={original} alt="Original" style={{ transform: `scale(${zoom})` }} />}
-                {preview && <div className="restorer-slider-after" style={{ width: `${splitPosition}%` }}><img src={preview} alt="Restaurada" style={{ transform: `scale(${zoom})` }} /></div>}
+                {preview && <img className="restorer-slider-after" src={preview} alt="Restaurada" style={{ clipPath: `inset(0 ${100 - splitPosition}% 0 0)`, transform: `scale(${zoom})` }} />}
                 <div className="restorer-slider-handle" style={{ left: `${splitPosition}%` }}><span>↔</span></div>
               </div>
             </div> : <>
-            {comparisonMode !== 'after' && <div><span>Antes · original</span>{originalLoading ? <div className="restorer-empty"><span className="restorer-spinner" /> Carregando original…</div> : original ? <div ref={beforeViewportRef} className="restorer-image-viewport" onScroll={() => syncViewport('before')}><img src={original} alt="Original" style={{ transform: `scale(${zoom})` }} /></div> : <div className="restorer-empty">Selecione uma foto</div>}</div>}
-            {comparisonMode !== 'before' && <div><span>Depois · restaurada</span>{preview ? <div ref={afterViewportRef} className="restorer-image-viewport" onScroll={() => syncViewport('after')}><img src={preview} alt="Prévia restaurada" style={{ transform: `scale(${zoom})` }} /></div> : <div className="restorer-empty">Restaure para comparar</div>}</div>}
+            {comparisonMode !== 'after' && <div><span>Antes · original</span>{originalLoading ? <div className="restorer-empty"><span className="restorer-spinner" /> Carregando original…</div> : original ? <div ref={beforeViewportRef} className={`restorer-image-viewport ${panningViewport === 'before' ? 'is-panning' : ''}`} onScroll={() => syncViewport('before')} onPointerDown={(event) => startPan('before', event)} onPointerMove={movePan} onPointerUp={stopPan} onPointerCancel={stopPan}><img src={original} alt="Original" style={{ transform: `scale(${zoom})` }} /></div> : <div className="restorer-empty">Selecione uma foto</div>}</div>}
+            {comparisonMode !== 'before' && <div><span>Depois · restaurada</span>{preview ? <div ref={afterViewportRef} className={`restorer-image-viewport ${panningViewport === 'after' ? 'is-panning' : ''}`} onScroll={() => syncViewport('after')} onPointerDown={(event) => startPan('after', event)} onPointerMove={movePan} onPointerUp={stopPan} onPointerCancel={stopPan}><img src={preview} alt="Prévia restaurada" style={{ transform: `scale(${zoom})` }} /></div> : <div className="restorer-empty">Restaure para comparar</div>}</div>}
             </>}
           </div>
           <div className="restorer-filmstrip">

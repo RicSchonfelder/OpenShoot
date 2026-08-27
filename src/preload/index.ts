@@ -74,8 +74,8 @@ const api = {
   hasOpenAiKey: (): Promise<boolean> => ipcRenderer.invoke('app:hasOpenAiKey'),
   saveOpenAiKey: (key: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('app:saveOpenAiKey', key),
   confirmCloudRestoreBatch: (count: number): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('app:confirmCloudRestoreBatch', count),
-  cloudRestorePhoto: (path: string, prompt: string): Promise<{ ok: boolean; dataUrl?: string; error?: string }> =>
-    ipcRenderer.invoke('app:cloudRestorePhoto', path, prompt),
+  cloudRestorePhoto: (path: string, prompt: string, model?: string): Promise<{ ok: boolean; dataUrl?: string; error?: string }> =>
+    ipcRenderer.invoke('app:cloudRestorePhoto', path, prompt, model),
   saveRestorationCache: (sourcePath: string, dataUrl: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('app:saveRestorationCache', sourcePath, dataUrl),
   loadRestorationCache: (items: Array<{ id: number; sourcePath: string }>): Promise<Record<number, string>> => ipcRenderer.invoke('app:loadRestorationCache', items),
   getOpenAiUsageReport: (): Promise<Array<Record<string, unknown>>> => ipcRenderer.invoke('app:getOpenAiUsageReport'),
