@@ -1363,11 +1363,25 @@ button.danger {
 .editview-stage {
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 14px 12px;
+  background: #0b0d12;
+  overflow: hidden;
+}
+
+.editview-photo-area {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
-  background: #0b0d12;
   overflow: hidden;
 }
 
@@ -1389,6 +1403,59 @@ button.danger {
   min-height: 0;
   object-fit: contain;
   border-radius: 4px;
+}
+
+.editview-filmstrip {
+  width: 100%;
+  flex: 0 0 104px;
+  min-height: 0;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 3px 2px 5px;
+  border-top: 1px solid #252b37;
+}
+
+.editview-filmstrip-item {
+  flex: 0 0 116px;
+  width: 116px;
+  min-height: 0;
+  margin: 0;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+  background: #161a22;
+  border: 1px solid #252b37;
+  border-radius: 6px;
+  color: #9aa3b2;
+  font-size: 10px;
+}
+
+.editview-filmstrip-item:hover,
+.editview-filmstrip-item.active {
+  border-color: #60a5fa;
+  box-shadow: inset 0 0 0 1px #2563eb;
+}
+
+.editview-filmstrip-item img,
+.editview-filmstrip-item > span {
+  width: 100%;
+  height: 70px;
+  display: grid;
+  place-items: center;
+  object-fit: cover;
+  background: #0f131a;
+  border-radius: 3px;
+  color: #697386;
+}
+
+.editview-filmstrip-item small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .editview-loading {

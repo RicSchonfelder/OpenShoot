@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Gallery from './components/Gallery'
 import EditPanel from './components/EditPanel'
 import EditViewPhoto from './components/EditViewPhoto'
+import EditViewFilmstrip from './components/EditViewFilmstrip'
 import ExportDialog from './components/ExportDialog'
 import LoupeView from './components/LoupeView'
 import FilterPanel from './components/FilterPanel'
@@ -597,6 +598,11 @@ export default function App() {
   // Modo de edição em tela grande: foto por inteiro + painel de edição.
   const editPhoto = editViewId != null ? (photos.find((p) => p.id === editViewId) ?? null) : null
   if (editPhoto) {
+    const selectEditPhoto = (id: number) => {
+      setEditViewId(id)
+      setSelectedIds(new Set([id]))
+      setAnchorId(id)
+    }
     return (
       <div className="app">
         <header className="topbar">
@@ -612,7 +618,10 @@ export default function App() {
         </header>
         <main className="content editview">
           <div className="editview-stage">
-            <EditViewPhoto photoId={editPhoto.id} />
+            <div className="editview-photo-area">
+              <EditViewPhoto photoId={editPhoto.id} />
+            </div>
+            <EditViewFilmstrip photos={photos} activeId={editPhoto.id} onSelect={selectEditPhoto} />
           </div>
           <EditPanel photo={editPhoto} onApplyAll={handleApplyAll} />
         </main>
