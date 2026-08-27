@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { appendFile, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { loadCore, getCore } from './core'
 
@@ -236,6 +236,8 @@ app.whenReady().then(() => {
     if (allowance === 1) cloudConfirmations.delete(event.sender.id)
     else cloudConfirmations.set(event.sender.id, allowance - 1)
     const startedAt = Date.now()
+    const clientRequestId = randomUUID()
+    const timeoutMs = 180_000
     const usagePath = join(app.getPath('userData'), 'openai-usage.jsonl')
     const writeUsage = async (record: Record<string, unknown>) => {
       try { await appendFile(usagePath, `${JSON.stringify(record)}\n`, 'utf8') } catch { /* relatório nunca bloqueia a restauração */ }
@@ -247,7 +249,9 @@ app.whenReady().then(() => {
       quality: 'high',
       size: 'auto',
       inputFile: sourcePath.split(/[\\/]/).pop() || 'photo',
-      promptCharacters: prompt.length
+      promptCharacters: prompt.length,
+      clientRequestId,
+      timeoutMs
     }
     try {
       const bytes = await readFile(sourcePath)
@@ -259,20 +263,23 @@ app.whenReady().then(() => {
       form.append('size', 'auto')
       const response = await fetch('https://api.openai.com/v1/images/edits', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${key}` },
+        headers: { Authorization: `Bearer ${key}`, 'X-Client-Request-Id': clientRequestId },
+        signal: AbortSignal.timeout(timeoutMs),
         body: form
       })
       const payload = await response.json() as { data?: Array<{ b64_json?: string }>; error?: { message?: string }; usage?: Record<string, unknown> }
       const encoded = payload.data?.[0]?.b64_json
-      const record = { ...baseRecord, completedAt: new Date().toISOString(), elapsedMs: Date.now() - startedAt, httpStatus: response.status, status: response.ok && encoded ? 'success' : 'error', requestId: response.headers.get('x-request-id'), inputBytes: bytes.byteLength, outputBytes: encoded ? Buffer.byteLength(encoded, 'base64') : 0, usage: payload.usage ?? null, usageNote: payload.usage ? 'usage informado pela API' : 'tokens não informados na resposta do endpoint de imagem' }
+      const record = { ...baseRecord, completedAt: new Date().toISOString(), elapsedMs: Date.now() - startedAt, httpStatus: response.status, status: response.ok && encoded ? 'success' : 'error', requestId: response.headers.get('x-request-id'), inputBytes: bytes.byteLength, outputBytes: encoded ? Buffer.byteLength(encoded, 'base64') : 0, usage: payload.usage ?? null, rateLimitRemainingRequests: response.headers.get('x-ratelimit-remaining-requests'), rateLimitRemainingTokens: response.headers.get('x-ratelimit-remaining-tokens'), rateLimitResetRequests: response.headers.get('x-ratelimit-reset-requests'), rateLimitResetTokens: response.headers.get('x-ratelimit-reset-tokens'), usageNote: payload.usage ? 'usage informado pela API' : 'tokens não informados na resposta do endpoint de imagem' }
       await writeUsage(record)
       if (!response.ok || !encoded) return { ok: false, error: payload.error?.message ?? `API retornou HTTP ${response.status}.` }
       const dataUrl = `data:image/png;base64,${encoded}`
       try { await persistRestorationCache(sourcePath, dataUrl) } catch (cacheError) { console.error('Falha ao persistir cache de restauração:', cacheError) }
       return { ok: true, dataUrl }
     } catch (error) {
-      await writeUsage({ ...baseRecord, completedAt: new Date().toISOString(), elapsedMs: Date.now() - startedAt, status: 'network_error', usage: null, usageNote: 'tokens não informados porque a chamada não completou', error: String(error) })
-      return { ok: false, error: `Falha na restauração online: ${String(error)}` }
+      const timedOut = error instanceof DOMException && error.name === 'TimeoutError'
+      const safeError = timedOut ? `tempo limite de ${Math.round(timeoutMs / 1000)}s atingido; o recebimento pela API é indeterminado` : 'falha de rede; o recebimento pela API é indeterminado'
+      await writeUsage({ ...baseRecord, completedAt: new Date().toISOString(), elapsedMs: Date.now() - startedAt, status: timedOut ? 'timeout_unknown' : 'network_error_unknown', usage: null, usageNote: 'não repetir automaticamente: a requisição pode ter sido recebida', error: safeError })
+      return { ok: false, error: `Falha na restauração online: ${safeError}. Confira o cache e o relatório antes de tentar novamente.` }
     }
   })
 

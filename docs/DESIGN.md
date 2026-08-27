@@ -134,6 +134,11 @@ no perfil local e nunca é enviada ao renderer ou gravada no código. Esse modo
 pode gerar cobrança e não altera o status do modo local, que continua padrão.
 Cada tentativa online registra metadados técnicos sem chave, prompt ou pixels em
 `openai-usage.jsonl` no perfil do usuário, com opção de exportação pela bancada.
+O registro inclui um `clientRequestId` UUID próprio, o `x-request-id` devolvido
+pela API quando presente e os cabeçalhos de limite de requisições/tokens, sem
+armazenar a chave. Cada chamada tem timeout de 180 segundos. Timeout ou erro de
+rede é tratado como resultado indeterminado: não há retry automático, porque a
+requisição pode ter sido recebida e cobrada mesmo sem resposta chegar ao app.
 Cada resultado é gravado imediatamente em `restoration-cache/` no perfil do
 usuário, com validação de tamanho e data de modificação do original ao reabrir;
 o processamento online usa até três requisições simultâneas para reduzir o
