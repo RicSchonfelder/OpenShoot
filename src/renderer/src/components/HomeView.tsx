@@ -124,7 +124,7 @@ export default function HomeView({ onOpenAlbum, onOpenRestorer }: HomeViewProps)
                   ) : (
                     <div className="album-cover-empty">📷</div>
                   )}
-                  <span className="album-count">{a.photoCount} {t('app.fotos', { n: a.photoCount })}</span>
+                  <span className="album-count">{t('app.fotos', { n: a.photoCount })}</span>
                 </div>
                 <div className="album-meta">
                   <span className="album-name">{a.name}</span>
