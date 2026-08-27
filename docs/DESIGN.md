@@ -127,8 +127,14 @@ alinhamento. A tela mostra original/prévia e salva somente uma cópia JPEG por
 diálogo do Electron; o arquivo original nunca é sobrescrito. O modo local não
 faz chamada de rede nem usa chave externa.
 
+O modo de revelação ocupa a área principal com uma foto ampliada e um filmstrip
+horizontal do álbum na parte inferior. A roda do mouse sobre o filmstrip move a
+faixa lateralmente, e a foto ativa pode ser comparada lado a lado com a prévia
+modificada enquanto os controles de edição permanecem disponíveis.
+
 O modo experimental **IA online** é uma extensão separada: envia fotos
-selecionadas ao endpoint `/v1/images/edits` da OpenAI usando `gpt-image-2`, após
+selecionadas ao endpoint `/v1/images/edits` da OpenAI usando um modelo selecionado
+e validado entre `gpt-image-2`, `gpt-image-1` e `gpt-image-1-mini`, após
 uma única confirmação explícita por lote. A chave é criptografada pelo Electron (`safeStorage`)
 no perfil local e nunca é enviada ao renderer ou gravada no código. Esse modo
 pode gerar cobrança e não altera o status do modo local, que continua padrão.

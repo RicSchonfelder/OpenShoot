@@ -61,6 +61,8 @@ export default function App() {
   const [loupeOpen, setLoupeOpen] = useState(false)
   const [loupeIndex, setLoupeIndex] = useState(0)
   const [editViewId, setEditViewId] = useState<number | null>(null)
+  const [editPreview, setEditPreview] = useState<{ id: number; src: string } | null>(null)
+  const [editCompareMode, setEditCompareMode] = useState<'single' | 'side-by-side'>('single')
   const [currentAlbum, setCurrentAlbum] = useState<number | null>(null)
   const [albumPhotoIds, setAlbumPhotoIds] = useState<Set<number> | null>(null)
   const [mode, setMode] = useState<'import' | 'cull' | 'edit' | 'retouch'>('import')
@@ -126,6 +128,9 @@ export default function App() {
   }, [loadPhotos])
 
   const selectedPhoto = photos.find((p) => p.id === anchorId) ?? null
+  const handleEditPreviewChange = useCallback((src: string | null) => {
+    setEditPreview(src && editViewId != null ? { id: editViewId, src } : null)
+  }, [editViewId])
 
   // ---- Rating manual com persistência XMP ----
   const persistRating = useCallback(
@@ -614,16 +619,19 @@ export default function App() {
             <button onClick={exportXmp} disabled={exporting} className="ghost">
               {exporting ? t('app.exportando') : t('app.exportarXmp')}
             </button>
+            <button onClick={() => setEditCompareMode((mode) => mode === 'single' ? 'side-by-side' : 'single')} className="ghost">
+              {editCompareMode === 'single' ? 'Comparar lado a lado' : 'Ver foto ampliada'}
+            </button>
           </div>
         </header>
         <main className="content editview">
           <div className="editview-stage">
             <div className="editview-photo-area">
-              <EditViewPhoto photoId={editPhoto.id} />
+              <EditViewPhoto photoId={editPhoto.id} modifiedSrc={editPreview?.id === editPhoto.id ? editPreview.src : null} compareMode={editCompareMode} />
             </div>
             <EditViewFilmstrip photos={photos} activeId={editPhoto.id} onSelect={selectEditPhoto} />
           </div>
-          <EditPanel photo={editPhoto} onApplyAll={handleApplyAll} />
+          <EditPanel photo={editPhoto} onApplyAll={handleApplyAll} onPreviewChange={handleEditPreviewChange} />
         </main>
         <div className="shortcuts-bar">
           <span dangerouslySetInnerHTML={{ __html: t('app.editViewShortcuts') }} />

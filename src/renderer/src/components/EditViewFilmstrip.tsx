@@ -26,7 +26,15 @@ export default function EditViewFilmstrip({ photos, activeId, onSelect }: EditVi
   }, [photos])
 
   return (
-    <div className="editview-filmstrip" aria-label="Fotos do álbum">
+    <div
+      className="editview-filmstrip"
+      aria-label="Fotos do álbum"
+      onWheel={(event) => {
+        if (event.deltaY === 0) return
+        event.preventDefault()
+        event.currentTarget.scrollLeft += event.deltaY
+      }}
+    >
       {photos.map((photo) => (
         <button
           key={photo.id}

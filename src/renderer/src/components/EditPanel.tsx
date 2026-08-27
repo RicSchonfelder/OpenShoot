@@ -101,6 +101,7 @@ interface EditPanelProps {
   photo: PhotoMeta | null
   onApplyAll: (json: string) => void
   selectedIds?: Set<number>
+  onPreviewChange?: (preview: string | null) => void
 }
 
 interface PresetItem {
@@ -111,7 +112,7 @@ interface PresetItem {
   source?: string
 }
 
-export default function EditPanel({ photo, onApplyAll, selectedIds }: EditPanelProps) {
+export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewChange }: EditPanelProps) {
   const { t } = useT()
   const [values, setValues] = useState<EditValues>(EMPTY)
   const [skinIntensity, setSkinIntensity] = useState(0)
@@ -124,6 +125,10 @@ export default function EditPanel({ photo, onApplyAll, selectedIds }: EditPanelP
   const [hslColor, setHslColor] = useState(0)
   const [faceRegions, setFaceRegions] = useState<Record<string, number>>({})
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    onPreviewChange?.(preview)
+  }, [preview, onPreviewChange])
 
   // Carrega a lista de presets salvos.
   const loadPresets = useCallback(() => {
