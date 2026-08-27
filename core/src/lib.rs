@@ -14,6 +14,7 @@ mod lrimport;
 mod ml;
 mod retouch;
 mod types;
+mod upscale;
 mod xmp;
 
 use napi::bindgen_prelude::*;
@@ -1409,12 +1410,175 @@ pub fn create_web_gallery(ids: Vec<i64>, dest_dir: String, title: String) -> Res
   Ok(serde_json::json!({
     "ok": true,
     "path": index_path.display().to_string(),
-    "count": items.len(),
-  }))
-}
+      "count": items.len(),
+    }))
+  }
 
-#[cfg(test)]
-mod tests {
+  // ---------------- Fase 7: upscale / enhance (ref. Upscayl) ----------------
+
+  /// Indica se o modelo ONNX de upscale está disponível (cai no fallback
+  /// bicúbico quando não). `model_name` vazio -> modelo padrão (4x-UltraSharp).
+  #[napi]
+  pub fn upscale_available(model_name: Option<String>) -> bool {
+    let m = model_name
+      .filter(|s| !s.is_empty())
+      .unwrap_or_else(|| crate::upscale::upscale_default_model().to_string());
+    crate::upscale::upscale_model_available(&m)
+  }
+
+  /// Gera um preview de upscale (base64) para uma foto do catálogo.
+  /// `model_name` vazio -> padrão; `scale` 1..4 (modelo nativo 4x, 2x/3x via
+  /// pós-redimensionamento); `max_dim` limita o preview retornado.
+  /// Sem modelo: fallback bicúbico (recurso mais simples, mesma API).
+  #[napi]
+  pub async fn upscale_photo(
+    id: i64,
+    model_name: Option<String>,
+    scale: Option<u32>,
+    max_dim: u32,
+  ) -> Result<Option<String>> {
+    let photo = match catalog::get_photo(id) {
+      Ok(Some(p)) => p,
+      Ok(None) => return Ok(None),
+      Err(e) => return Err(Error::from_reason(e)),
+    };
+    let path = PathBuf::from(&photo.path);
+    let model = model_name
+      .filter(|s| !s.is_empty())
+      .unwrap_or_else(|| crate::upscale::upscale_default_model().to_string());
+    let scale = scale.unwrap_or(4).clamp(1, 4);
+    let dim = if max_dim == 0 { 512 } else { max_dim };
+    tokio::task::spawn_blocking(move || {
+      // Preview: decodifica capado (~1000px) p/ não estourar memória no 4x.
+      let (rgb, w, h) = crate::ml::load_rgb(&path, 1000).ok()?;
+      let out = crate::upscale::upscale_rgb(&rgb, w, h, &model, scale);
+      let img = image::RgbImage::from_raw(w * scale, h * scale, out)?;
+      let thumb = image::DynamicImage::ImageRgb8(img).thumbnail(dim, dim);
+      let mut buf = std::io::Cursor::new(Vec::new());
+      thumb.write_to(&mut buf, image::ImageFormat::Jpeg).ok()?;
+      Some(format!(
+        "data:image/jpeg;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(buf.into_inner())
+      ))
+    })
+    .await
+    .map_err(|e| Error::from_reason(e.to_string()))
+  }
+
+  /// Progresso de upscale em lote.
+  #[napi(object)]
+  pub struct UpscaleProgress {
+    pub processed: i64,
+    pub total: i64,
+    pub current_file: String,
+  }
+
+  /// Upscale em lote (sequencial — VRAM de GPU é limitada, igual ao Upscayl)
+  /// e grava as fotos aumentadas em `dest_dir`. Retorna JSON { ok, exported,
+  /// errors, files }. `callback` recebe { processed, total, current_file }.
+  #[napi]
+  pub async fn export_upscaled(
+    ids: Vec<i64>,
+    dest_dir: String,
+    model_name: Option<String>,
+    scale: Option<u32>,
+    format: String,
+    quality: i64,
+    callback: napi::threadsafe_function::ThreadsafeFunction<
+      UpscaleProgress,
+      napi::threadsafe_function::ErrorStrategy::Fatal,
+    >,
+  ) -> Result<String> {
+    let model = model_name
+      .filter(|s| !s.is_empty())
+      .unwrap_or_else(|| crate::upscale::upscale_default_model().to_string());
+    let scale = scale.unwrap_or(4).clamp(1, 4);
+    let fmt = if format.eq_ignore_ascii_case("png") { "png" } else { "jpeg" };
+    let q = quality.clamp(1, 100) as u8;
+
+    // Fase serial: metadados do catálogo (SQLite não é thread-safe compartilhado).
+    let mut jobs: Vec<(PathBuf, String)> = Vec::new();
+    let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for id in &ids {
+      let photo = match catalog::get_photo(*id) {
+        Ok(Some(p)) => p,
+        _ => continue,
+      };
+      let src = PathBuf::from(&photo.path);
+      let stem = src
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| format!("foto_{id}"));
+      let mut name = stem.clone();
+      let mut k = 1;
+      while !used.insert(format!("{name}.{fmt}")) {
+        name = format!("{stem}_{k}");
+        k += 1;
+      }
+      jobs.push((src, name));
+    }
+    let total = jobs.len() as i64;
+    let dest = PathBuf::from(&dest_dir);
+    if let Err(e) = std::fs::create_dir_all(&dest) {
+      return Ok(
+        serde_json::json!({ "ok": false, "error": format!("criar pasta: {e}") }).to_string(),
+      );
+    }
+
+    let res = tokio::task::spawn_blocking(move || {
+      let mut processed = 0i64;
+      let mut errors = 0i64;
+      let mut files: Vec<String> = Vec::new();
+      for (i, (src, name)) in jobs.into_iter().enumerate() {
+        let (rgb, w, h) = match crate::upscale::decode_full_rgb(&src) {
+          Some(v) => v,
+          None => {
+            errors += 1;
+            continue;
+          }
+        };
+        let out = crate::upscale::upscale_rgb(&rgb, w, h, &model, scale);
+        let ow = w * scale;
+        let oh = h * scale;
+        let ext = if fmt == "png" { "png" } else { "jpg" };
+        let dpath = dest.join(format!("{name}.{ext}"));
+        if let Err(e) = crate::upscale::save_rgb(&dpath, out, ow, oh, fmt, q) {
+          crate::catalog::log_debug(&format!("[upscale] {}: {e}", src.display()));
+          errors += 1;
+        } else {
+          files.push(dpath.display().to_string());
+          processed += 1;
+        }
+        let prog = UpscaleProgress {
+          processed: (i + 1) as i64,
+          total,
+          current_file: src
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string(),
+        };
+        let _ = callback.call(
+          prog,
+          napi::threadsafe_function::ThreadsafeFunctionCallMode::NonBlocking,
+        );
+      }
+      serde_json::json!({
+        "ok": true,
+        "exported": processed,
+        "errors": errors,
+        "files": files,
+        "dest_dir": dest.display().to_string(),
+      })
+      .to_string()
+    })
+    .await
+    .map_err(|e| Error::from_reason(e.to_string()))?;
+    Ok(res)
+  }
+
+  #[cfg(test)]
+  mod tests {
   use std::sync::{Mutex, OnceLock};
 
   /// Serializa os testes que usam o catalog.db (OnceLock compartilhado entre

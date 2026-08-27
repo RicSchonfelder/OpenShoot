@@ -79,7 +79,7 @@ fn build_engine() -> Result<MlEngine, Box<dyn std::error::Error>> {
   Ok(MlEngine { scrfd, nima, mobilefacenet })
 }
 
-fn build_session(model: &Path) -> Result<Session, Box<dyn std::error::Error>> {
+pub fn build_session(model: &Path) -> Result<Session, Box<dyn std::error::Error>> {
   let mut builder = Session::builder()?;
   #[cfg(target_os = "macos")]
   {

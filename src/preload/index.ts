@@ -66,6 +66,20 @@ const api = {
   exportPhotos: (ids: number[], destDir: string, format: string, quality: number, colorProfile: string, naming: string): Promise<{ ok: boolean; exported?: number; errors?: number; files?: string[]; dest_dir?: string; error?: string }> =>
     ipcRenderer.invoke('core:exportPhotos', ids, destDir, format, quality, colorProfile, naming),
   pickExportFolder: (): Promise<string | null> => ipcRenderer.invoke('core:pickExportFolder'),
+  saveRestoredPreview: (dataUrl: string, defaultName: string): Promise<{ ok: boolean; path?: string; error?: string }> =>
+    ipcRenderer.invoke('app:saveRestoredPreview', dataUrl, defaultName),
+  saveRestoredPreviews: (items: Array<{ dataUrl: string; defaultName: string }>): Promise<{ ok: boolean; path?: string; saved?: number; error?: string }> =>
+    ipcRenderer.invoke('app:saveRestoredPreviews', items),
+  hasOpenAiKey: (): Promise<boolean> => ipcRenderer.invoke('app:hasOpenAiKey'),
+  saveOpenAiKey: (key: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('app:saveOpenAiKey', key),
+  confirmCloudRestoreBatch: (count: number): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('app:confirmCloudRestoreBatch', count),
+  cloudRestorePhoto: (path: string, prompt: string): Promise<{ ok: boolean; dataUrl?: string; error?: string }> =>
+    ipcRenderer.invoke('app:cloudRestorePhoto', path, prompt),
+  saveRestorationCache: (sourcePath: string, dataUrl: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('app:saveRestorationCache', sourcePath, dataUrl),
+  loadRestorationCache: (items: Array<{ id: number; sourcePath: string }>): Promise<Record<number, string>> => ipcRenderer.invoke('app:loadRestorationCache', items),
+  getOpenAiUsageReport: (): Promise<Array<Record<string, unknown>>> => ipcRenderer.invoke('app:getOpenAiUsageReport'),
+  exportOpenAiUsageReport: (): Promise<{ ok: boolean; path?: string; error?: string }> =>
+    ipcRenderer.invoke('app:exportOpenAiUsageReport'),
   applyRetouchAll: (ids: number[], destDir: string, skin: number, regions: Record<string, number>, format: string, quality: number): Promise<{ ok: boolean; exported?: number; errors?: number; files?: string[]; dest_dir?: string; error?: string }> =>
     ipcRenderer.invoke('core:applyRetouchAll', ids, destDir, skin, regions, format, quality),
   createWebGallery: (ids: number[], destDir: string, title: string): Promise<{ ok: boolean; path?: string; count?: number; error?: string }> =>
@@ -146,6 +160,28 @@ const api = {
       .finally(() => ipcRenderer.removeListener(ch, listener)) as Promise<string>
   },
   clearThumbCache: (): Promise<number> => ipcRenderer.invoke('core:clearThumbCache'),
+  // Fase 7: upscale / enhance (ref. Upscayl)
+  upscaleAvailable: (model?: string): Promise<boolean> =>
+    ipcRenderer.invoke('core:upscaleAvailable', model),
+  upscalePhoto: (id: number, model?: string, scale?: number, maxDim?: number): Promise<string | null> =>
+    ipcRenderer.invoke('core:upscalePhoto', id, model, scale, maxDim),
+  exportUp scaled: (
+    ids: number[],
+    destDir: string,
+    model: string | undefined,
+    scale: number | undefined,
+    format: string | undefined,
+    quality: number | undefined,
+    onProgress: (p: { processed: number; total: number; currentFile: string }) => void
+  ): Promise<string> => {
+    const ch = 'core:upscaleProgress'
+    const listener = (_e: Electron.IpcRendererEvent, p: { processed: number; total: number; currentFile: string }) =>
+      onProgress(p)
+    ipcRenderer.on(ch, listener)
+    return ipcRenderer
+      .invoke('core:exportUp scaled', ids, destDir, model, scale, format, quality)
+      .finally(() => ipcRenderer.removeListener(ch, listener)) as Promise<string>
+  },
   // Pessoas (agrupamento facial)
   groupBySimilarity: (
     threshold?: number

@@ -1,5 +1,7 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron'
 import { existsSync } from 'node:fs'
+import { appendFile, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { loadCore, getCore } from './core'
 
@@ -71,6 +73,193 @@ app.whenReady().then(() => {
       chrome: process.versions.chrome
     }
   }))
+
+  ipcMain.handle('app:saveRestoredPreview', async (event, dataUrl: string, defaultName: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
+      return { ok: false, error: 'Prévia inválida.' }
+    }
+    const result = await dialog.showSaveDialog(win, {
+      title: 'Salvar cópia restaurada',
+      defaultPath: `${(defaultName || 'foto-restaurada').replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')}.jpg`,
+      filters: [{ name: 'Imagem JPEG', extensions: ['jpg', 'jpeg'] }]
+    })
+    if (result.canceled || !result.filePath) return { ok: false }
+    const comma = dataUrl.indexOf(',')
+    if (comma < 0) return { ok: false, error: 'Formato de prévia inválido.' }
+    try {
+      await writeFile(result.filePath, Buffer.from(dataUrl.slice(comma + 1), 'base64'))
+      return { ok: true, path: result.filePath }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle('app:saveRestoredPreviews', async (event, items: Array<{ dataUrl: string; defaultName: string }>) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || !Array.isArray(items) || !items.length) return { ok: false, error: 'Nenhuma prévia para salvar.' }
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Escolha a pasta para as fotos restauradas',
+      properties: ['openDirectory', 'createDirectory']
+    })
+    if (result.canceled || !result.filePaths.length) return { ok: false }
+    const outputDir = result.filePaths[0]
+    let saved = 0
+    try {
+      for (const item of items) {
+        if (typeof item?.dataUrl !== 'string' || !item.dataUrl.startsWith('data:image/')) continue
+        const comma = item.dataUrl.indexOf(',')
+        if (comma < 0) continue
+        const name = `${(item.defaultName || 'foto-restaurada').replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')}.jpg`
+        await writeFile(join(outputDir, name), Buffer.from(item.dataUrl.slice(comma + 1), 'base64'))
+        saved += 1
+      }
+      return { ok: true, path: outputDir, saved }
+    } catch (e) {
+      return { ok: false, error: String(e), path: outputDir, saved }
+    }
+  })
+
+  const openAiKeyPath = () => join(app.getPath('userData'), 'openai-api-key.bin')
+  const restorationCacheDir = () => join(app.getPath('userData'), 'restoration-cache')
+  const restorationCachePath = (sourcePath: string) => join(restorationCacheDir(), `${createHash('sha256').update(sourcePath).digest('hex')}.json`)
+  const persistRestorationCache = async (sourcePath: string, dataUrl: string) => {
+    const source = await stat(sourcePath)
+    await mkdir(restorationCacheDir(), { recursive: true })
+    const cachePath = restorationCachePath(sourcePath)
+    const tempPath = `${cachePath}.${process.pid}.tmp`
+    await writeFile(tempPath, JSON.stringify({ sourcePath, sourceSize: source.size, sourceMtimeMs: source.mtimeMs, savedAt: new Date().toISOString(), dataUrl }), { encoding: 'utf8', mode: 0o600 })
+    await rename(tempPath, cachePath)
+  }
+  const cloudConfirmations = new Map<number, number>()
+  const readOpenAiKey = async (): Promise<string | null> => {
+    const environmentKey = process.env.OPENAI_API_KEY?.trim()
+    if (environmentKey?.startsWith('sk-')) return environmentKey
+    if (!safeStorage.isEncryptionAvailable()) return null
+    try {
+      return safeStorage.decryptString(await readFile(openAiKeyPath()))
+    } catch {
+      return null
+    }
+  }
+
+  ipcMain.handle('app:hasOpenAiKey', async () => Boolean(await readOpenAiKey()))
+  ipcMain.handle('app:saveOpenAiKey', async (_event, key: string) => {
+    if (!safeStorage.isEncryptionAvailable()) return { ok: false, error: 'Armazenamento seguro indisponível nesta sessão.' }
+    const normalized = typeof key === 'string' ? key.trim() : ''
+    if (!normalized.startsWith('sk-')) return { ok: false, error: 'A chave deve começar com sk-.' }
+    await writeFile(openAiKeyPath(), safeStorage.encryptString(normalized), { mode: 0o600 })
+    return { ok: true }
+  })
+
+  ipcMain.handle('app:confirmCloudRestoreBatch', async (event, count: number) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || !Number.isInteger(count) || count < 1) return { ok: false, error: 'Nenhuma foto selecionada.' }
+    const label = count === 1 ? 'A foto selecionada será enviada' : `As ${count} imagens selecionadas serão enviadas`
+    const confirmation = await dialog.showMessageBox(win, {
+      type: 'warning',
+      buttons: ['Cancelar', 'Enviar e restaurar'],
+      defaultId: 0,
+      cancelId: 0,
+      title: 'Restauração com IA online',
+      message: `${label} à API da OpenAI.`,
+      detail: 'Isso sai do modo 100% local e pode gerar cobrança na sua conta. O envio só ocorrerá após esta confirmação.'
+    })
+    if (confirmation.response !== 1) return { ok: false, error: 'Envio cancelado.' }
+    cloudConfirmations.set(event.sender.id, count)
+    return { ok: true }
+  })
+
+  ipcMain.handle('app:saveRestorationCache', async (_event, sourcePath: string, dataUrl: string) => {
+    if (typeof sourcePath !== 'string' || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return { ok: false, error: 'Prévia inválida.' }
+    try {
+      await persistRestorationCache(sourcePath, dataUrl)
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: String(error) }
+    }
+  })
+
+  ipcMain.handle('app:loadRestorationCache', async (_event, items: Array<{ id: number; sourcePath: string }>) => {
+    if (!Array.isArray(items)) return {}
+    const entries: Record<number, string> = {}
+    for (const item of items) {
+      if (!Number.isInteger(item?.id) || typeof item.sourcePath !== 'string') continue
+      try {
+        const source = await stat(item.sourcePath)
+        const cached = JSON.parse(await readFile(restorationCachePath(item.sourcePath), 'utf8')) as { sourceSize?: number; sourceMtimeMs?: number; dataUrl?: string }
+        if (cached.sourceSize === source.size && cached.sourceMtimeMs === source.mtimeMs && cached.dataUrl?.startsWith('data:image/')) entries[item.id] = cached.dataUrl
+      } catch { /* cache ausente, incompleto ou desatualizado */ }
+    }
+    return entries
+  })
+
+  ipcMain.handle('app:cloudRestorePhoto', async (event, sourcePath: string, prompt: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const key = await readOpenAiKey()
+    if (!key) return { ok: false, error: 'Configure uma chave da OpenAI antes de usar a IA online.' }
+    if (!win || typeof sourcePath !== 'string' || typeof prompt !== 'string') return { ok: false, error: 'Entrada inválida.' }
+    const allowance = cloudConfirmations.get(event.sender.id) ?? 0
+    if (allowance < 1) return { ok: false, error: 'Confirme o envio do lote antes de iniciar.' }
+    if (allowance === 1) cloudConfirmations.delete(event.sender.id)
+    else cloudConfirmations.set(event.sender.id, allowance - 1)
+    const startedAt = Date.now()
+    const usagePath = join(app.getPath('userData'), 'openai-usage.jsonl')
+    const writeUsage = async (record: Record<string, unknown>) => {
+      try { await appendFile(usagePath, `${JSON.stringify(record)}\n`, 'utf8') } catch { /* relatório nunca bloqueia a restauração */ }
+    }
+    const baseRecord = {
+      timestamp: new Date().toISOString(),
+      operation: 'image_edit',
+      model: 'gpt-image-2',
+      quality: 'high',
+      size: 'auto',
+      inputFile: sourcePath.split(/[\\/]/).pop() || 'photo',
+      promptCharacters: prompt.length
+    }
+    try {
+      const bytes = await readFile(sourcePath)
+      const form = new FormData()
+      form.append('model', 'gpt-image-2')
+      form.append('image', new Blob([bytes], { type: 'image/jpeg' }), sourcePath.split(/[\\/]/).pop() || 'photo.jpg')
+      form.append('prompt', prompt)
+      form.append('quality', 'high')
+      form.append('size', 'auto')
+      const response = await fetch('https://api.openai.com/v1/images/edits', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}` },
+        body: form
+      })
+      const payload = await response.json() as { data?: Array<{ b64_json?: string }>; error?: { message?: string }; usage?: Record<string, unknown> }
+      const encoded = payload.data?.[0]?.b64_json
+      const record = { ...baseRecord, completedAt: new Date().toISOString(), elapsedMs: Date.now() - startedAt, httpStatus: response.status, status: response.ok && encoded ? 'success' : 'error', requestId: response.headers.get('x-request-id'), inputBytes: bytes.byteLength, outputBytes: encoded ? Buffer.byteLength(encoded, 'base64') : 0, usage: payload.usage ?? null, usageNote: payload.usage ? 'usage informado pela API' : 'tokens não informados na resposta do endpoint de imagem' }
+      await writeUsage(record)
+      if (!response.ok || !encoded) return { ok: false, error: payload.error?.message ?? `API retornou HTTP ${response.status}.` }
+      const dataUrl = `data:image/png;base64,${encoded}`
+      try { await persistRestorationCache(sourcePath, dataUrl) } catch (cacheError) { console.error('Falha ao persistir cache de restauração:', cacheError) }
+      return { ok: true, dataUrl }
+    } catch (error) {
+      await writeUsage({ ...baseRecord, completedAt: new Date().toISOString(), elapsedMs: Date.now() - startedAt, status: 'network_error', usage: null, usageNote: 'tokens não informados porque a chamada não completou', error: String(error) })
+      return { ok: false, error: `Falha na restauração online: ${String(error)}` }
+    }
+  })
+
+  ipcMain.handle('app:getOpenAiUsageReport', async () => {
+    try {
+      const lines = (await readFile(join(app.getPath('userData'), 'openai-usage.jsonl'), 'utf8')).trim().split('\n').filter(Boolean)
+      return lines.slice(-200).map((line) => JSON.parse(line))
+    } catch { return [] }
+  })
+
+  ipcMain.handle('app:exportOpenAiUsageReport', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return { ok: false, error: 'Janela indisponível.' }
+    const usagePath = join(app.getPath('userData'), 'openai-usage.jsonl')
+    const result = await dialog.showSaveDialog(win, { title: 'Exportar relatório de uso OpenAI', defaultPath: 'openshoot-openai-usage.jsonl', filters: [{ name: 'Relatório JSONL', extensions: ['jsonl'] }] })
+    if (result.canceled || !result.filePath) return { ok: false, error: 'Exportação cancelada.' }
+    try { await writeFile(result.filePath, await readFile(usagePath, 'utf8'), 'utf8'); return { ok: true, path: result.filePath } }
+    catch (error) { return { ok: false, error: String(error) } }
+  })
 
   // ---- Fase 1: catálogo + thumbnails ----
   ipcMain.handle('core:scanFolder', async (_e, dir: string, includeSubdirs?: boolean, types?: string) => {
@@ -472,6 +661,43 @@ app.whenReady().then(() => {
       return 0
     }
   })
+
+  // --- Fase 7: upscale / enhance (ref. Upscayl) ---
+  ipcMain.handle('core:upscaleAvailable', (_e, model?: string) => {
+    try {
+      return getCore().upscaleAvailable(model)
+    } catch {
+      return false
+    }
+  })
+  ipcMain.handle('core:upscalePhoto', async (_e, id: number, model?: string, scale?: number, maxDim?: number) => {
+    try {
+      return await getCore().upscalePhoto(id, model, scale, maxDim ?? 512)
+    } catch (e) {
+      console.error('[upscale] falha upscalePhoto:', e)
+      return null
+    }
+  })
+  ipcMain.handle(
+    'core:exportUp scaled',
+    async (event, ids: number[], destDir: string, model?: string, scale?: number, format?: string, quality?: number) => {
+      try {
+        // Callback de progresso não cruza invoke (structured clone) — vai por evento.
+        const onProgress = (p: any) => event.sender.send('core:upscaleProgress', p)
+        return await (getCore() as any).exportUp scaled(
+          ids,
+          destDir,
+          model,
+          scale,
+          format ?? 'jpeg',
+          quality ?? 90,
+          onProgress
+        )
+      } catch (e) {
+        return { ok: false, error: String(e) }
+      }
+    }
+  )
 
   // ---- Pessoas: agrupamento facial + exportação por pessoa ----
   type CoreWithPeople = typeof import('*.node') & {

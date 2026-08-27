@@ -98,6 +98,51 @@ button.ghost {
   color: #b6bdc9;
 }
 
+/* ------- Bancada de restauração local ------- */
+.restorer-body { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+.restorer-controls { width: 300px; padding: 24px; border-right: 1px solid #252b37; overflow-y: auto; flex-shrink: 0; }
+.restorer-controls h2 { margin: 0 0 8px; font-size: 20px; }
+.restorer-hint, .restorer-footnote { color: #9aa3b2; font-size: 13px; line-height: 1.5; }
+.restorer-field { display: grid; gap: 7px; margin: 20px 0; color: #b6bdc9; font-size: 13px; }
+.restorer-field select { width: 100%; }
+.restorer-select-all { font-size: 12px; padding: 7px 9px; }
+.restorer-controls fieldset { border: 1px solid #252b37; border-radius: 8px; padding: 12px; display: grid; gap: 11px; }
+.restorer-controls legend { color: #e6e9ef; padding: 0 5px; font-size: 13px; }
+.restorer-check { display: flex; gap: 9px; align-items: center; font-size: 13px; }
+.restorer-controls button { width: 100%; margin-top: 10px; }
+.restorer-message { color: #93c5fd; font-size: 12px; overflow-wrap: anywhere; }
+.restorer-key-status { color: #86efac !important; margin: 8px 0; }
+.restorer-online { margin-top: 24px; padding-top: 16px; border-top: 1px solid #252b37; }
+.restorer-online h3 { margin: 0 0 6px; font-size: 14px; color: #fbbf24; }
+.restorer-online p { color: #9aa3b2; font-size: 12px; line-height: 1.4; }
+.restorer-online input { width: 100%; margin: 6px 0 4px; }
+.restorer-online .online-button { background: #a16207; margin-top: 12px; }
+.restorer-stage { flex: 1; min-width: 0; padding: 18px 24px 24px; overflow: auto; display: flex; flex-direction: column; gap: 14px; }
+.restorer-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: #b6bdc9; font-size: 13px; }
+.restorer-view-actions { display: flex; align-items: center; gap: 5px; }
+.restorer-view-actions button { width: auto; margin: 0; padding: 5px 9px; font-size: 11px; }
+.restorer-view-actions button.active { color: #fff; background: #2563eb; border-color: #3b82f6; }
+.restorer-view-actions span { min-width: 42px; text-align: center; color: #93c5fd; font-size: 11px; }
+.restorer-images { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; min-height: 360px; height: min(52vh, 560px); }
+.restorer-images.comparison-before, .restorer-images.comparison-after { grid-template-columns: minmax(0, 1fr); }
+.restorer-images > div { min-width: 0; display: flex; flex-direction: column; gap: 8px; color: #9aa3b2; font-size: 12px; }
+.restorer-image-viewport { flex: 1; min-height: 240px; overflow: auto; display: grid; place-items: center; background: #161a22; border: 1px solid #252b37; border-radius: 10px; }
+.restorer-images img { max-width: 100%; max-height: 100%; object-fit: contain; transition: transform 120ms ease; }
+.restorer-empty { flex: 1; min-height: 240px; width: 100%; display: grid; place-items: center; gap: 8px; color: #697386; background: #161a22; border: 1px solid #252b37; border-radius: 10px; }
+.restorer-spinner { width: 18px; height: 18px; border: 2px solid #334155; border-top-color: #60a5fa; border-radius: 50%; animation: restorer-spin .8s linear infinite; }
+@keyframes restorer-spin { to { transform: rotate(360deg); } }
+.restorer-filmstrip { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; max-height: 260px; overflow-y: auto; padding: 2px; }
+.restorer-thumb { position: relative; width: 100%; min-width: 0; margin: 0 !important; padding: 4px; display: flex; flex-direction: column; gap: 3px; text-align: left; background: #161a22; border: 1px solid #252b37; border-radius: 7px; color: #9aa3b2; cursor: pointer; }
+.restorer-thumb:hover, .restorer-thumb.current { border-color: #60a5fa; }
+.restorer-thumb.selected { box-shadow: inset 0 0 0 1px #2563eb; }
+.restorer-thumb img, .restorer-thumb-placeholder { width: 100%; height: 76px; object-fit: cover; display: grid; place-items: center; background: #0f131a; border-radius: 4px; color: #697386; }
+.restorer-thumb small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.restorer-thumb-check { position: absolute; top: 7px; right: 7px; width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; background: rgba(15, 23, 42, .9); color: #93c5fd; font-size: 12px; }
+.restorer-thumb-status { font-size: 9px; color: #fbbf24; font-style: normal; }
+.restorer-thumb-status.done { color: #86efac; }
+.restorer-thumb-status.error { color: #fca5a5; }
+.restorer-empty { display: grid; place-items: center; color: #697386; }
+
 .content {
   flex: 1;
   min-height: 0;

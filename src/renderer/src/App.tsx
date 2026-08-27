@@ -7,6 +7,7 @@ import LoupeView from './components/LoupeView'
 import FilterPanel from './components/FilterPanel'
 import HomeView from './components/HomeView'
 import PeopleView from './components/PeopleView'
+import RestorerView from './components/RestorerView'
 import { useT } from './i18n/I18nContext'
 import type { PhotoMeta } from '../../types/photo'
 
@@ -64,6 +65,7 @@ export default function App() {
   const [mode, setMode] = useState<'import' | 'cull' | 'edit' | 'retouch'>('import')
   const [exportOpen, setExportOpen] = useState(false)
   const [showPeople, setShowPeople] = useState(false)
+  const [showRestorer, setShowRestorer] = useState(false)
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>('none')
   const [moreOpen, setMoreOpen] = useState(false)
   const moreRef = useRef<HTMLDivElement | null>(null)
@@ -568,9 +570,11 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [editViewId])
 
+  if (showRestorer) return <RestorerView onBack={() => setShowRestorer(false)} photoIds={currentAlbum != null && albumPhotoIds ? Array.from(albumPhotoIds) : undefined} />
+
   // Tela Lar (álbuns) quando não há álbum aberto.
   if (currentAlbum == null) {
-    return <HomeView onOpenAlbum={openAlbum} />
+    return <HomeView onOpenAlbum={openAlbum} onOpenRestorer={() => setShowRestorer(true)} />
   }
 
   // Tela Pessoas (agrupamento facial) em tela cheia.
@@ -628,6 +632,9 @@ export default function App() {
         </button>
         <button onClick={() => setShowPeople(true)} className="ghost">
           {t('people.titulo')}
+        </button>
+        <button onClick={() => setShowRestorer(true)} className="ghost">
+          Bancada de restauração
         </button>
         <div className="mode-tabs">
           {(

@@ -119,6 +119,28 @@ OpenShoot/
 
 ## 6. Roadmap por Fases
 
+### Bancada de restauração (experimental, local)
+
+O app inclui uma tela independente de teste que combina o pipeline local já
+existente (`preview_edit`) para nitidez, redução de ruído, exposição, cor e
+alinhamento. A tela mostra original/prévia e salva somente uma cópia JPEG por
+diálogo do Electron; o arquivo original nunca é sobrescrito. O modo local não
+faz chamada de rede nem usa chave externa.
+
+O modo experimental **IA online** é uma extensão separada: envia fotos
+selecionadas ao endpoint `/v1/images/edits` da OpenAI usando `gpt-image-2`, após
+uma única confirmação explícita por lote. A chave é criptografada pelo Electron (`safeStorage`)
+no perfil local e nunca é enviada ao renderer ou gravada no código. Esse modo
+pode gerar cobrança e não altera o status do modo local, que continua padrão.
+Cada tentativa online registra metadados técnicos sem chave, prompt ou pixels em
+`openai-usage.jsonl` no perfil do usuário, com opção de exportação pela bancada.
+Cada resultado é gravado imediatamente em `restoration-cache/` no perfil do
+usuário, com validação de tamanho e data de modificação do original ao reabrir;
+o processamento online usa até três requisições simultâneas para reduzir o
+tempo do lote, mantendo o limite explícito e registrando `elapsedMs` por foto.
+Como alternativa, `OPENAI_API_KEY` pode ser fornecida no ambiente do processo;
+ela tem precedência sobre a chave criptografada e nunca é persistida pelo app.
+
 ### Fase 0 — Esqueleto (fundação)
 - [ ] Workspace electron-forge + crate Rust, napi-rs integrado
 - [ ] Janela aberta, hello-world IPC (UI ⇄ Rust)
