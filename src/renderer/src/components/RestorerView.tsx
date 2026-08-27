@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { PhotoMeta } from '../../../types/photo'
+import { useRef } from 'react'
 
 type Operation = 'sharpen' | 'denoise' | 'exposure' | 'color' | 'horizon'
 type ProcessStatus = 'idle' | 'processing' | 'done' | 'error'
-type ComparisonMode = 'side-by-side' | 'before' | 'after'
+type ComparisonMode = 'side-by-side' | 'before' | 'after' | 'slider'
 
 const OPERATION_LABELS: Record<Operation, string> = {
   sharpen: 'Recuperar nitidez',
@@ -41,10 +42,14 @@ export default function RestorerView({ onBack, photoIds }: RestorerViewProps) {
   const [progress, setProgress] = useState('')
   const [zoom, setZoom] = useState(1)
   const [comparisonMode, setComparisonMode] = useState<ComparisonMode>('side-by-side')
+  const [splitPosition, setSplitPosition] = useState(50)
+  const [outputDir, setOutputDir] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [openAiKey, setOpenAiKey] = useState('')
   const [keyConfigured, setKeyConfigured] = useState(false)
   const [editingKey, setEditingKey] = useState(false)
+  const beforeViewportRef = useRef<HTMLDivElement | null>(null)
+  const afterViewportRef = useRef<HTMLDivElement | null>(null)
 
   const photo = useMemo(() => photos.find((item) => item.id === photoId) ?? null, [photos, photoId])
 
@@ -159,9 +164,38 @@ export default function RestorerView({ onBack, photoIds }: RestorerViewProps) {
     const items = selectedPhotos.flatMap((item) => previews[item.id] ? [{ dataUrl: previews[item.id], defaultName: `${item.fileName.replace(/\.[^.]+$/, '')}-restaurada` }] : [])
     if (!items.length) return
     setBusy(true)
-    const result = await window.openshoot.saveRestoredPreviews(items)
+    let dir = outputDir
+    if (!dir) {
+      const picked = await window.openshoot.pickRestorationFolder()
+      if (!picked.ok || !picked.path) {
+        setBusy(false)
+        setMessage('Salvamento cancelado.')
+        return
+      }
+      dir = picked.path
+      setOutputDir(dir)
+    }
+    const result = await window.openshoot.saveRestoredPreviews(items, dir)
     setMessage(result.ok ? `${result.saved ?? items.length} cópia(s) salva(s) em ${result.path}` : (result.error ?? 'Salvamento cancelado.'))
     setBusy(false)
+  }
+
+  const chooseOutputDir = async () => {
+    if (busy) return
+    const result = await window.openshoot.pickRestorationFolder()
+    if (result.ok && result.path) {
+      setOutputDir(result.path)
+      setMessage(`Destino definido: ${result.path}`)
+    }
+  }
+
+  const syncViewport = (source: 'before' | 'after') => {
+    const from = source === 'before' ? beforeViewportRef.current : afterViewportRef.current
+    const to = source === 'before' ? afterViewportRef.current : beforeViewportRef.current
+    if (from && to) {
+      to.scrollLeft = from.scrollLeft
+      to.scrollTop = from.scrollTop
+    }
   }
 
   const cloudPrompt = `Restore and enhance this photograph while preserving the original image, people, environment, composition, and moment exactly as captured.
@@ -237,10 +271,25 @@ Photorealistic, natural, documentary photography, identity-preserving restoratio
 
   const runCloudRestore = async () => {
     if (!selectedPhotos.length || !keyConfigured) return
+    let dir = outputDir
+    if (!dir) {
+      const picked = await window.openshoot.pickRestorationFolder()
+      if (!picked.ok || !picked.path) {
+        setMessage('Envio cancelado: escolha uma pasta de destino antes de iniciar.')
+        return
+      }
+      dir = picked.path
+      setOutputDir(dir)
+    }
+    const pendingPhotos = selectedPhotos.filter((item) => !previews[item.id])
+    if (!pendingPhotos.length) {
+      setMessage('Todas as fotos selecionadas já têm restauração em cache; nenhuma nova chamada foi feita.')
+      return
+    }
     setBusy(true)
     setMessage(null)
-    setProgress(`Processando 0/${selectedPhotos.length}`)
-    const confirmation = await window.openshoot.confirmCloudRestoreBatch(selectedPhotos.length)
+    setProgress(`Processando 0/${pendingPhotos.length}`)
+    const confirmation = await window.openshoot.confirmCloudRestoreBatch(pendingPhotos.length)
     if (!confirmation.ok) {
       setBusy(false)
       setMessage(confirmation.error ?? 'Envio cancelado.')
@@ -248,11 +297,11 @@ Photorealistic, natural, documentary photography, identity-preserving restoratio
     }
     let completed = 0
     let failures = 0
-    const concurrency = Math.min(3, selectedPhotos.length)
+    const concurrency = Math.min(3, pendingPhotos.length)
     let nextIndex = 0
     const worker = async () => {
-      while (nextIndex < selectedPhotos.length) {
-        const item = selectedPhotos[nextIndex++]
+      while (nextIndex < pendingPhotos.length) {
+        const item = pendingPhotos[nextIndex++]
         setStatuses((current) => ({ ...current, [item.id]: 'processing' }))
         try {
       const horizonPrompt = operations.horizon ? `
@@ -282,13 +331,13 @@ Use structural references such as stage edges, table lines, walls, floors and ar
         setStatuses((current) => ({ ...current, [item.id]: 'error' }))
       }
       completed += 1
-      setProgress(`Processando ${completed}/${selectedPhotos.length}`)
+      setProgress(`Processando ${completed}/${pendingPhotos.length}`)
       }
     }
     await Promise.all(Array.from({ length: concurrency }, () => worker()))
     setBusy(false)
     setProgress('')
-    setMessage(failures ? `${completed - failures} foto(s) restaurada(s) online; ${failures} falha(s).` : `${completed} foto(s) restaurada(s) com IA online.`)
+    setMessage(failures ? `${completed - failures} nova(s) foto(s) restaurada(s) online; ${failures} falha(s). Destino: ${dir}` : `${completed} foto(s) restaurada(s) com IA online. Destino: ${dir}`)
   }
 
   const exportUsageReport = async () => {
@@ -341,6 +390,8 @@ Use structural references such as stage edges, table lines, walls, floors and ar
             <button className="online-button" onClick={runCloudRestore} disabled={!selectedPhotos.length || !keyConfigured || busy}>
               Restaurar com IA online
             </button>
+            <button className="ghost" onClick={chooseOutputDir} disabled={busy}>{outputDir ? 'Trocar pasta de destino' : 'Escolher pasta de destino'}</button>
+            {outputDir && <p className="restorer-destination">Destino: {outputDir}</p>}
             <button className="ghost" onClick={exportUsageReport}>Exportar relatório de uso</button>
           </div>
           <button className="ghost" onClick={save} disabled={!preview || busy}>Salvar cópia JPEG</button>
@@ -354,15 +405,25 @@ Use structural references such as stage edges, table lines, walls, floors and ar
               <button className={comparisonMode === 'side-by-side' ? 'active' : ''} onClick={() => setComparisonMode('side-by-side')}>Lado a lado</button>
               <button className={comparisonMode === 'before' ? 'active' : ''} onClick={() => setComparisonMode('before')}>Antes</button>
               <button className={comparisonMode === 'after' ? 'active' : ''} onClick={() => setComparisonMode('after')}>Depois</button>
+              <button className={comparisonMode === 'slider' ? 'active' : ''} onClick={() => setComparisonMode('slider')}>Comparar</button>
               <button onClick={() => setZoom(Math.max(0.5, zoom - 0.25))}>−</button>
               <span>{Math.round(zoom * 100)}%</span>
               <button onClick={() => setZoom(Math.min(3, zoom + 0.25))}>+</button>
               <button onClick={() => setZoom(1)}>1:1</button>
             </div>
           </div>
-          <div className={`restorer-images comparison-${comparisonMode}`}>
-            {comparisonMode !== 'after' && <div><span>Antes · original</span>{originalLoading ? <div className="restorer-empty"><span className="restorer-spinner" /> Carregando original…</div> : original ? <div className="restorer-image-viewport"><img src={original} alt="Original" style={{ transform: `scale(${zoom})` }} /></div> : <div className="restorer-empty">Selecione uma foto</div>}</div>}
-            {comparisonMode !== 'before' && <div><span>Depois · restaurada</span>{preview ? <div className="restorer-image-viewport"><img src={preview} alt="Prévia restaurada" style={{ transform: `scale(${zoom})` }} /></div> : <div className="restorer-empty">Restaure para comparar</div>}</div>}
+          <div className={`restorer-images comparison-${comparisonMode}`} onWheel={(event) => { event.preventDefault(); setZoom((current) => Math.min(3, Math.max(0.5, current * Math.exp(-event.deltaY * 0.0015)))) }}>
+            {comparisonMode === 'slider' ? <div className="restorer-slider-comparison">
+              <span>Comparação deslizante</span>
+              <div className="restorer-slider-viewport" onPointerMove={(event) => { if (event.buttons === 1) { const rect = event.currentTarget.getBoundingClientRect(); setSplitPosition(Math.min(100, Math.max(0, ((event.clientX - rect.left) / rect.width) * 100))) } }} onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setSplitPosition(Math.min(100, Math.max(0, ((event.clientX - rect.left) / rect.width) * 100))) }}>
+                {original && <img className="restorer-slider-before" src={original} alt="Original" style={{ transform: `scale(${zoom})` }} />}
+                {preview && <div className="restorer-slider-after" style={{ width: `${splitPosition}%` }}><img src={preview} alt="Restaurada" style={{ transform: `scale(${zoom})` }} /></div>}
+                <div className="restorer-slider-handle" style={{ left: `${splitPosition}%` }}><span>↔</span></div>
+              </div>
+            </div> : <>
+            {comparisonMode !== 'after' && <div><span>Antes · original</span>{originalLoading ? <div className="restorer-empty"><span className="restorer-spinner" /> Carregando original…</div> : original ? <div ref={beforeViewportRef} className="restorer-image-viewport" onScroll={() => syncViewport('before')}><img src={original} alt="Original" style={{ transform: `scale(${zoom})` }} /></div> : <div className="restorer-empty">Selecione uma foto</div>}</div>}
+            {comparisonMode !== 'before' && <div><span>Depois · restaurada</span>{preview ? <div ref={afterViewportRef} className="restorer-image-viewport" onScroll={() => syncViewport('after')}><img src={preview} alt="Prévia restaurada" style={{ transform: `scale(${zoom})` }} /></div> : <div className="restorer-empty">Restaure para comparar</div>}</div>}
+            </>}
           </div>
           <div className="restorer-filmstrip">
             {photos.map((item) => <button key={item.id} className={`restorer-thumb ${item.id === photoId ? 'current' : ''} ${selectedIds.has(item.id) ? 'selected' : ''}`} onClick={() => selectPhoto(item.id)} title={item.fileName}>

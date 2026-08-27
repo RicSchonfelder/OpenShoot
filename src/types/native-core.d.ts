@@ -98,4 +98,15 @@ declare module '*.node' {
     onProgress: (p: { processed: number; total: number; currentFile: string }) => void
   ): Promise<string>
   export function clearThumbCache(): number
+  export function upscaleAvailable(model?: string): boolean
+  export function upscalePhoto(id: number, model?: string, scale?: number, maxDim?: number): Promise<string | null>
+  export function exportUpscaled(
+    ids: number[],
+    destDir: string,
+    model?: string,
+    scale?: number,
+    format?: string,
+    quality?: number,
+    onProgress?: (p: { processed: number; total: number; currentFile: string }) => void
+  ): Promise<string>
 }

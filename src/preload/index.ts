@@ -68,8 +68,9 @@ const api = {
   pickExportFolder: (): Promise<string | null> => ipcRenderer.invoke('core:pickExportFolder'),
   saveRestoredPreview: (dataUrl: string, defaultName: string): Promise<{ ok: boolean; path?: string; error?: string }> =>
     ipcRenderer.invoke('app:saveRestoredPreview', dataUrl, defaultName),
-  saveRestoredPreviews: (items: Array<{ dataUrl: string; defaultName: string }>): Promise<{ ok: boolean; path?: string; saved?: number; error?: string }> =>
-    ipcRenderer.invoke('app:saveRestoredPreviews', items),
+  pickRestorationFolder: (): Promise<{ ok: boolean; path?: string }> => ipcRenderer.invoke('app:pickRestorationFolder'),
+  saveRestoredPreviews: (items: Array<{ dataUrl: string; defaultName: string }>, destDir?: string): Promise<{ ok: boolean; path?: string; saved?: number; error?: string }> =>
+    ipcRenderer.invoke('app:saveRestoredPreviews', items, destDir),
   hasOpenAiKey: (): Promise<boolean> => ipcRenderer.invoke('app:hasOpenAiKey'),
   saveOpenAiKey: (key: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('app:saveOpenAiKey', key),
   confirmCloudRestoreBatch: (count: number): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('app:confirmCloudRestoreBatch', count),

@@ -138,8 +138,20 @@ Cada resultado é gravado imediatamente em `restoration-cache/` no perfil do
 usuário, com validação de tamanho e data de modificação do original ao reabrir;
 o processamento online usa até três requisições simultâneas para reduzir o
 tempo do lote, mantendo o limite explícito e registrando `elapsedMs` por foto.
+Antes da primeira requisição, a bancada exige a escolha da pasta de destino e
+reutiliza essa pasta na exportação. A exportação usa criação exclusiva: se um
+nome já existir, cria um sufixo numérico em vez de sobrescrever um arquivo.
+Ao reabrir a bancada, resultados presentes no cache são marcados como prontos e
+não são reenviados quando o usuário retoma o lote; requisições em andamento no
+momento do fechamento não podem ser continuadas, pois a API de imagens não
+oferece retomada parcial de uma requisição. O próximo passo de robustez é
+persistir um manifesto de lote com pendências e destino, para tornar essa
+retomada explícita e auditável.
 Como alternativa, `OPENAI_API_KEY` pode ser fornecida no ambiente do processo;
 ela tem precedência sobre a chave criptografada e nunca é persistida pelo app.
+
+O preview da bancada mantém o mesmo zoom para original e resultado, aceita
+zoom pela roda do mouse e oferece comparação deslizante com divisor arrastável.
 
 ### Fase 0 — Esqueleto (fundação)
 - [ ] Workspace electron-forge + crate Rust, napi-rs integrado

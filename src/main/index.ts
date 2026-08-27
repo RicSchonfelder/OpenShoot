@@ -95,23 +95,55 @@ app.whenReady().then(() => {
     }
   })
 
-  ipcMain.handle('app:saveRestoredPreviews', async (event, items: Array<{ dataUrl: string; defaultName: string }>) => {
+  ipcMain.handle('app:pickRestorationFolder', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win || !Array.isArray(items) || !items.length) return { ok: false, error: 'Nenhuma prévia para salvar.' }
+    if (!win) return { ok: false }
     const result = await dialog.showOpenDialog(win, {
-      title: 'Escolha a pasta para as fotos restauradas',
+      title: 'Escolha onde salvar as fotos restauradas antes de enviar',
       properties: ['openDirectory', 'createDirectory']
     })
-    if (result.canceled || !result.filePaths.length) return { ok: false }
-    const outputDir = result.filePaths[0]
+    return result.canceled || !result.filePaths.length ? { ok: false } : { ok: true, path: result.filePaths[0] }
+  })
+
+  ipcMain.handle('app:saveRestoredPreviews', async (event, items: Array<{ dataUrl: string; defaultName: string }>, requestedDir?: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || !Array.isArray(items) || !items.length) return { ok: false, error: 'Nenhuma prévia para salvar.' }
+    let outputDir = requestedDir?.trim()
+    if (!outputDir) {
+      const result = await dialog.showOpenDialog(win, {
+        title: 'Escolha a pasta para as fotos restauradas',
+        properties: ['openDirectory', 'createDirectory']
+      })
+      if (result.canceled || !result.filePaths.length) return { ok: false }
+      outputDir = result.filePaths[0]
+    }
     let saved = 0
     try {
+      await mkdir(outputDir, { recursive: true })
       for (const item of items) {
         if (typeof item?.dataUrl !== 'string' || !item.dataUrl.startsWith('data:image/')) continue
         const comma = item.dataUrl.indexOf(',')
         if (comma < 0) continue
         const name = `${(item.defaultName || 'foto-restaurada').replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')}.jpg`
-        await writeFile(join(outputDir, name), Buffer.from(item.dataUrl.slice(comma + 1), 'base64'))
+        const target = join(outputDir, name)
+        try {
+          await writeFile(target, Buffer.from(item.dataUrl.slice(comma + 1), 'base64'), { flag: 'wx' })
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+          const dot = name.lastIndexOf('.')
+          const stem = dot >= 0 ? name.slice(0, dot) : name
+          const ext = dot >= 0 ? name.slice(dot) : ''
+          let suffix = 2
+          while (true) {
+            try {
+              await writeFile(join(outputDir, `${stem}-${suffix}${ext}`), Buffer.from(item.dataUrl.slice(comma + 1), 'base64'), { flag: 'wx' })
+              break
+            } catch (retryError) {
+              if ((retryError as NodeJS.ErrnoException).code !== 'EEXIST') throw retryError
+              suffix += 1
+            }
+          }
+        }
         saved += 1
       }
       return { ok: true, path: outputDir, saved }
