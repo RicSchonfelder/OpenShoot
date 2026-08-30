@@ -4,6 +4,7 @@ import EditPanel from './components/EditPanel'
 import EditViewPhoto from './components/EditViewPhoto'
 import EditViewFilmstrip from './components/EditViewFilmstrip'
 import ExportDialog from './components/ExportDialog'
+import ExportView from './components/ExportView'
 import LoupeView from './components/LoupeView'
 import FilterPanel from './components/FilterPanel'
 import HomeView from './components/HomeView'
@@ -69,6 +70,7 @@ export default function App() {
   const [exportOpen, setExportOpen] = useState(false)
   const [showPeople, setShowPeople] = useState(false)
   const [showRestorer, setShowRestorer] = useState(false)
+  const [showExportView, setShowExportView] = useState(false)
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>('none')
   const [moreOpen, setMoreOpen] = useState(false)
   const moreRef = useRef<HTMLDivElement | null>(null)
@@ -591,7 +593,7 @@ export default function App() {
 
   // Tela Lar (álbuns) quando não há álbum aberto.
   if (currentAlbum == null) {
-    return <HomeView onOpenAlbum={openAlbum} onOpenRestorer={() => setShowRestorer(true)} />
+    return <HomeView onOpenAlbum={openAlbum} />
   }
 
   // Tela Pessoas (agrupamento facial) em tela cheia.
@@ -669,12 +671,16 @@ export default function App() {
         <button onClick={closeAlbum} className="ghost back-albums">
           ← {t('app.meusAlbums')}
         </button>
-        <button onClick={() => setShowPeople(true)} className="ghost">
-          {t('people.titulo')}
-        </button>
-        <button onClick={() => setShowRestorer(true)} className="ghost">
-          Bancada de restauração
-        </button>
+        {mode === 'edit' && (
+          <button onClick={() => setShowPeople(true)} className="ghost">
+            {t('people.titulo')}
+          </button>
+        )}
+        {mode === 'edit' && (
+          <button onClick={() => setShowRestorer(true)} className="ghost">
+            Bancada de restauração
+          </button>
+        )}
         <div className="mode-tabs">
           {(
             [
@@ -693,40 +699,57 @@ export default function App() {
             </button>
           ))}
         </div>
-        <div className="topbar-filters">
-          {MAIN_FILTERS.map((f) => (
-            <button
-              key={f}
-              className={`filter-btn ${filter === f ? 'active' : ''}`}
-              onClick={() => setFilter(f)}
-            >
-              {FILTER_LABELS[f]}
-            </button>
-          ))}
-        </div>
+        {mode !== 'import' && (
+          <div className="topbar-filters">
+            {MAIN_FILTERS.map((f) => (
+              <button
+                key={f}
+                className={`filter-btn ${filter === f ? 'active' : ''}`}
+                onClick={() => setFilter(f)}
+              >
+                {FILTER_LABELS[f]}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="topbar-right">
           {selectedIds.size > 0 && (
             <button onClick={deleteSelected} className="danger">
               {t('app.deletar')} ({selectedIds.size})
             </button>
           )}
-          <button
-            onClick={() => setExportOpen(true)}
-            disabled={selectedIds.size === 0}
-            className="ghost"
-            title={t('export.hint')}
-          >
-            {t('export.exportarBtn')}
-          </button>
-          <button onClick={exportXmp} disabled={exporting || photos.length === 0} className="ghost">
-            {exporting ? t('app.exportando') : t('app.exportarXmp')}
-          </button>
-          <button onClick={runCull} disabled={culling || photos.length === 0} className="primary">
-            {culling ? t('app.cullRun') : t('app.cull')}
-          </button>
-          <button onClick={importFolder} disabled={scanning}>
-            {scanning ? t('app.importando') : t('app.importar')}
-          </button>
+          {(mode === 'edit' || mode === 'retouch') && (
+            <>
+              <button
+                onClick={() => setExportOpen(true)}
+                disabled={selectedIds.size === 0}
+                className="ghost"
+                title={t('export.hint')}
+              >
+                {t('export.exportarBtn')}
+              </button>
+              <button onClick={exportXmp} disabled={exporting || photos.length === 0} className="ghost">
+                {exporting ? t('app.exportando') : t('app.exportarXmp')}
+              </button>
+            </>
+          )}
+          {mode === 'cull' && (
+            <button onClick={runCull} disabled={culling || photos.length === 0} className="primary">
+              {culling ? t('app.cullRun') : t('app.cull')}
+            </button>
+          )}
+          {mode === 'import' && (
+            <>
+              <button onClick={importFolder} disabled={scanning}>
+                {scanning ? t('app.importando') : t('app.importar')}
+              </button>
+              {photos.length > 0 && (
+                <button onClick={() => setShowExportView(true)} className="ghost">
+                  {t('export.exportarBtn')}
+                </button>
+              )}
+            </>
+          )}
         </div>
       </header>
 
@@ -986,6 +1009,7 @@ export default function App() {
             onSelect={handleSelect}
             onActivate={handleActivate}
             onRate={handleRate}
+            mode={mode}
           />
         </div>
         {(mode === 'edit' || mode === 'retouch') && (
@@ -1090,6 +1114,13 @@ export default function App() {
           ids={Array.from(selectedIds)}
           onClose={() => setExportOpen(false)}
           onDone={(msg) => setScanMsg(msg)}
+        />
+      )}
+
+      {showExportView && (
+        <ExportView
+          photos={photos}
+          onClose={() => setShowExportView(false)}
         />
       )}
     </div>

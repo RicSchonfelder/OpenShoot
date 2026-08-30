@@ -197,7 +197,9 @@ const api = {
     ipcRenderer.invoke('core:setPhotoLabel', id, label),
   getPhotoLabel: (id: number): Promise<string> => ipcRenderer.invoke('core:getPhotoLabel', id),
   getLabelsBulk: (ids: number[]): Promise<Record<string, string>> =>
-    ipcRenderer.invoke('core:getLabelsBulk', ids)
+    ipcRenderer.invoke('core:getLabelsBulk', ids),
+  getExifDetail: (id: number): Promise<{ iso: number | null; aperture: number | null; focal_length: number | null; shutter_speed: string | null; lens: string; flash: string | null; white_balance: string | null }> =>
+    ipcRenderer.invoke('core:getExifDetail', id)
 }
 
 contextBridge.exposeInMainWorld('openshoot', api)

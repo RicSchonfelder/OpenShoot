@@ -137,8 +137,10 @@ export default function PeopleView({ onBack, photoIds }: PeopleViewProps) {
                       src={covers[p.person_id]}
                       alt={t('people.pessoa', { n: p.person_id + 1 })}
                       style={p.sample_face ? {
-                        transform: 'scale(1.75)',
-                        transformOrigin: `${((p.sample_face[0] + p.sample_face[2]) / 2) * 100}% ${((p.sample_face[1] + p.sample_face[3]) / 2) * 100}%`
+                        objectFit: 'none',
+                        objectPosition: `${((p.sample_face[0] + p.sample_face[2]) / 2) * 100}% ${((p.sample_face[1] + p.sample_face[3]) / 2) * 100}%`,
+                        width: '300%',
+                        height: '300%'
                       } : undefined}
                     />
                   ) : (

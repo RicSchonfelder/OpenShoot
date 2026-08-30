@@ -612,6 +612,28 @@ pub fn detect_faces_in_photo(id: i64) -> Result<serde_json::Value> {
   .map_err(|e| Error::from_reason(format!("json: {e}")))
 }
 
+#[napi]
+pub fn get_exif_detail(id: i64) -> Result<serde_json::Value> {
+  let photo = match catalog::get_photo(id) {
+    Ok(Some(p)) => p,
+    Ok(None) => return Err(Error::from_reason(format!("foto {id} nao encontrada"))),
+    Err(e) => return Err(Error::from_reason(e)),
+  };
+  let pb = PathBuf::from(&photo.path);
+  let exif = imageproc::read_exif_detail(&pb);
+  serde_json::json!({
+    "iso": exif.iso,
+    "aperture": exif.aperture,
+    "focal_length": exif.focal_length,
+    "shutter_speed": exif.shutter_speed,
+    "lens": exif.lens,
+    "flash": exif.flash,
+    "white_balance": exif.white_balance,
+  })
+  .try_into()
+  .map_err(|e| Error::from_reason(format!("json: {e}")))
+}
+
 /// Exporta sidecars XMP em massa para todas as fotos com rating > 0.
 /// Retorna { exported, errors }.
 #[napi(object)]

@@ -13,10 +13,9 @@ interface AlbumItem {
 
 interface HomeViewProps {
   onOpenAlbum: (albumId: number) => void
-  onOpenRestorer: () => void
 }
 
-export default function HomeView({ onOpenAlbum, onOpenRestorer }: HomeViewProps) {
+export default function HomeView({ onOpenAlbum }: HomeViewProps) {
   const { t } = useT()
   const [albums, setAlbums] = useState<AlbumItem[]>([])
   const [creating, setCreating] = useState(false)
@@ -66,7 +65,6 @@ export default function HomeView({ onOpenAlbum, onOpenRestorer }: HomeViewProps)
       <header className="topbar">
         <span className="logo">OpenShoot</span>
         <div className="topbar-right">
-          <button onClick={onOpenRestorer} className="ghost">Bancada de restauração</button>
           <button onClick={() => setCreating(true)} className="primary">
             + {t('home.novoAlbum')}
           </button>

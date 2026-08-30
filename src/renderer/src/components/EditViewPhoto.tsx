@@ -26,7 +26,7 @@ export default function EditViewPhoto({ photoId, modifiedSrc, compareMode, onCom
     panRef.current = { x: 0, y: 0 }
     setPan({ x: 0, y: 0 })
     window.openshoot
-      .thumbForPhoto(photoId, 2400)
+      .thumbForPhoto(photoId, 4096)
       .then((t) => {
         if (active && t) setSrc(t)
       })

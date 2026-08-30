@@ -12,6 +12,7 @@ interface GalleryProps {
   onSelect: (id: number, opts: { extend: boolean; toggle: boolean }) => void
   onActivate: (id: number) => void
   onRate: (id: number, rating: number) => void
+  mode?: 'import' | 'cull' | 'edit' | 'retouch'
 }
 
 const CELL_SIZE = 200
@@ -45,6 +46,7 @@ interface CellData {
   onRate: (id: number, rating: number) => void
   labels: Record<number, string>
   onOpenLabelMenu: (id: number, x: number, y: number) => void
+  mode?: 'import' | 'cull' | 'edit' | 'retouch'
 }
 
 function Thumb({
@@ -55,7 +57,8 @@ function Thumb({
   onActivate,
   onRate,
   colorLabel,
-  onOpenLabelMenu
+  onOpenLabelMenu,
+  mode
 }: {
   photo: PhotoMeta
   maxDim: number
@@ -65,6 +68,7 @@ function Thumb({
   onRate: (id: number, rating: number) => void
   colorLabel: string | undefined
   onOpenLabelMenu: (id: number, x: number, y: number) => void
+  mode?: 'import' | 'cull' | 'edit' | 'retouch'
 }) {
   const { t } = useT()
   const [src, setSrc] = useState<string | null>(() => getThumb(photo.id))
@@ -151,30 +155,32 @@ function Thumb({
           <span className="cell-score">{Math.round(photo.cullScore)}</span>
         )}
         {selected && <span className="cell-check">✓</span>}
-        <div
-          className="cell-stars"
-          role="radiogroup"
-          aria-label={t('gallery.starRating')}
-          onClick={(e) => e.stopPropagation()}
-          onDoubleClick={(e) => e.stopPropagation()}
-        >
-          {[1, 2, 3, 4, 5].map((star) => (
-            <button
-              key={star}
-              type="button"
-              role="radio"
-              aria-checked={photo.rating === star}
-              aria-label={t('gallery.starN', { n: star })}
-              className={`cell-star ${star <= photo.rating ? 'on' : ''}`}
-              onClick={(e) => {
-                e.stopPropagation()
-                onRate(photo.id, star === photo.rating ? 0 : star)
-              }}
-            >
-              ★
-            </button>
-          ))}
-        </div>
+        {mode !== 'import' && (
+          <div
+            className="cell-stars"
+            role="radiogroup"
+            aria-label={t('gallery.starRating')}
+            onClick={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
+          >
+            {[1, 2, 3, 4, 5].map((star) => (
+              <button
+                key={star}
+                type="button"
+                role="radio"
+                aria-checked={photo.rating === star}
+                aria-label={t('gallery.starN', { n: star })}
+                className={`cell-star ${star <= photo.rating ? 'on' : ''}`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onRate(photo.id, star === photo.rating ? 0 : star)
+                }}
+              >
+                ★
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       <div className="cell-meta">
         <span className="cell-name">{label}</span>
@@ -196,7 +202,8 @@ function cellComponent({
   onActivate,
   onRate,
   labels,
-  onOpenLabelMenu
+  onOpenLabelMenu,
+  mode
 }: {
   columnIndex: number
   rowIndex: number
@@ -210,6 +217,7 @@ function cellComponent({
   onRate: (id: number, rating: number) => void
   labels: Record<number, string>
   onOpenLabelMenu: (id: number, x: number, y: number) => void
+  mode?: 'import' | 'cull' | 'edit' | 'retouch'
 }) {
   const index = rowIndex * cols + columnIndex
   const photo = photos[index]
@@ -225,6 +233,7 @@ function cellComponent({
         onRate={onRate}
         colorLabel={labels[photo.id]}
         onOpenLabelMenu={onOpenLabelMenu}
+        mode={mode}
       />
     </div>
   )
@@ -237,7 +246,8 @@ export default function Gallery({
   anchorId,
   onSelect,
   onActivate,
-  onRate
+  onRate,
+  mode
 }: GalleryProps) {
   const { t } = useT()
   const [cols, setCols] = useState(() => computeCols(DEFAULT_WIDTH))
@@ -258,7 +268,8 @@ export default function Gallery({
     onActivate,
     onRate,
     labels,
-    onOpenLabelMenu: (id, x, y) => setLabelMenu({ id, x, y })
+    onOpenLabelMenu: (id, x, y) => setLabelMenu({ id, x, y }),
+    mode
   }
 
   // Carrega os labels das fotos visíveis (uma consulta por refresh).

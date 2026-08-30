@@ -764,6 +764,57 @@ export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewCha
           </ul>
         )}
       </div>
+
+      <AccordionSection title={t('edit.metadados')} className="edit-metadata">
+        {photo ? (
+          <MetadataSection photoId={photo.id} />
+        ) : (
+          <p className="edit-hint">{t('edit.selecioneFoto')}</p>
+        )}
+      </AccordionSection>
     </aside>
+  )
+}
+
+function MetadataSection({ photoId }: { photoId: number }) {
+  const { t } = useT()
+  const [meta, setMeta] = useState<{ iso: number | null; aperture: number | null; focal_length: number | null; shutter_speed: string | null; lens: string; flash: string | null; white_balance: string | null } | null>(null)
+  const [showIso, setShowIso] = useState(true)
+  const [showAperture, setShowAperture] = useState(true)
+  const [showFocal, setShowFocal] = useState(true)
+  const [showShutter, setShowShutter] = useState(true)
+  const [showLens, setShowLens] = useState(true)
+  const [showFlash, setShowFlash] = useState(false)
+  const [showWb, setShowWb] = useState(false)
+
+  useEffect(() => {
+    window.openshoot.getExifDetail(photoId).then(setMeta).catch(() => {})
+  }, [photoId])
+
+  if (!meta) return <p className="edit-hint">{t('edit.carregando')}</p>
+
+  return (
+    <div className="edit-metadata-content">
+      <div className="edit-metadata-toggles">
+        <label><input type="checkbox" checked={showIso} onChange={(e) => setShowIso(e.target.checked)} /> ISO</label>
+        <label><input type="checkbox" checked={showAperture} onChange={(e) => setShowAperture(e.target.checked)} /> {t('edit.abertura')}</label>
+        <label><input type="checkbox" checked={showFocal} onChange={(e) => setShowFocal(e.target.checked)} /> {t('edit.distanciaFocal')}</label>
+        <label><input type="checkbox" checked={showShutter} onChange={(e) => setShowShutter(e.target.checked)} /> {t('edit.velocidade')}</label>
+        <label><input type="checkbox" checked={showLens} onChange={(e) => setShowLens(e.target.checked)} /> {t('edit.lente')}</label>
+        <label><input type="checkbox" checked={showFlash} onChange={(e) => setShowFlash(e.target.checked)} /> Flash</label>
+        <label><input type="checkbox" checked={showWb} onChange={(e) => setShowWb(e.target.checked)} /> {t('edit.balanceBranco')}</label>
+      </div>
+      <table className="edit-metadata-table">
+        <tbody>
+          {showIso && meta.iso != null && <tr><td>ISO</td><td>{Math.round(meta.iso)}</td></tr>}
+          {showAperture && meta.aperture != null && <tr><td>{t('edit.abertura')}</td><td>f/{meta.aperture.toFixed(1)}</td></tr>}
+          {showFocal && meta.focal_length != null && <tr><td>{t('edit.distanciaFocal')}</td><td>{Math.round(meta.focal_length)} mm</td></tr>}
+          {showShutter && meta.shutter_speed != null && <tr><td>{t('edit.velocidade')}</td><td>{meta.shutter_speed}s</td></tr>}
+          {showLens && meta.lens && <tr><td>{t('edit.lente')}</td><td>{meta.lens}</td></tr>}
+          {showFlash && meta.flash != null && <tr><td>Flash</td><td>{meta.flash}</td></tr>}
+          {showWb && meta.white_balance != null && <tr><td>{t('edit.balanceBranco')}</td><td>{meta.white_balance}</td></tr>}
+        </tbody>
+      </table>
+    </div>
   )
 }

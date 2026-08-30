@@ -106,6 +106,61 @@ pub struct ExifBasic {
   pub orientation: u16,
 }
 
+pub struct ExifDetail {
+  pub iso: Option<f64>,
+  pub aperture: Option<f64>,
+  pub focal_length: Option<f64>,
+  pub shutter_speed: Option<String>,
+  pub lens: String,
+  pub flash: Option<String>,
+  pub white_balance: Option<String>,
+}
+
+pub fn read_exif_detail(path: &Path) -> ExifDetail {
+  let mut result = ExifDetail {
+    iso: None,
+    aperture: None,
+    focal_length: None,
+    shutter_speed: None,
+    lens: String::new(),
+    flash: None,
+    white_balance: None,
+  };
+  if !path.exists() {
+    return result;
+  }
+  let file = match File::open(path) {
+    Ok(f) => f,
+    Err(_) => return result,
+  };
+  let mut bufreader = BufReader::new(file);
+  let exifreader = exif::Reader::new();
+  if let Ok(exif) = exifreader.read_from_container(&mut bufreader) {
+    if let Some(f) = exif.get_field(exif::Tag::ISOSpeed, exif::In::PRIMARY) {
+      result.iso = f.display_value().to_string().parse::<f64>().ok();
+    }
+    if let Some(f) = exif.get_field(exif::Tag::FNumber, exif::In::PRIMARY) {
+      result.aperture = f.display_value().to_string().parse::<f64>().ok();
+    }
+    if let Some(f) = exif.get_field(exif::Tag::FocalLength, exif::In::PRIMARY) {
+      result.focal_length = f.display_value().to_string().parse::<f64>().ok();
+    }
+    if let Some(f) = exif.get_field(exif::Tag::ExposureTime, exif::In::PRIMARY) {
+      result.shutter_speed = Some(f.display_value().to_string());
+    }
+    if let Some(f) = exif.get_field(exif::Tag::LensModel, exif::In::PRIMARY) {
+      result.lens = f.display_value().with_unit(&exif).to_string();
+    }
+    if let Some(f) = exif.get_field(exif::Tag::Flash, exif::In::PRIMARY) {
+      result.flash = Some(f.display_value().to_string());
+    }
+    if let Some(f) = exif.get_field(exif::Tag::WhiteBalance, exif::In::PRIMARY) {
+      result.white_balance = Some(f.display_value().to_string());
+    }
+  }
+  result
+}
+
 pub fn read_exif_basic(path: &Path) -> ExifBasic {
   let mut result = ExifBasic {
     dims: None,

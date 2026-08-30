@@ -580,6 +580,13 @@ app.whenReady().then(() => {
       return { count: 0, faces: [] }
     }
   })
+  ipcMain.handle('core:getExifDetail', async (_e, id: number) => {
+    try {
+      return await getCore().getExifDetail(id)
+    } catch (e) {
+      return { iso: null, aperture: null, focal_length: null, shutter_speed: null, lens: '', flash: null, white_balance: null }
+    }
+  })
   ipcMain.handle('core:exportPresetToFile', async (_e, name: string, dest: string) => {
     try {
       return await getCore().exportPresetToFile(name, dest)
