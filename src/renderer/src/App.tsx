@@ -12,7 +12,7 @@ import RestorerView from './components/RestorerView'
 import SettingsControl from './components/SettingsControl'
 import WorkspaceNav, { type WorkspaceSection } from './components/WorkspaceNav'
 import { useT } from './i18n/I18nContext'
-import type { PhotoMeta } from '../../types/photo'
+import type { PhotoMeta, PersistedFace } from '../../types/photo'
 
 const PAGE_SIZE = 1000
 
@@ -82,6 +82,9 @@ export default function App() {
     types: string
     sessionType: string
   } | null>(null)
+  const [photoFaces, setPhotoFaces] = useState<PersistedFace[]>([])
+  const [oneClickPresetName, setOneClickPresetName] = useState('')
+  const [appPresets, setAppPresets] = useState<Array<{ name: string; recipe: string }>>([])
 
   // A navegação primária é única na área de trabalho. Trocar de seção fecha
   // somente visualizações transitórias e preserva o álbum em uso.
@@ -95,6 +98,9 @@ export default function App() {
     setShowExportView(section === 'export')
     if (section !== 'export') {
       setMode(section)
+    }
+    if (section === 'cull' || section === 'edit' || section === 'retouch' || section === 'import') {
+      window.openshoot.listPresets().then((p) => setAppPresets(p)).catch(() => {})
     }
   }, [])
   const photosRef = useRef<PhotoMeta[]>([])
@@ -128,6 +134,10 @@ export default function App() {
   useEffect(() => {
     loadPhotos()
   }, [loadPhotos, filter])
+
+  useEffect(() => {
+    window.openshoot.listPresets().then((p) => setAppPresets(p)).catch(() => {})
+  }, [])
 
   // Abre um álbum: carrega os ids e volta para a galeria filtrada.
   const openAlbum = useCallback(async (albumId: number) => {
@@ -200,11 +210,19 @@ export default function App() {
 
   const handleActivate = useCallback((id: number) => {
     const idx = photosRef.current.findIndex((p) => p.id === id)
-    if (mode === 'import' || mode === 'edit' || mode === 'retouch') {
+    if (mode === 'import') {
+      if (idx >= 0) {
+        setLoupeIndex(idx)
+        setLoupeOpen(true)
+      }
+      setAnchorId(id)
+      setSelectedIds(new Set([id]))
+      return
+    }
+    if (mode === 'edit' || mode === 'retouch') {
       setEditViewId(id)
       setSelectedIds(new Set([id]))
       setAnchorId(id)
-      setMode('edit')
       return
     }
     if (idx >= 0) {
@@ -227,14 +245,17 @@ export default function App() {
       if (!photo) return
       await persistRating([photo.id], rating)
       const updated = await window.openshoot.listPhotos('', filter, 0, PAGE_SIZE)
-      setPhotos(updated.photos)
-      if (advance && loupeIndex < updated.photos.length - 1) {
+      const scoped = currentAlbum != null && albumPhotoIds
+        ? updated.photos.filter((p) => albumPhotoIds.has(p.id))
+        : updated.photos
+      setPhotos(scoped)
+      if (advance && loupeIndex < scoped.length - 1) {
         setLoupeIndex(loupeIndex + 1)
       } else {
         setAnchorId(photo.id)
       }
     },
-    [loupeIndex, filter, persistRating]
+    [loupeIndex, filter, currentAlbum, albumPhotoIds, persistRating]
   )
 
   const loupeClose = useCallback(() => {
@@ -349,12 +370,11 @@ export default function App() {
           e.preventDefault()
           const idx = photos.findIndex((p) => p.id === anchor)
           if (idx >= 0) {
-            if (mode === 'cull') {
+            if (mode === 'cull' || mode === 'import') {
               setLoupeIndex(idx)
               setLoupeOpen(true)
             } else {
               setEditViewId(anchor)
-              setMode('edit')
             }
           }
         }
@@ -464,19 +484,20 @@ export default function App() {
         setError(String(res.error))
         return
       }
-      // 2) Aplica um preset (se houver um selecionado).
+      // 2) Aplica o preset selecionado (se houver).
       const presets = await window.openshoot.listPresets()
-      if (presets.length > 0) {
+      const selectedPreset = presets.find((p) => p.name === oneClickPresetName) ?? null
+      if (selectedPreset) {
         const picked = await window.openshoot.listPhotos('', 'picks', 0, PAGE_SIZE)
         const scopedPicks = albumPhotoIds ? picked.photos.filter((photo) => albumPhotoIds.has(photo.id)) : picked.photos
         let n = 0
         for (const photo of scopedPicks) {
-          await window.openshoot.setPhotoEdit(photo.id, presets[0].recipe)
+          await window.openshoot.setPhotoEdit(photo.id, selectedPreset.recipe)
           await window.openshoot.writeXmpForPhoto(photo.id)
           n++
         }
         setScanMsg(
-          t('app.oneClickMsg', { picks: res.picks, editadas: n, preset: presets[0].name })
+          t('app.oneClickMsg', { picks: res.picks, editadas: n, preset: selectedPreset.name })
         )
       } else {
         setScanMsg(t('app.oneClickMsgSemPreset', { picks: res.picks }))
@@ -487,7 +508,7 @@ export default function App() {
     } finally {
       setCulling(false)
     }
-  }, [albumPhotoIds, loadPhotos, t, targetPicks])
+  }, [albumPhotoIds, loadPhotos, t, targetPicks, oneClickPresetName])
 
   const learnProfile = useCallback(async () => {
     setError(null)
@@ -510,22 +531,29 @@ export default function App() {
     setError(null)
     setExporting(true)
     try {
-      const res = await window.openshoot.exportAllXmp()
-      if ('error' in res) {
-        setError(String(res.error))
-      } else {
-        setScanMsg(
-          res.errors > 0
-            ? t('app.xmpMsgErr', { exported: res.exported, errors: res.errors })
-            : t('app.xmpMsg', { exported: res.exported })
-        )
+      const ids = selectedIds.size > 0 ? Array.from(selectedIds) : photos.map((p) => p.id)
+      if (ids.length === 0) return
+      let exported = 0
+      let errors = 0
+      for (const id of ids) {
+        try {
+          await window.openshoot.writeXmpForPhoto(id)
+          exported++
+        } catch {
+          errors++
+        }
       }
+      setScanMsg(
+        errors > 0
+          ? t('app.xmpMsgErr', { exported, errors })
+          : t('app.xmpMsg', { exported })
+      )
     } catch (e) {
       setError(String(e))
     } finally {
       setExporting(false)
     }
-  }, [t])
+  }, [selectedIds, photos, t])
 
   const handleApplyAll = useCallback(
     async (json: string, ids: number[]) => {
@@ -549,6 +577,22 @@ export default function App() {
     const n = await window.openshoot.clearThumbCache()
     setScanMsg(t('app.cacheMsg', { n }))
   }, [t])
+
+  const openInEdit = useCallback((photoId: number) => {
+    setEditViewId(photoId)
+    setSelectedIds(new Set([photoId]))
+    setAnchorId(photoId)
+    setMode('edit')
+    setShowPeople(false)
+  }, [])
+
+  const openInRetouch = useCallback((photoId: number) => {
+    setEditViewId(photoId)
+    setSelectedIds(new Set([photoId]))
+    setAnchorId(photoId)
+    setMode('retouch')
+    setShowPeople(false)
+  }, [])
 
   // ---- Contadores para toolbar ----
   const picksCount = photos.filter((p) => p.rating >= 4).length
@@ -587,6 +631,24 @@ export default function App() {
     document.addEventListener('mousedown', onDoc)
     return () => document.removeEventListener('mousedown', onDoc)
   }, [moreOpen])
+
+  // Carrega faces da foto aberta no modo edição.
+  useEffect(() => {
+    if (editViewId == null) {
+      setPhotoFaces([])
+      return
+    }
+    let active = true
+    window.openshoot
+      .listFacesForPhoto(editViewId)
+      .then((res) => {
+        if (active) setPhotoFaces(res.ok && res.faces ? res.faces : [])
+      })
+      .catch(() => {
+        if (active) setPhotoFaces([])
+      })
+    return () => { active = false }
+  }, [editViewId])
 
   // Atalhos do modo de edição em tela grande.
   useEffect(() => {
@@ -638,8 +700,17 @@ export default function App() {
   }
 
   // Tela Pessoas (agrupamento facial) em tela cheia.
-  if (showPeople) {
-    return <PeopleView onBack={() => setShowPeople(false)} onNavigate={navigateWorkspace} photoIds={albumPhotoIds ? Array.from(albumPhotoIds) : undefined} />
+  if (showPeople && currentAlbum != null) {
+    return (
+      <PeopleView
+        albumId={currentAlbum}
+        activeSection="cull"
+        onBack={() => setShowPeople(false)}
+        onNavigate={navigateWorkspace}
+        onOpenEdit={openInEdit}
+        onOpenRetouch={openInRetouch}
+      />
+    )
   }
 
   if (loupeOpen) {
@@ -666,26 +737,28 @@ export default function App() {
     return (
       <div className="app">
         <header className="topbar workspace-topbar">
-          <div className="workspace-left"><span className="logo">OpenShoot</span></div>
-          <WorkspaceNav active="edit" onNavigate={navigateWorkspace} />
-          <div className="topbar-right workspace-actions">
-            <SettingsControl />
+          <div className="workspace-left">
+            <span className="logo">OpenShoot</span>
             <button onClick={() => setEditViewId(null)} className="ghost">
               {t('app.voltarGaleria')}
             </button>
-            <button onClick={exportXmp} disabled={exporting} className="ghost" title="Gera o sidecar XMP da foto editada">
-              {exporting ? t('app.exportando') : 'Exportar metadados'}
+          </div>
+          <WorkspaceNav active={mode} onNavigate={navigateWorkspace} />
+          <div className="topbar-right workspace-actions">
+            <SettingsControl />
+            <button onClick={exportXmp} disabled={exporting} className="ghost" title={t('export.exportMetadataHint')}>
+              {exporting ? t('app.exportando') : t('export.exportMetadata')}
             </button>
           </div>
         </header>
         <main className="content editview">
           <div className="editview-stage">
             <div className="editview-photo-area">
-            <EditViewPhoto photoId={editPhoto.id} modifiedSrc={editPreview?.id === editPhoto.id ? editPreview.src : null} compareMode={editCompareMode} onCompareModeChange={setEditCompareMode} />
+            <EditViewPhoto photoId={editPhoto.id} modifiedSrc={editPreview?.id === editPhoto.id ? editPreview.src : null} compareMode={editCompareMode} onCompareModeChange={setEditCompareMode} photoFaces={photoFaces} />
             </div>
             <EditViewFilmstrip photos={photos} activeId={editPhoto.id} onSelect={selectEditPhoto} />
           </div>
-            <EditPanel photo={editPhoto} variant="edit" selectedIds={selectedIds} onApplyAll={handleApplyAll} onPreviewChange={handleEditPreviewChange} onModification={() => setEditCompareMode('modified')} />
+            <EditPanel photo={editPhoto} variant={mode === 'retouch' ? 'retouch' : 'edit'} selectedIds={selectedIds} onApplyAll={handleApplyAll} onPreviewChange={handleEditPreviewChange} onModification={() => setEditCompareMode('modified')} photoFaces={photoFaces} />
         </main>
         <div className="shortcuts-bar">
           <span dangerouslySetInnerHTML={{ __html: t('app.editViewShortcuts') }} />
@@ -724,11 +797,6 @@ export default function App() {
           </div>
         )}
           {mode === 'edit' && (
-            <button onClick={() => setShowPeople(true)} className="ghost">
-              {t('people.titulo')}
-            </button>
-          )}
-          {mode === 'edit' && (
             <button onClick={() => setShowRestorer(true)} className="ghost">
               Bancada de restauração
             </button>
@@ -742,24 +810,30 @@ export default function App() {
             <>
               <button
                 onClick={() => {
-                  setExportScopeIds(Array.from(selectedIds))
+                  setExportScopeIds(selectedIds.size > 0 ? Array.from(selectedIds) : null)
                   setShowExportView(true)
                 }}
-                disabled={selectedIds.size === 0}
                 className="ghost"
                 title={t('export.hint')}
               >
-                Exportar selecionadas
+                {selectedIds.size > 0
+                  ? t('export.exportar', { n: selectedIds.size })
+                  : t('export.exportar', { n: photos.length })}
               </button>
-              <button onClick={exportXmp} disabled={exporting || photos.length === 0} className="ghost" title="Gera arquivos XMP para as fotos visíveis">
-                {exporting ? t('app.exportando') : 'Exportar metadados'}
+              <button onClick={exportXmp} disabled={exporting || photos.length === 0} className="ghost" title={t('export.exportMetadataHint')}>
+                {exporting ? t('app.exportando') : t('export.exportMetadata')}
               </button>
             </>
           )}
           {mode === 'cull' && (
-            <button onClick={runCull} disabled={culling || photos.length === 0} className="primary">
-              {culling ? t('app.cullRun') : t('app.cull')}
-            </button>
+            <>
+              <button onClick={runCull} disabled={culling || photos.length === 0} className="primary">
+                {culling ? t('app.cullRun') : t('app.cull')}
+              </button>
+              <button onClick={() => setShowPeople(true)} disabled={photos.length === 0} className="ghost">
+                {t('people.titulo')}
+              </button>
+            </>
           )}
           {mode === 'import' && (
             <>
@@ -839,11 +913,22 @@ export default function App() {
           />
           <em>{targetPicks === 0 ? '∞' : targetPicks}</em>
         </label>
+        <select
+          className="toolbar-preset-select"
+          value={oneClickPresetName}
+          onChange={(e) => setOneClickPresetName(e.target.value)}
+          title={t('app.oneClickHintPreset')}
+        >
+          <option value="">{t('app.oneClickSemPreset')}</option>
+          {appPresets.map((p) => (
+            <option key={p.name} value={p.name}>{p.name}</option>
+          ))}
+        </select>
         <button
           className="toolbar-one-click"
           onClick={runOneClick}
           disabled={culling || photos.length === 0}
-          title={t('app.oneClickHint')}
+          title={oneClickPresetName ? t('app.oneClickHintPreset') : t('app.oneClickHint')}
         >
           {culling ? t('app.importando') : t('app.oneClick')}
         </button>
@@ -1034,7 +1119,7 @@ export default function App() {
           />
         </div>
         {(mode === 'edit' || mode === 'retouch') && (
-          <EditPanel photo={selectedPhoto} variant={mode === 'retouch' ? 'retouch' : 'edit'} onApplyAll={handleApplyAll} selectedIds={selectedIds} />
+          <EditPanel photo={selectedPhoto} variant={mode === 'retouch' ? 'retouch' : 'edit'} onApplyAll={handleApplyAll} selectedIds={selectedIds} photoFaces={photoFaces} />
         )}
       </main>
 

@@ -18,6 +18,7 @@ export default function ExportView({ photos, scope, onClose, onNavigate }: Expor
   const [naming, setNaming] = useState('{original}')
   const [destDir, setDestDir] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<{ ok: boolean; n: number; error?: string } | null>(null)
 
   const pickDest = () => {
     window.openshoot.pickExportFolder().then((d) => d && setDestDir(d))
@@ -26,15 +27,15 @@ export default function ExportView({ photos, scope, onClose, onNavigate }: Expor
   const run = async () => {
     if (!destDir || photos.length === 0) return
     setBusy(true)
+    setResult(null)
     try {
       const ids = photos.map((p) => p.id)
       const res = await window.openshoot.exportPhotos(ids, destDir, format, quality, colorProfile, naming)
       if (res.ok) {
-        alert(t('export.feito', { n: res.exported ?? 0 }))
+        setResult({ ok: true, n: res.exported ?? 0 })
       } else {
-        alert(res.error ?? 'erro')
+        setResult({ ok: false, n: 0, error: res.error ?? 'erro' })
       }
-      onClose()
     } finally {
       setBusy(false)
     }
@@ -56,8 +57,8 @@ export default function ExportView({ photos, scope, onClose, onNavigate }: Expor
         <div className="export-page-heading">
           <h1>{t('export.titulo', { n: photos.length })}</h1>
           <p>
-            {scope === 'selection' ? 'Você está exportando as fotos selecionadas.' : 'Você está exportando as fotos visíveis neste álbum e filtro.'}
-            {' '}Defina destino e formato antes de criar as cópias exportadas.
+            {scope === 'selection' ? t('export.exportScopeSelection') : t('export.exportScopeVisible')}
+            {' '}{t('export.exportScopeHint')}
           </p>
         </div>
         <section className="export-section export-destination-section">
@@ -145,7 +146,14 @@ export default function ExportView({ photos, scope, onClose, onNavigate }: Expor
         </section>
 
         <footer className="export-footer">
-          {busy && <div className="export-progress">{t('export.exportando')} — preparando cópias…</div>}
+          {busy && <div className="export-progress">{t('export.exportando')}</div>}
+          {result && (
+            <div className={`toast ${result.ok ? 'success' : 'error'}`}>
+              {result.ok
+                ? t('export.feito', { n: result.n })
+                : result.error ?? 'erro'}
+            </div>
+          )}
           <div className="import-actions">
             <button onClick={onClose} className="ghost">
               {t('dialog.cancel')}

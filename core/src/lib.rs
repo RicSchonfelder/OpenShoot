@@ -1,8 +1,8 @@
 #[macro_use]
 extern crate napi_derive;
 
-mod catalog;
 mod captions;
+mod catalog;
 mod cr3;
 mod culling;
 mod edit;
@@ -64,8 +64,12 @@ pub fn scan_folder(
   include_subdirs: Option<bool>,
   types: Option<String>,
 ) -> Result<ScanResult> {
-  catalog::scan_folder(&dir, include_subdirs.unwrap_or(true), &types.unwrap_or_else(|| "all".into()))
-    .map_err(|e| Error::from_reason(e))
+  catalog::scan_folder(
+    &dir,
+    include_subdirs.unwrap_or(true),
+    &types.unwrap_or_else(|| "all".into()),
+  )
+  .map_err(|e| Error::from_reason(e))
 }
 
 /// Lista fotos do catálogo com paginação, busca e filtro de rating.
@@ -128,9 +132,7 @@ pub fn delete_preset(name: String) -> Result<bool> {
 #[napi]
 pub fn learn_profile() -> Result<serde_json::Value> {
   match catalog::learn_profile() {
-    Ok((name, photos)) => {
-      Ok(serde_json::json!({ "name": name, "photos": photos, "ok": true }))
-    }
+    Ok((name, photos)) => Ok(serde_json::json!({ "name": name, "photos": photos, "ok": true })),
     Err(e) => Ok(serde_json::json!({ "error": e, "ok": false })),
   }
 }
@@ -148,10 +150,7 @@ pub fn set_session_type(path_prefix: String, session_type: String) -> Result<ser
 /// Importa um preset do Lightroom (.xmp com crs: ou .lrtemplate) e salva como
 /// preset OpenShoot. Retorna JSON { ok, name, recipe }.
 #[napi]
-pub fn import_lightroom_preset(
-  path: String,
-  name: Option<String>,
-) -> Result<serde_json::Value> {
+pub fn import_lightroom_preset(path: String, name: Option<String>) -> Result<serde_json::Value> {
   let p = PathBuf::from(&path);
   match lrimport::import_lightroom_preset(&p) {
     Ok(recipe) => {
@@ -162,7 +161,9 @@ pub fn import_lightroom_preset(
       });
       let result = catalog::save_preset(&preset_name, &recipe);
       match result {
-        Ok(()) => Ok(serde_json::json!({ "ok": true, "name": preset_name, "recipe": recipe })),
+        Ok(()) => {
+          Ok(serde_json::json!({ "ok": true, "name": preset_name, "recipe": recipe }))
+        }
         Err(e) => Ok(serde_json::json!({ "ok": false, "error": e })),
       }
     }
@@ -181,7 +182,7 @@ pub fn export_preset_to_file(name: String, dest: String) -> Result<serde_json::V
 
 /// Importa um preset de um arquivo JSON (estilo compartilhável).
 #[napi]
- pub fn import_preset_from_file(path: String) -> Result<serde_json::Value> {
+pub fn import_preset_from_file(path: String) -> Result<serde_json::Value> {
   match catalog::import_preset_from_file(&PathBuf::from(&path)) {
     Ok(name) => Ok(serde_json::json!({ "ok": true, "name": name })),
     Err(e) => Ok(serde_json::json!({ "ok": false, "error": e })),
@@ -230,6 +231,24 @@ pub fn set_album_session_type(album_id: i64, session_type: String) -> Result<()>
 #[napi]
 pub fn album_photo_ids(album_id: i64) -> Result<Vec<i64>> {
   catalog::album_photo_ids(album_id).map_err(|e| Error::from_reason(e))
+}
+
+/// Retorna o caminho absoluto do banco de catálogo ativo.
+#[napi]
+pub fn catalog_path() -> Result<String> {
+  catalog::db_path_string().map_err(|e| Error::from_reason(e))
+}
+
+/// Exporta o catálogo como manifesto JSON, sem copiar imagens.
+#[napi]
+pub fn export_catalog_json() -> Result<String> {
+  catalog::export_catalog_json().map_err(|e| Error::from_reason(e))
+}
+
+/// Importa um manifesto JSON e reconcilia fotos por caminho ou SHA-256.
+#[napi]
+pub fn import_catalog_json(manifest: String) -> Result<serde_json::Value> {
+  catalog::import_catalog_json(&manifest).map_err(|e| Error::from_reason(e))
 }
 
 /// Máscara de sujeito: desfoca o fundo mantendo o sujeito (face + pele) nítido.
@@ -290,11 +309,13 @@ pub async fn subject_mask_photo(
 // ---------------- Reconhecimento facial / agrupamento ----------------
 
 /// Agrupa fotos por pessoa (similaridade facial via MobileFaceNet).
-/// Retorna JSON { ok, groups: [{person_id, count, sample_path, photo_ids, photo_paths}] }.
+/// `album_id`: se fornecido, persiste os grupos no catálogo (substitui os antigos do álbum).
+/// Retorna JSON { ok, groups, grouped_faces }.
 #[napi]
 pub async fn group_by_similarity_async(
   threshold: Option<f64>,
   photo_ids: Option<Vec<i64>>,
+  album_id: Option<i64>,
 ) -> Result<serde_json::Value> {
   let paths_result = match photo_ids.as_deref() {
     Some(ids) => catalog::photo_paths_for_ids(ids),
@@ -305,9 +326,57 @@ pub async fn group_by_similarity_async(
     Err(e) => return Err(Error::from_reason(e)),
   };
   let t = threshold.unwrap_or(0.5) as f32;
+  let aid = album_id;
   tokio::task::spawn_blocking(move || {
     match grouping::group_by_similarity(&paths, t) {
-      Ok(groups) => serde_json::to_value(groups).unwrap_or(serde_json::json!([])),
+      Ok(result) => {
+        let grouping::GroupingResult {
+          groups,
+          grouped_faces,
+          photos_scanned,
+          photos_unavailable,
+        } = result;
+        // Persiste atomicamente se album_id foi fornecido.
+        if let Some(album_id) = aid {
+          // Agrupa faces por group_index.
+          let mut by_group: std::collections::HashMap<
+            usize,
+            Vec<&grouping::GroupedFace>,
+          > = std::collections::HashMap::new();
+          for gf in &grouped_faces {
+            by_group.entry(gf.group_index).or_default().push(gf);
+          }
+          let persisted: Vec<catalog::PersistedGroup> = groups
+            .iter()
+            .enumerate()
+            .map(|(gi, _g)| catalog::PersistedGroup {
+              name: format!("Pessoa {}", gi + 1),
+              threshold: t,
+              faces: by_group
+                .get(&gi)
+                .map(|fs| {
+                  fs.iter()
+                    .map(|f| catalog::PersistedFace {
+                      photo_id: f.photo_id,
+                      bbox: f.bbox,
+                    })
+                    .collect()
+                })
+                .unwrap_or_default(),
+            })
+            .collect();
+          if let Err(e) = catalog::replace_person_groups(album_id, &persisted) {
+            return serde_json::json!({ "error": e });
+          }
+        }
+        serde_json::json!({
+          "ok": true,
+          "groups": groups,
+          "grouped_faces": grouped_faces,
+          "photos_scanned": photos_scanned,
+          "photos_unavailable": photos_unavailable,
+        })
+      }
       Err(e) => serde_json::json!({ "error": e }),
     }
   })
@@ -340,6 +409,86 @@ pub async fn export_people_to_folders(
   .map_err(|e| Error::from_reason(e.to_string()))
 }
 
+/// Lista grupos faciais persistidos de um álbum.
+/// Retorna JSON { ok, groups: [{id, album_id, name, threshold}] }.
+#[napi]
+pub fn list_person_groups(album_id: i64) -> Result<serde_json::Value> {
+  match catalog::list_person_groups(album_id) {
+    Ok(groups) => Ok(serde_json::json!({ "ok": true, "groups": groups })),
+    Err(e) => Ok(serde_json::json!({ "error": e })),
+  }
+}
+
+/// Lista faces (rostos) de um grupo facial.
+/// Retorna JSON { ok, faces: [{id, group_id, photo_id, bbox, group_name}] }.
+#[napi]
+pub fn list_faces_in_group(group_id: i64) -> Result<serde_json::Value> {
+  match catalog::list_faces_in_group(group_id) {
+    Ok(faces) => {
+      let out: Vec<serde_json::Value> = faces
+        .iter()
+        .map(|f| {
+          serde_json::json!({
+            "id": f.id,
+            "group_id": f.group_id,
+            "photo_id": f.photo_id,
+            "bbox": f.bbox,
+            "group_name": f.group_name,
+          })
+        })
+        .collect();
+      Ok(serde_json::json!({ "ok": true, "faces": out }))
+    }
+    Err(e) => Ok(serde_json::json!({ "error": e })),
+  }
+}
+
+/// Lista todas as faces (rostos) de uma foto (em todos os grupos).
+/// Retorna JSON { ok, faces: [{id, group_id, photo_id, bbox, group_name}] }.
+#[napi]
+pub fn list_faces_for_photo(photo_id: i64) -> Result<serde_json::Value> {
+  match catalog::list_faces_for_photo(photo_id) {
+    Ok(faces) => {
+      let out: Vec<serde_json::Value> = faces
+        .iter()
+        .map(|f| {
+          serde_json::json!({
+            "id": f.id,
+            "group_id": f.group_id,
+            "photo_id": f.photo_id,
+            "bbox": f.bbox,
+            "group_name": f.group_name,
+          })
+        })
+        .collect();
+      Ok(serde_json::json!({ "ok": true, "faces": out }))
+    }
+    Err(e) => Ok(serde_json::json!({ "error": e })),
+  }
+}
+
+/// Renomeia um grupo facial.
+/// Retorna JSON { ok: true } ou { error }.
+#[napi]
+pub fn rename_person_group(group_id: i64, new_name: String) -> Result<serde_json::Value> {
+  match catalog::rename_person_group(group_id, &new_name) {
+    Ok(true) => Ok(serde_json::json!({ "ok": true })),
+    Ok(false) => Ok(serde_json::json!({ "error": "grupo não encontrado" })),
+    Err(e) => Ok(serde_json::json!({ "error": e })),
+  }
+}
+
+/// Exporta os grupos faciais persistidos de um álbum para pastas nomeadas.
+/// Usa nomes persistidos (sanitizados) e não sobrescreve arquivos.
+/// Retorna JSON { ok, out_dir, groups, exported }.
+#[napi]
+pub fn export_persisted_people_album(album_id: i64, out_dir: String) -> Result<serde_json::Value> {
+  match catalog::export_persisted_people_album(album_id, &out_dir) {
+    Ok(v) => Ok(v),
+    Err(e) => Ok(serde_json::json!({ "ok": false, "error": e })),
+  }
+}
+
 /// Total de fotos no catálogo.
 #[napi]
 pub fn photo_count() -> Result<i64> {
@@ -349,6 +498,12 @@ pub fn photo_count() -> Result<i64> {
 /// Diretório de cache de thumbnails (liberável — pode apagar para liberar espaço).
 /// Multi-plataforma: ~/Library/Caches (mac), %LOCALAPPDATA% (win), XDG (linux).
 fn thumb_cache_dir() -> PathBuf {
+  if let Ok(configured) = std::env::var("OPENSHOOT_CACHE_DIR") {
+    let configured = configured.trim();
+    if !configured.is_empty() {
+      return PathBuf::from(configured);
+    }
+  }
   dirs::cache_dir()
     .unwrap_or_else(|| std::env::temp_dir())
     .join("OpenShoot/thumbs")
@@ -411,7 +566,10 @@ pub struct CullSummary {
   pub review: i64,
 }
 #[napi]
-pub async fn cull_photos(target_picks: Option<i64>, photo_ids: Option<Vec<i64>>) -> Result<CullSummary> {
+pub async fn cull_photos(
+  target_picks: Option<i64>,
+  photo_ids: Option<Vec<i64>>,
+) -> Result<CullSummary> {
   let paths_result = match photo_ids.as_deref() {
     Some(ids) => catalog::photo_paths_for_ids(ids),
     None => catalog::all_photo_paths(),
@@ -429,44 +587,53 @@ pub async fn cull_photos(target_picks: Option<i64>, photo_ids: Option<Vec<i64>>)
 
   let results: Vec<(i64, bool, std::result::Result<f64, String>)> = paths
     .into_par_iter()
-    .map(|p: catalog::PhotoPath| -> (i64, bool, std::result::Result<f64, String>) {
-      let path = PathBuf::from(&p.path);
-      // Decode ÚNICO em 640px, reusado por faces + NIMA + heurística (gap G3:
-      // antes decodificava 3× por foto — 2,5s/foto no benchmark de 459 fotos).
-      let decoded = if ml_ok { ml::load_rgb(&path, 640).ok() } else { None };
+    .map(
+      |p: catalog::PhotoPath| -> (i64, bool, std::result::Result<f64, String>) {
+        let path = PathBuf::from(&p.path);
+        // Decode ÚNICO em 640px, reusado por faces + NIMA + heurística (gap G3:
+        // antes decodificava 3× por foto — 2,5s/foto no benchmark de 459 fotos).
+        let decoded = if ml_ok {
+          ml::load_rgb(&path, 640).ok()
+        } else {
+          None
+        };
 
-      // Detecção de rosto (SCRFD) para preencher has_face (usado no filtro "faces").
-      let has_face = match &decoded {
-        Some((rgb, w, h)) => ml::detect_faces(rgb, *w, *h, 0.5)
-          .map(|faces| !faces.is_empty())
-          .unwrap_or(false),
-        None => false,
-      };
-      let score = if ml_ok {
-        // IA: heurística + ML combinados
-        let heur = match &decoded {
-          Some((rgb, w, h)) => culling::heuristic_score_rgb(rgb, *w, *h, 320),
-          None => culling::heuristic_score(&path, 320),
+        // Detecção de rosto (SCRFD) para preencher has_face (usado no filtro "faces").
+        let has_face = match &decoded {
+          Some((rgb, w, h)) => ml::detect_faces(rgb, *w, *h, 0.5)
+            .map(|faces| !faces.is_empty())
+            .unwrap_or(false),
+          None => false,
         };
-        let mls = match &decoded {
-          Some((rgb, w, h)) => ml::ml_quality_score(rgb, *w, *h),
-          None => Err("decode falhou".to_string()),
+        let score = if ml_ok {
+          // IA: heurística + ML combinados
+          let heur = match &decoded {
+            Some((rgb, w, h)) => culling::heuristic_score_rgb(rgb, *w, *h, 320),
+            None => culling::heuristic_score(&path, 320),
+          };
+          let mls = match &decoded {
+            Some((rgb, w, h)) => ml::ml_quality_score(rgb, *w, *h),
+            None => Err("decode falhou".to_string()),
+          };
+          match mls {
+            Ok(mls) => {
+              let h = heur.unwrap_or(50.0);
+              Ok(h * 0.5 + mls * 0.5)
+            }
+            Err(e) => {
+              crate::catalog::log_debug(&format!(
+                "[cull] fallback heuristica p/ {}: {}",
+                p.path, e
+              ));
+              heur
+            }
+          }
+        } else {
+          culling::heuristic_score(&path, 320)
         };
-        match mls {
-          Ok(mls) => {
-            let h = heur.unwrap_or(50.0);
-            Ok(h * 0.5 + mls * 0.5)
-          }
-          Err(e) => {
-            crate::catalog::log_debug(&format!("[cull] fallback heuristica p/ {}: {}", p.path, e));
-            heur
-          }
-        }
-      } else {
-        culling::heuristic_score(&path, 320)
-      };
-      (p.id, has_face, score)
-    })
+        (p.id, has_face, score)
+      },
+    )
     .collect();
 
   let mut processed = 0;
@@ -495,8 +662,22 @@ pub async fn cull_photos(target_picks: Option<i64>, photo_ids: Option<Vec<i64>>)
   // Quantis → rating 1-5 (distribuição).
   let mut rated: Vec<(i64, i64)> = Vec::with_capacity(n);
   for (i, (id, s)) in scores.iter().enumerate() {
-    let q = if n <= 1 { 1.0 } else { i as f64 / (n - 1) as f64 };
-    let rating = if q < 0.2 { 1 } else if q < 0.4 { 2 } else if q < 0.6 { 3 } else if q < 0.8 { 4 } else { 5 };
+    let q = if n <= 1 {
+      1.0
+    } else {
+      i as f64 / (n - 1) as f64
+    };
+    let rating = if q < 0.2 {
+      1
+    } else if q < 0.4 {
+      2
+    } else if q < 0.6 {
+      3
+    } else if q < 0.8 {
+      4
+    } else {
+      5
+    };
     if let Err(e) = catalog::set_photo_rating(*id, rating, *s) {
       crate::catalog::log_debug(&format!("falha ao salvar rating {}: {e}", id));
     }
@@ -551,7 +732,11 @@ pub async fn cull_photos(target_picks: Option<i64>, photo_ids: Option<Vec<i64>>)
   Ok(CullSummary {
     processed: processed as i64,
     errors,
-    avg_score: if processed > 0 { sum / processed as f64 } else { 0.0 },
+    avg_score: if processed > 0 {
+      sum / processed as f64
+    } else {
+      0.0
+    },
     picks: picks.max(0),
     review,
   })
@@ -701,7 +886,11 @@ pub fn export_photos(
   if let Err(e) = std::fs::create_dir_all(&dest) {
     return Ok(serde_json::json!({ "ok": false, "error": format!("criar pasta: {e}") }));
   }
-  let fmt = if format.eq_ignore_ascii_case("png") { "png" } else { "jpeg" };
+  let fmt = if format.eq_ignore_ascii_case("png") {
+    "png"
+  } else {
+    "jpeg"
+  };
   let ext = if fmt == "png" { "png" } else { "jpg" };
   let q = quality.clamp(1, 100) as u8;
 
@@ -741,14 +930,19 @@ pub fn export_photos(
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| format!("foto_{id}"));
-      let mut base_name = edit::build_export_name(&naming, seq, photo.taken_at.as_deref(), &stem);
+      let mut base_name =
+        edit::build_export_name(&naming, seq, photo.taken_at.as_deref(), &stem);
       // Garante nomes únicos dentro do próprio lote (mesma ordem do modo serial).
       let mut k = 1;
       while !used.insert(format!("{base_name}.{ext}")) {
         base_name = format!("{base_name}_{k}");
         k += 1;
       }
-      jobs.push(ExportJob { src, params, base_name });
+      jobs.push(ExportJob {
+        src,
+        params,
+        base_name,
+      });
     }
   }
 
@@ -763,7 +957,14 @@ pub fn export_photos(
         let n = next_suffix.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         dest_path = dest.join(format!("{}_{}.{ext}", job.base_name, n));
       }
-      match edit::export_photo_to_file(&job.src, &job.params, &dest_path, fmt, q, &color_profile) {
+      match edit::export_photo_to_file(
+        &job.src,
+        &job.params,
+        &dest_path,
+        fmt,
+        q,
+        &color_profile,
+      ) {
         Ok(()) => Some(dest_path.display().to_string()),
         Err(e) => {
           crate::catalog::log_debug(&format!("[export] {}: {e}", job.src.display()));
@@ -801,7 +1002,11 @@ pub fn apply_retouch_all(
   if let Err(e) = std::fs::create_dir_all(&dest) {
     return Ok(serde_json::json!({ "ok": false, "error": format!("criar pasta: {e}") }));
   }
-  let fmt = if format.eq_ignore_ascii_case("png") { "png" } else { "jpeg" };
+  let fmt = if format.eq_ignore_ascii_case("png") {
+    "png"
+  } else {
+    "jpeg"
+  };
   let ext = if fmt == "png" { "png" } else { "jpg" };
   let q = quality.clamp(1, 100) as u8;
   let skin = skin_intensity.clamp(0.0, 1.0) as f32;
@@ -869,10 +1074,18 @@ pub fn apply_retouch_all(
       if ok {
         for (region, intensity) in &regions {
           // tmp único por thread para não colidir entre workers do rayon.
-          let tmp =
-            dest.join(format!("__tmp_{}_{:?}.{ext}", name, std::thread::current().id()));
-          if let Err(e) = retouch::retouch_face_to_file(src, region, *intensity, &tmp, fmt, q) {
-            crate::catalog::log_debug(&format!("[retouch] {region} {}: {e}", src.display()));
+          let tmp = dest.join(format!(
+            "__tmp_{}_{:?}.{ext}",
+            name,
+            std::thread::current().id()
+          ));
+          if let Err(e) =
+            retouch::retouch_face_to_file(src, region, *intensity, &tmp, fmt, q)
+          {
+            crate::catalog::log_debug(&format!(
+              "[retouch] {region} {}: {e}",
+              src.display()
+            ));
             continue;
           }
           // Re-carrega a tmp como base para o próximo ajuste e move para dest.
@@ -963,7 +1176,10 @@ pub fn apply_edit_all(params_json: String) -> Result<String> {
       }
     }
   }
-  Ok(serde_json::json!({ "applied": applied, "errors": errors, "total": applied + errors }).to_string())
+  Ok(
+    serde_json::json!({ "applied": applied, "errors": errors, "total": applied + errors })
+      .to_string(),
+  )
 }
 
 /// Aplica a receita a uma foto específica e retorna o preview editado.
@@ -1011,13 +1227,11 @@ pub async fn apply_retouch(id: i64, intensity: f64, max_dim: u32) -> Result<Opti
 /// Remove uma distração (inpainting) de uma foto por bbox normalizada.
 /// mask_rect: [x1, y1, x2, y2] em 0..1. Retorna thumbnail (base64).
 #[napi]
-pub async fn inpaint_photo(
-  id: i64,
-  mask_rect: Vec<f64>,
-  max_dim: u32,
-) -> Result<Option<String>> {
+pub async fn inpaint_photo(id: i64, mask_rect: Vec<f64>, max_dim: u32) -> Result<Option<String>> {
   if mask_rect.len() != 4 {
-    return Err(Error::from_reason("mask_rect deve ter 4 valores".to_string()));
+    return Err(Error::from_reason(
+      "mask_rect deve ter 4 valores".to_string(),
+    ));
   }
   let photo = match catalog::get_photo(id) {
     Ok(Some(p)) => p,
@@ -1025,7 +1239,12 @@ pub async fn inpaint_photo(
     Err(e) => return Err(Error::from_reason(e)),
   };
   let path = PathBuf::from(&photo.path);
-  let rect = [mask_rect[0] as f32, mask_rect[1] as f32, mask_rect[2] as f32, mask_rect[3] as f32];
+  let rect = [
+    mask_rect[0] as f32,
+    mask_rect[1] as f32,
+    mask_rect[2] as f32,
+    mask_rect[3] as f32,
+  ];
   let dim = if max_dim == 0 { 256 } else { max_dim };
   tokio::task::spawn_blocking(move || retouch::inpaint_thumbnail_base64(&path, rect, dim).ok())
     .await
@@ -1036,18 +1255,17 @@ pub async fn inpaint_photo(
 
 /// Ajuste de horizonte automático (Hough). Retorna { preview, angle }.
 #[napi]
-pub async fn auto_level_photo(id: i64, max_dim: u32) -> Result<serde_json::Value> {  let photo = match catalog::get_photo(id) {
+pub async fn auto_level_photo(id: i64, max_dim: u32) -> Result<serde_json::Value> {
+  let photo = match catalog::get_photo(id) {
     Ok(Some(p)) => p,
     Ok(None) => return Err(Error::from_reason(format!("foto {id} nao encontrada"))),
     Err(e) => return Err(Error::from_reason(e)),
   };
   let path = PathBuf::from(&photo.path);
   let dim = if max_dim == 0 { 512 } else { max_dim };
-  tokio::task::spawn_blocking(move || {
-    match geometric::auto_level_base64(&path, dim) {
-      Ok((preview, angle)) => serde_json::json!({ "preview": preview, "angle": angle }),
-      Err(e) => serde_json::json!({ "error": e }),
-    }
+  tokio::task::spawn_blocking(move || match geometric::auto_level_base64(&path, dim) {
+    Ok((preview, angle)) => serde_json::json!({ "preview": preview, "angle": angle }),
+    Err(e) => serde_json::json!({ "error": e }),
   })
   .await
   .map_err(|e| Error::from_reason(e.to_string()))
@@ -1086,8 +1304,7 @@ pub async fn retouch_face_photo(
   let dim = if max_dim == 0 { 512 } else { max_dim };
   let region_name = region;
   tokio::task::spawn_blocking(move || {
-    let img = crate::imageproc::read_embedded_jpeg(&path)
-      .or_else(|| None);
+    let img = crate::imageproc::read_embedded_jpeg(&path).or_else(|| None);
     let rgb_result = if let Some(jpeg) = img {
       image::ImageReader::new(std::io::Cursor::new(jpeg))
         .with_guessed_format()
@@ -1283,7 +1500,11 @@ pub async fn scan_folder_progress(
 
   for (i, path) in paths.into_iter().enumerate() {
     result.scanned += 1;
-    let file_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+    let file_name = path
+      .file_name()
+      .unwrap_or_default()
+      .to_string_lossy()
+      .to_string();
     match crate::imageproc::inspect_file(&path) {
       Ok(meta) => {
         let is_new = catalog::upsert_scan_photo(&conn, &meta).unwrap_or(false);
@@ -1349,7 +1570,11 @@ pub fn update_preset_meta(name: String, file_type: String, color_type: String) -
 /// `dest_dir/thumbs/` e escreve um `index.html` self-contained (dark theme,
 /// grid responsivo, lightbox CSS). Retorna { ok, path, count }.
 #[napi]
-pub fn create_web_gallery(ids: Vec<i64>, dest_dir: String, title: String) -> Result<serde_json::Value> {
+pub fn create_web_gallery(
+  ids: Vec<i64>,
+  dest_dir: String,
+  title: String,
+) -> Result<serde_json::Value> {
   let title = title.trim().to_string();
   if title.is_empty() {
     return Ok(serde_json::json!({ "ok": false, "error": "título vazio" }));
@@ -1420,7 +1645,10 @@ pub fn create_web_gallery(ids: Vec<i64>, dest_dir: String, title: String) -> Res
     {
       Some(thumb) => {
         if let Err(e) = thumb.save(thumbs_dir.join(&thumb_name)) {
-          crate::catalog::log_debug(&format!("[gallery] falha ao gravar thumb {}: {e}", dest_name));
+          crate::catalog::log_debug(&format!(
+            "[gallery] falha ao gravar thumb {}: {e}",
+            dest_name
+          ));
           continue;
         }
       }
@@ -1446,188 +1674,181 @@ pub fn create_web_gallery(ids: Vec<i64>, dest_dir: String, title: String) -> Res
   }
 
   Ok(serde_json::json!({
-    "ok": true,
-    "path": index_path.display().to_string(),
-      "count": items.len(),
-    }))
-  }
+  "ok": true,
+  "path": index_path.display().to_string(),
+    "count": items.len(),
+  }))
+}
 
-  // ---------------- Fase 7: upscale / enhance (ref. Upscayl) ----------------
+// ---------------- Fase 7: upscale / enhance (ref. Upscayl) ----------------
 
-  /// Indica se o modelo ONNX de upscale está disponível (cai no fallback
-  /// bicúbico quando não). `model_name` vazio -> modelo padrão (4x-UltraSharp).
-  #[napi]
-  pub fn upscale_available(model_name: Option<String>) -> bool {
-    let m = model_name
-      .filter(|s| !s.is_empty())
-      .unwrap_or_else(|| crate::upscale::upscale_default_model().to_string());
-    crate::upscale::upscale_model_available(&m)
-  }
+/// Indica se o modelo ONNX de upscale está disponível (cai no fallback
+/// bicúbico quando não). `model_name` vazio -> modelo padrão (4x-UltraSharp).
+#[napi]
+pub fn upscale_available(model_name: Option<String>) -> bool {
+  let m = model_name
+    .filter(|s| !s.is_empty())
+    .unwrap_or_else(|| crate::upscale::upscale_default_model().to_string());
+  crate::upscale::upscale_model_available(&m)
+}
 
-  /// Gera um preview de upscale (base64) para uma foto do catálogo.
-  /// `model_name` vazio -> padrão; `scale` 1..4 (modelo nativo 4x, 2x/3x via
-  /// pós-redimensionamento); `max_dim` limita o preview retornado.
-  /// Sem modelo: fallback bicúbico (recurso mais simples, mesma API).
-  #[napi]
-  pub async fn upscale_photo(
-    id: i64,
-    model_name: Option<String>,
-    scale: Option<u32>,
-    max_dim: u32,
-  ) -> Result<Option<String>> {
-    let photo = match catalog::get_photo(id) {
+/// Gera um preview de upscale (base64) para uma foto do catálogo.
+/// `model_name` vazio -> padrão; `scale` 1..4 (modelo nativo 4x, 2x/3x via
+/// pós-redimensionamento); `max_dim` limita o preview retornado.
+/// Sem modelo: fallback bicúbico (recurso mais simples, mesma API).
+#[napi]
+pub async fn upscale_photo(
+  id: i64,
+  model_name: Option<String>,
+  scale: Option<u32>,
+  max_dim: u32,
+) -> Result<Option<String>> {
+  let photo = match catalog::get_photo(id) {
+    Ok(Some(p)) => p,
+    Ok(None) => return Ok(None),
+    Err(e) => return Err(Error::from_reason(e)),
+  };
+  let path = PathBuf::from(&photo.path);
+  let model = model_name
+    .filter(|s| !s.is_empty())
+    .unwrap_or_else(|| crate::upscale::upscale_default_model().to_string());
+  let scale = scale.unwrap_or(4).clamp(1, 4);
+  let dim = if max_dim == 0 { 512 } else { max_dim };
+  tokio::task::spawn_blocking(move || {
+    // Preview: decodifica capado (~1000px) p/ não estourar memória no 4x.
+    let (rgb, w, h) = crate::ml::load_rgb(&path, 1000).ok()?;
+    let out = crate::upscale::upscale_rgb(&rgb, w, h, &model, scale);
+    let img = image::RgbImage::from_raw(w * scale, h * scale, out)?;
+    let thumb = image::DynamicImage::ImageRgb8(img).thumbnail(dim, dim);
+    let mut buf = std::io::Cursor::new(Vec::new());
+    thumb.write_to(&mut buf, image::ImageFormat::Jpeg).ok()?;
+    Some(format!(
+      "data:image/jpeg;base64,{}",
+      base64::engine::general_purpose::STANDARD.encode(buf.into_inner())
+    ))
+  })
+  .await
+  .map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// Progresso de upscale em lote.
+#[napi(object)]
+pub struct UpscaleProgress {
+  pub processed: i64,
+  pub total: i64,
+  pub current_file: String,
+}
+
+/// Upscale em lote (sequencial — VRAM de GPU é limitada, igual ao Upscayl)
+/// e grava as fotos aumentadas em `dest_dir`. Retorna JSON { ok, exported,
+/// errors, files }. `callback` recebe { processed, total, current_file }.
+#[napi]
+pub async fn export_upscaled(
+  ids: Vec<i64>,
+  dest_dir: String,
+  model_name: Option<String>,
+  scale: Option<u32>,
+  format: String,
+  quality: i64,
+  callback: napi::threadsafe_function::ThreadsafeFunction<
+    UpscaleProgress,
+    napi::threadsafe_function::ErrorStrategy::Fatal,
+  >,
+) -> Result<String> {
+  let model = model_name
+    .filter(|s| !s.is_empty())
+    .unwrap_or_else(|| crate::upscale::upscale_default_model().to_string());
+  let scale = scale.unwrap_or(4).clamp(1, 4);
+  let fmt = if format.eq_ignore_ascii_case("png") {
+    "png"
+  } else {
+    "jpeg"
+  };
+  let q = quality.clamp(1, 100) as u8;
+
+  // Fase serial: metadados do catálogo (SQLite não é thread-safe compartilhado).
+  let mut jobs: Vec<(PathBuf, String)> = Vec::new();
+  let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
+  for id in &ids {
+    let photo = match catalog::get_photo(*id) {
       Ok(Some(p)) => p,
-      Ok(None) => return Ok(None),
-      Err(e) => return Err(Error::from_reason(e)),
+      _ => continue,
     };
-    let path = PathBuf::from(&photo.path);
-    let model = model_name
-      .filter(|s| !s.is_empty())
-      .unwrap_or_else(|| crate::upscale::upscale_default_model().to_string());
-    let scale = scale.unwrap_or(4).clamp(1, 4);
-    let dim = if max_dim == 0 { 512 } else { max_dim };
-    tokio::task::spawn_blocking(move || {
-      // Preview: decodifica capado (~1000px) p/ não estourar memória no 4x.
-      let (rgb, w, h) = crate::ml::load_rgb(&path, 1000).ok()?;
-      let out = crate::upscale::upscale_rgb(&rgb, w, h, &model, scale);
-      let img = image::RgbImage::from_raw(w * scale, h * scale, out)?;
-      let thumb = image::DynamicImage::ImageRgb8(img).thumbnail(dim, dim);
-      let mut buf = std::io::Cursor::new(Vec::new());
-      thumb.write_to(&mut buf, image::ImageFormat::Jpeg).ok()?;
-      Some(format!(
-        "data:image/jpeg;base64,{}",
-        base64::engine::general_purpose::STANDARD.encode(buf.into_inner())
-      ))
-    })
-    .await
-    .map_err(|e| Error::from_reason(e.to_string()))
-  }
-
-  /// Progresso de upscale em lote.
-  #[napi(object)]
-  pub struct UpscaleProgress {
-    pub processed: i64,
-    pub total: i64,
-    pub current_file: String,
-  }
-
-  /// Upscale em lote (sequencial — VRAM de GPU é limitada, igual ao Upscayl)
-  /// e grava as fotos aumentadas em `dest_dir`. Retorna JSON { ok, exported,
-  /// errors, files }. `callback` recebe { processed, total, current_file }.
-  #[napi]
-  pub async fn export_upscaled(
-    ids: Vec<i64>,
-    dest_dir: String,
-    model_name: Option<String>,
-    scale: Option<u32>,
-    format: String,
-    quality: i64,
-    callback: napi::threadsafe_function::ThreadsafeFunction<
-      UpscaleProgress,
-      napi::threadsafe_function::ErrorStrategy::Fatal,
-    >,
-  ) -> Result<String> {
-    let model = model_name
-      .filter(|s| !s.is_empty())
-      .unwrap_or_else(|| crate::upscale::upscale_default_model().to_string());
-    let scale = scale.unwrap_or(4).clamp(1, 4);
-    let fmt = if format.eq_ignore_ascii_case("png") { "png" } else { "jpeg" };
-    let q = quality.clamp(1, 100) as u8;
-
-    // Fase serial: metadados do catálogo (SQLite não é thread-safe compartilhado).
-    let mut jobs: Vec<(PathBuf, String)> = Vec::new();
-    let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for id in &ids {
-      let photo = match catalog::get_photo(*id) {
-        Ok(Some(p)) => p,
-        _ => continue,
-      };
-      let src = PathBuf::from(&photo.path);
-      let stem = src
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| format!("foto_{id}"));
-      let mut name = stem.clone();
-      let mut k = 1;
-      while !used.insert(format!("{name}.{fmt}")) {
-        name = format!("{stem}_{k}");
-        k += 1;
-      }
-      jobs.push((src, name));
+    let src = PathBuf::from(&photo.path);
+    let stem = src
+      .file_stem()
+      .map(|s| s.to_string_lossy().to_string())
+      .unwrap_or_else(|| format!("foto_{id}"));
+    let mut name = stem.clone();
+    let mut k = 1;
+    while !used.insert(format!("{name}.{fmt}")) {
+      name = format!("{stem}_{k}");
+      k += 1;
     }
-    let total = jobs.len() as i64;
-    let dest = PathBuf::from(&dest_dir);
-    if let Err(e) = std::fs::create_dir_all(&dest) {
-      return Ok(
-        serde_json::json!({ "ok": false, "error": format!("criar pasta: {e}") }).to_string(),
+    jobs.push((src, name));
+  }
+  let total = jobs.len() as i64;
+  let dest = PathBuf::from(&dest_dir);
+  if let Err(e) = std::fs::create_dir_all(&dest) {
+    return Ok(
+      serde_json::json!({ "ok": false, "error": format!("criar pasta: {e}") }).to_string(),
+    );
+  }
+
+  let res = tokio::task::spawn_blocking(move || {
+    let mut processed = 0i64;
+    let mut errors = 0i64;
+    let mut files: Vec<String> = Vec::new();
+    for (i, (src, name)) in jobs.into_iter().enumerate() {
+      let (rgb, w, h) = match crate::upscale::decode_full_rgb(&src) {
+        Some(v) => v,
+        None => {
+          errors += 1;
+          continue;
+        }
+      };
+      let out = crate::upscale::upscale_rgb(&rgb, w, h, &model, scale);
+      let ow = w * scale;
+      let oh = h * scale;
+      let ext = if fmt == "png" { "png" } else { "jpg" };
+      let dpath = dest.join(format!("{name}.{ext}"));
+      if let Err(e) = crate::upscale::save_rgb(&dpath, out, ow, oh, fmt, q) {
+        crate::catalog::log_debug(&format!("[upscale] {}: {e}", src.display()));
+        errors += 1;
+      } else {
+        files.push(dpath.display().to_string());
+        processed += 1;
+      }
+      let prog = UpscaleProgress {
+        processed: (i + 1) as i64,
+        total,
+        current_file: src
+          .file_name()
+          .unwrap_or_default()
+          .to_string_lossy()
+          .to_string(),
+      };
+      let _ = callback.call(
+        prog,
+        napi::threadsafe_function::ThreadsafeFunctionCallMode::NonBlocking,
       );
     }
-
-    let res = tokio::task::spawn_blocking(move || {
-      let mut processed = 0i64;
-      let mut errors = 0i64;
-      let mut files: Vec<String> = Vec::new();
-      for (i, (src, name)) in jobs.into_iter().enumerate() {
-        let (rgb, w, h) = match crate::upscale::decode_full_rgb(&src) {
-          Some(v) => v,
-          None => {
-            errors += 1;
-            continue;
-          }
-        };
-        let out = crate::upscale::upscale_rgb(&rgb, w, h, &model, scale);
-        let ow = w * scale;
-        let oh = h * scale;
-        let ext = if fmt == "png" { "png" } else { "jpg" };
-        let dpath = dest.join(format!("{name}.{ext}"));
-        if let Err(e) = crate::upscale::save_rgb(&dpath, out, ow, oh, fmt, q) {
-          crate::catalog::log_debug(&format!("[upscale] {}: {e}", src.display()));
-          errors += 1;
-        } else {
-          files.push(dpath.display().to_string());
-          processed += 1;
-        }
-        let prog = UpscaleProgress {
-          processed: (i + 1) as i64,
-          total,
-          current_file: src
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string(),
-        };
-        let _ = callback.call(
-          prog,
-          napi::threadsafe_function::ThreadsafeFunctionCallMode::NonBlocking,
-        );
-      }
-      serde_json::json!({
-        "ok": true,
-        "exported": processed,
-        "errors": errors,
-        "files": files,
-        "dest_dir": dest.display().to_string(),
-      })
-      .to_string()
+    serde_json::json!({
+      "ok": true,
+      "exported": processed,
+      "errors": errors,
+      "files": files,
+      "dest_dir": dest.display().to_string(),
     })
-    .await
-    .map_err(|e| Error::from_reason(e.to_string()))?;
-    Ok(res)
-  }
+    .to_string()
+  })
+  .await
+  .map_err(|e| Error::from_reason(e.to_string()))?;
+  Ok(res)
+}
 
-  #[cfg(test)]
-  mod tests {
-  use std::sync::{Mutex, OnceLock};
-
-  /// Serializa os testes que usam o catalog.db (OnceLock compartilhado entre
-  /// eles): evita corridas de contagem global e SQLITE_BUSY.
-  pub fn db_lock() -> std::sync::MutexGuard<'static, ()> {
-    static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    DB_LOCK
-      .get_or_init(|| Mutex::new(()))
-      .lock()
-      .unwrap_or_else(|e| e.into_inner())
-  }
+#[cfg(test)]
+mod tests {
 
   #[test]
   fn hello_contains_name() {
@@ -1648,15 +1869,22 @@ pub fn create_web_gallery(ids: Vec<i64>, dest_dir: String, title: String) -> Res
 
   #[test]
   fn is_photo_extension() {
-    assert!(super::imageproc::is_photo_path(std::path::Path::new("a.jpg")));
-    assert!(super::imageproc::is_photo_path(std::path::Path::new("a.CR3")));
-    assert!(!super::imageproc::is_photo_path(std::path::Path::new("a.txt")));
+    assert!(super::imageproc::is_photo_path(std::path::Path::new(
+      "a.jpg"
+    )));
+    assert!(super::imageproc::is_photo_path(std::path::Path::new(
+      "a.CR3"
+    )));
+    assert!(!super::imageproc::is_photo_path(std::path::Path::new(
+      "a.txt"
+    )));
   }
 
   #[test]
   fn export_photos_parallel_exports_all() {
-    let _db = db_lock();
-    let dir = std::env::temp_dir().join(format!("openshoot_export_test_{}", std::process::id()));
+    let _db = super::catalog::test_db_lock();
+    let dir =
+      std::env::temp_dir().join(format!("openshoot_export_test_{}", std::process::id()));
     std::fs::create_dir_all(&dir).ok();
     if let Err(e) = super::catalog::init(dir.to_str().unwrap()) {
       eprintln!("init reutilizado: {e}");
@@ -1665,11 +1893,10 @@ pub fn create_web_gallery(ids: Vec<i64>, dest_dir: String, title: String) -> Res
     conn.busy_timeout(std::time::Duration::from_secs(5)).ok();
     // Limpa resíduos de execuções anteriores (escopo deste teste — outros
     // testes rodam em paralelo na mesma thread de BD via OnceLock).
-    conn
-      .execute("DELETE FROM photos WHERE file_name LIKE 'synth_%'", [])
+    conn.execute("DELETE FROM photos WHERE file_name LIKE 'synth_%'", [])
       .unwrap();
     let sql = "INSERT INTO photos (path, file_name, ext, file_size, sha256, indexed_at)
-               VALUES (?1, ?2, 'png', 100, ?3, datetime('now'))";
+         VALUES (?1, ?2, 'png', 100, ?3, datetime('now'))";
     let mut ids: Vec<i64> = Vec::new();
     for i in 0..4 {
       let img = image::RgbImage::from_fn(8, 8, |x, y| {
@@ -1683,16 +1910,15 @@ pub fn create_web_gallery(ids: Vec<i64>, dest_dir: String, title: String) -> Res
       image::DynamicImage::ImageRgb8(img)
         .save_with_format(&path, image::ImageFormat::Png)
         .expect("gravar PNG sintético");
-      conn
-        .execute(
-          sql,
-          rusqlite::params![
-            path.to_string_lossy(),
-            format!("synth_{i}.png"),
-            format!("SYNTH{i}")
-          ],
-        )
-        .unwrap();
+      conn.execute(
+        sql,
+        rusqlite::params![
+          path.to_string_lossy(),
+          format!("synth_{i}.png"),
+          format!("SYNTH{i}")
+        ],
+      )
+      .unwrap();
       let id: i64 = conn
         .query_row(
           "SELECT id FROM photos WHERE file_name=?1",
@@ -1718,12 +1944,16 @@ pub fn create_web_gallery(ids: Vec<i64>, dest_dir: String, title: String) -> Res
     assert_eq!(res["errors"].as_i64(), Some(0), "sem erros");
     assert_eq!(res["files"].as_array().map(|a| a.len()), Some(4));
     for i in 0..4 {
-      assert!(dest.join(format!("synth_{i}.png")).exists(), "arquivo {i} exportado");
+      assert!(
+        dest.join(format!("synth_{i}.png")).exists(),
+        "arquivo {i} exportado"
+      );
     }
 
     // Limpeza: apenas os artefatos deste teste — NUNCA remover o diretório
     // que pode conter o catalog.db ativo compartilhado via OnceLock.
-    conn.execute("DELETE FROM photos WHERE sha256 LIKE 'SYNTH%'", []).unwrap();
+    conn.execute("DELETE FROM photos WHERE sha256 LIKE 'SYNTH%'", [])
+      .unwrap();
     for i in 0..4 {
       let _ = std::fs::remove_file(dir.join(format!("synth_{i}.png")));
     }
@@ -1732,7 +1962,7 @@ pub fn create_web_gallery(ids: Vec<i64>, dest_dir: String, title: String) -> Res
 
   #[test]
   fn duplicates_grouped_by_sha256() {
-    let _db = db_lock();
+    let _db = super::catalog::test_db_lock();
     let dir = std::env::temp_dir().join(format!("openshoot_test_{}", std::process::id()));
     std::fs::create_dir_all(&dir).ok();
     if let Err(e) = super::catalog::init(dir.to_str().unwrap()) {
@@ -1765,22 +1995,25 @@ pub fn create_web_gallery(ids: Vec<i64>, dest_dir: String, title: String) -> Res
     // Limpa resíduos de execuções anteriores (escopo deste teste — outros
     // testes rodam em paralelo no mesmo BD via OnceLock).
     conn
-      .execute(
-        "DELETE FROM photos WHERE file_name IN ('dup_a.jpg','dup_b.jpg','uniq.jpg')",
-        [],
-      )
-      .unwrap();
+    .execute(
+    "DELETE FROM photos WHERE sha256 IN ('AAAA','BBBB') AND file_name IN ('dup_a.jpg','dup_b.jpg','uniq.jpg')",
+    [],
+    )
+    .unwrap();
     // Duas fotos com o MESMO sha256 e uma única.
     let sql = "INSERT INTO photos (path, file_name, ext, file_size, sha256, indexed_at)
-               VALUES (?1, ?2, 'jpg', 100, ?3, datetime('now'))";
-    conn
-      .execute(sql, rusqlite::params!["/tmp/dup_a.jpg", "dup_a.jpg", "AAAA"])
-      .unwrap();
-    conn
-      .execute(sql, rusqlite::params!["/tmp/dup_b.jpg", "dup_b.jpg", "AAAA"])
-      .unwrap();
-    conn
-      .execute(sql, rusqlite::params!["/tmp/uniq.jpg", "uniq.jpg", "BBBB"])
+         VALUES (?1, ?2, 'jpg', 100, ?3, datetime('now'))";
+    conn.execute(
+      sql,
+      rusqlite::params!["/tmp/dup_a.jpg", "dup_a.jpg", "AAAA"],
+    )
+    .unwrap();
+    conn.execute(
+      sql,
+      rusqlite::params!["/tmp/dup_b.jpg", "dup_b.jpg", "AAAA"],
+    )
+    .unwrap();
+    conn.execute(sql, rusqlite::params!["/tmp/uniq.jpg", "uniq.jpg", "BBBB"])
       .unwrap();
     let groups = super::catalog::find_duplicates().expect("find_duplicates");
     assert_eq!(groups.len(), 1, "deve haver 1 grupo de duplicatas");
@@ -1792,39 +2025,77 @@ pub fn create_web_gallery(ids: Vec<i64>, dest_dir: String, title: String) -> Res
 
     // ---- Bucket "Para revisão" ----
     let id_a: i64 = conn
-      .query_row("SELECT id FROM photos WHERE file_name='dup_a.jpg'", [], |r| r.get(0))
+      .query_row(
+        "SELECT id FROM photos WHERE file_name='dup_a.jpg'",
+        [],
+        |r| r.get(0),
+      )
+      .unwrap();
+    let id_b: i64 = conn
+      .query_row(
+        "SELECT id FROM photos WHERE file_name='dup_b.jpg'",
+        [],
+        |r| r.get(0),
+      )
       .unwrap();
     super::catalog::set_photo_review(id_a, true).unwrap();
     let rev = super::catalog::list_photos("", "review", 0, 100).expect("list review");
     assert_eq!(rev.total, 1);
     assert_eq!(rev.photos[0].id, id_a);
     // Filtro de orientação retrato.
-    conn
-      .execute("UPDATE photos SET width=100, height=200 WHERE id=?1", [id_a])
-      .unwrap();
+    conn.execute(
+      "UPDATE photos SET width=100, height=200 WHERE id=?1",
+      [id_a],
+    )
+    .unwrap();
     let portrait = super::catalog::list_photos("", "portrait", 0, 100).expect("list portrait");
     assert_eq!(portrait.total, 1);
-    // Filtro RAW vs JPEG (dup_a.jpg é 'jpg').
-    let jpeg = super::catalog::list_photos("", "jpeg", 0, 100).expect("list jpeg");
-    assert_eq!(jpeg.total, 3);
+    // Filtro RAW vs JPEG — verifica apenas que as fotos criadas por este teste
+    // estão no bucket correto (não depende de contagem global).
+    let jpeg = super::catalog::list_photos("", "jpeg", 0, 1000).expect("list jpeg");
+    let jpeg_test_names: Vec<&str> = jpeg.photos.iter().map(|p| p.file_name.as_str()).collect();
+    assert!(
+      jpeg_test_names.contains(&"dup_a.jpg"),
+      "dup_a.jpg should be jpeg: {jpeg_test_names:?}"
+    );
+    assert!(
+      jpeg_test_names.contains(&"dup_b.jpg"),
+      "dup_b.jpg should be jpeg: {jpeg_test_names:?}"
+    );
+    assert!(
+      jpeg_test_names.contains(&"uniq.jpg"),
+      "uniq.jpg should be jpeg: {jpeg_test_names:?}"
+    );
     let raw = super::catalog::list_photos("", "raw", 0, 100).expect("list raw");
-    assert_eq!(raw.total, 0);
+    let raw_test_names: Vec<&str> = raw.photos.iter().map(|p| p.file_name.as_str()).collect();
+    assert!(
+      !raw_test_names.contains(&"dup_a.jpg"),
+      "dup_a.jpg should NOT be raw"
+    );
+    assert!(
+      !raw_test_names.contains(&"dup_b.jpg"),
+      "dup_b.jpg should NOT be raw"
+    );
 
     // ---- Destaques IA vs Selecionado manual ----
     super::catalog::set_photo_ai_pick(id_a, true).unwrap();
-    let destaques = super::catalog::list_photos("", "destaques", 0, 100).expect("list destaques");
+    let destaques =
+      super::catalog::list_photos("", "destaques", 0, 100).expect("list destaques");
     assert_eq!(destaques.total, 1);
     assert_eq!(destaques.photos[0].id, id_a);
     // "Selecionado" = rating>=4 sem ser ai_pick → zera (rating ainda 0).
-    let selecionado = super::catalog::list_photos("", "selecionado", 0, 100).expect("list selecionado");
+    let selecionado =
+      super::catalog::list_photos("", "selecionado", 0, 100).expect("list selecionado");
     assert_eq!(selecionado.total, 0);
 
     // ---- Filtro "Editar status" ----
     super::catalog::set_photo_edit(id_a, r#"{"exposure":0.5}"#).unwrap();
     let edited = super::catalog::list_photos("", "edited", 0, 100).expect("list edited");
-    assert_eq!(edited.total, 1);
-    let unedited = super::catalog::list_photos("", "unedited", 0, 100).expect("list unedited");
-    assert_eq!(unedited.total, 2);
+    let edited_ids: Vec<i64> = edited.photos.iter().map(|p| p.id).collect();
+    assert!(edited_ids.contains(&id_a), "id_a should be in edited");
+    let unedited = super::catalog::list_photos("", "unedited", 0, 1000).expect("list unedited");
+    let unedited_ids: Vec<i64> = unedited.photos.iter().map(|p| p.id).collect();
+    assert!(unedited_ids.contains(&id_b), "id_b should be in unedited");
 
     // ---- Presets nomeados ----
     super::catalog::save_preset("Meu Estilo", r#"{"contrast":20}"#).unwrap();
@@ -1841,9 +2112,6 @@ pub fn create_web_gallery(ids: Vec<i64>, dest_dir: String, title: String) -> Res
     // ---- Aprender perfil (média de edições) ----
     super::catalog::set_photo_edit(id_a, r#"{"exposure":1.0,"contrast":20}"#).unwrap();
     // dup_b também com exposição (média de exposure deve ser ~1.0).
-    let id_b: i64 = conn
-      .query_row("SELECT id FROM photos WHERE file_name='dup_b.jpg'", [], |r| r.get(0))
-      .unwrap();
     super::catalog::set_photo_edit(id_b, r#"{"exposure":1.0,"contrast":40}"#).unwrap();
     let (name, photos) = super::catalog::learn_profile().unwrap();
     assert!(name.contains("Perfil"));
@@ -1883,7 +2151,9 @@ pub fn create_web_gallery(ids: Vec<i64>, dest_dir: String, title: String) -> Res
     let photo_ids = super::catalog::album_photo_ids(album_id).unwrap();
     assert_eq!(photo_ids.len(), 2);
     super::catalog::delete_album(album_id).unwrap();
-    assert!(super::catalog::album_photo_ids(album_id).unwrap().is_empty());
+    assert!(super::catalog::album_photo_ids(album_id)
+      .unwrap()
+      .is_empty());
 
     // ---- Tipo de foto no scan ----
     let tmp = std::env::temp_dir().join(format!("openshoot_scan_{}", std::process::id()));
@@ -1892,19 +2162,28 @@ pub fn create_web_gallery(ids: Vec<i64>, dest_dir: String, title: String) -> Res
     std::fs::write(tmp.join("sub/b.nef"), "yy").ok();
     // Nef é considerado foto? is_photo_path aceita .nef, mas inspect falha em
     // arquivo fake — testamos apenas o filtro de tipo via matches_photo_type.
-    assert!(super::catalog::matches_photo_type(&tmp.join("a.jpg"), "jpeg"));
-    assert!(!super::catalog::matches_photo_type(&tmp.join("a.jpg"), "raw"));
-    assert!(super::catalog::matches_photo_type(&tmp.join("sub/b.nef"), "raw"));
+    assert!(super::catalog::matches_photo_type(
+      &tmp.join("a.jpg"),
+      "jpeg"
+    ));
+    assert!(!super::catalog::matches_photo_type(
+      &tmp.join("a.jpg"),
+      "raw"
+    ));
+    assert!(super::catalog::matches_photo_type(
+      &tmp.join("sub/b.nef"),
+      "raw"
+    ));
     let _ = std::fs::remove_dir_all(&tmp);
 
     // Limpeza (escopo deste teste; NÃO remover o dir do catalog.db ativo
     // compartilhado via OnceLock — labels_tests o reutiliza).
     conn
-      .execute(
-        "DELETE FROM photos WHERE file_name IN ('dup_a.jpg','dup_b.jpg','uniq.jpg')",
-        [],
-      )
-      .unwrap();
+    .execute(
+    "DELETE FROM photos WHERE sha256 IN ('AAAA','BBBB') AND file_name IN ('dup_a.jpg','dup_b.jpg','uniq.jpg')",
+    [],
+    )
+    .unwrap();
   }
 }
 
@@ -1925,8 +2204,7 @@ fn ensure_extra_columns() -> Result<()> {
     )
     .map_err(|e| Error::from_reason(e.to_string()))?;
   if !has_label {
-    conn
-      .execute("ALTER TABLE photos ADD COLUMN label TEXT DEFAULT ''", [])
+    conn.execute("ALTER TABLE photos ADD COLUMN label TEXT DEFAULT ''", [])
       .map_err(|e| Error::from_reason(e.to_string()))?;
   }
   Ok(())
@@ -1943,12 +2221,11 @@ pub fn set_photo_label(id: i64, label: String) -> Result<()> {
     )));
   }
   let conn = catalog::open().map_err(|e| Error::from_reason(e))?;
-  conn
-    .execute(
-      "UPDATE photos SET label=?2 WHERE id=?1",
-      rusqlite::params![id, normalized],
-    )
-    .map_err(|e| Error::from_reason(e.to_string()))?;
+  conn.execute(
+    "UPDATE photos SET label=?2 WHERE id=?1",
+    rusqlite::params![id, normalized],
+  )
+  .map_err(|e| Error::from_reason(e.to_string()))?;
   Ok(())
 }
 
@@ -1975,13 +2252,18 @@ pub fn get_labels_bulk(ids: Vec<i64>) -> Result<serde_json::Value> {
   let conn = catalog::open().map_err(|e| Error::from_reason(e))?;
   // Fatia os ids para respeitar limites de variáveis do SQLite.
   for chunk in ids.chunks(500) {
-    let placeholders: Vec<String> =
-      chunk.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
+    let placeholders: Vec<String> = chunk
+      .iter()
+      .enumerate()
+      .map(|(i, _)| format!("?{}", i + 1))
+      .collect();
     let sql = format!(
       "SELECT id, COALESCE(label,'') FROM photos WHERE id IN ({})",
       placeholders.join(",")
     );
-    let mut stmt = conn.prepare(&sql).map_err(|e| Error::from_reason(e.to_string()))?;
+    let mut stmt = conn
+      .prepare(&sql)
+      .map_err(|e| Error::from_reason(e.to_string()))?;
     let params: Vec<&dyn rusqlite::ToSql> =
       chunk.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
     let rows = stmt
@@ -2046,7 +2328,12 @@ mod labels_tests {
     if super::set_photo_label(-1, "mauve".to_string()).is_ok() {
       return Err("label inválido deveria falhar".to_string());
     }
-    if !super::get_labels_bulk(vec![]).unwrap().as_object().unwrap().is_empty() {
+    if !super::get_labels_bulk(vec![])
+      .unwrap()
+      .as_object()
+      .unwrap()
+      .is_empty()
+    {
       return Err("bulk vazio deveria ser {}".to_string());
     }
 
@@ -2057,22 +2344,33 @@ mod labels_tests {
     let run = || -> Result<(), String> {
       let conn = super::catalog::open().map_err(|e| e)?;
       let _ = conn.busy_timeout(Duration::from_secs(10));
-      conn
-        .execute("DELETE FROM photos WHERE file_name LIKE 'label_%'", [])
+      conn.execute("DELETE FROM photos WHERE file_name LIKE 'label_%'", [])
         .map_err(|e| e.to_string())?;
       let sql = "INSERT INTO photos (path, file_name, ext, file_size, sha256, indexed_at)
-                 VALUES (?1, ?2, 'jpg', 10, ?3, datetime('now'))";
-      conn
-        .execute(sql, rusqlite::params!["/tmp/label_a.jpg", "label_a.jpg", "LABELA"])
-        .map_err(|e| e.to_string())?;
-      conn
-        .execute(sql, rusqlite::params!["/tmp/label_b.jpg", "label_b.jpg", "LABELB"])
-        .map_err(|e| e.to_string())?;
+         VALUES (?1, ?2, 'jpg', 10, ?3, datetime('now'))";
+      conn.execute(
+        sql,
+        rusqlite::params!["/tmp/label_a.jpg", "label_a.jpg", "LABELA"],
+      )
+      .map_err(|e| e.to_string())?;
+      conn.execute(
+        sql,
+        rusqlite::params!["/tmp/label_b.jpg", "label_b.jpg", "LABELB"],
+      )
+      .map_err(|e| e.to_string())?;
       let id_a: i64 = conn
-        .query_row("SELECT id FROM photos WHERE file_name='label_a.jpg'", [], |r| r.get(0))
+        .query_row(
+          "SELECT id FROM photos WHERE file_name='label_a.jpg'",
+          [],
+          |r| r.get(0),
+        )
         .map_err(|e| e.to_string())?;
       let id_b: i64 = conn
-        .query_row("SELECT id FROM photos WHERE file_name='label_b.jpg'", [], |r| r.get(0))
+        .query_row(
+          "SELECT id FROM photos WHERE file_name='label_b.jpg'",
+          [],
+          |r| r.get(0),
+        )
         .map_err(|e| e.to_string())?;
 
       if super::get_photo_label(id_a).map_err(|e| e.to_string())? != "" {
@@ -2097,8 +2395,7 @@ mod labels_tests {
       if super::get_photo_label(id_a).map_err(|e| e.to_string())? != "" {
         return Err("limpar label falhou".to_string());
       }
-      conn
-        .execute("DELETE FROM photos WHERE file_name LIKE 'label_%'", [])
+      conn.execute("DELETE FROM photos WHERE file_name LIKE 'label_%'", [])
         .map_err(|e| e.to_string())?;
       Ok(())
     };
@@ -2113,7 +2410,7 @@ mod labels_tests {
 
   #[test]
   fn photo_label_set_get_roundtrip() {
-    let _db = crate::tests::db_lock();
+    let _db = crate::catalog::test_db_lock();
     let mut last = String::new();
     for attempt in 0..8 {
       match try_roundtrip() {

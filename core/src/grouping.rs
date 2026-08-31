@@ -39,43 +39,97 @@ fn best_matching_face(
     .map(|(bbox, _)| bbox)
 }
 
-/// Uma face detectada com embedding e metadados.
+/// Uma face detectada com embedding, bbox e metadados.
 struct FaceItem {
   photo_id: i64,
   photo_path: String,
   embedding: Vec<f32>,
+  bbox: [f32; 4],
+}
+
+/// Face associada a um grupo, preservando a bbox normalizada.
+#[derive(Serialize)]
+pub struct GroupedFace {
+  pub group_index: usize,
+  pub photo_id: i64,
+  pub bbox: [f32; 4],
+}
+
+/// Resultado completo de uma análise facial. As contagens permitem à interface
+/// distinguir "não havia rostos" de fotos que não puderam ser abertas.
+pub struct GroupingResult {
+  pub groups: Vec<PersonGroup>,
+  pub grouped_faces: Vec<GroupedFace>,
+  pub photos_scanned: usize,
+  pub photos_unavailable: usize,
+}
+
+fn unavailable_photos_error(total: usize, unavailable: usize) -> Option<String> {
+  if total > 0 && unavailable == total {
+    Some(format!(
+    "Nenhuma das {total} foto(s) do álbum pôde ser aberta. Verifique se a pasta original continua disponível e atualize o álbum."
+  ))
+  } else {
+    None
+  }
 }
 
 /// Agrupa fotos por pessoa (similaridade facial via MobileFaceNet).
 /// Para cada foto, detecta faces (SCRFD) e gera embeddings (MobileFaceNet).
 /// Depois agrupa por similaridade de cosseno (mesma pessoa = ângulo pequeno).
 /// `threshold` (0..1): similaridade mínima p/ considerar mesma pessoa (default ~0.5).
-pub fn group_by_similarity(
-  photos: &[PhotoPath],
-  threshold: f32,
-) -> Result<Vec<PersonGroup>, String> {
+/// Retorna (grupos, faces_agrupadas) — as faces_agrupadas trazem group_id + bbox.
+pub fn group_by_similarity(photos: &[PhotoPath], threshold: f32) -> Result<GroupingResult, String> {
   if !crate::ml::embedding_available() {
-    return Err("modelo MobileFaceNet ausente (reconhecimento facial indisponível)".to_string());
+    return Err(
+      "modelo MobileFaceNet ausente (reconhecimento facial indisponível)".to_string(),
+    );
   }
 
   // 1) Detecta faces + embeddings de cada foto — em paralelo (rayon) e com
   // cache persistente no catálogo (gap G2: 59s/foto → reuso entre execuções).
-  // O SCRFD/MobileFaceNet continuam serializados (Mutex da sessão ONNX), mas
-  // decode + letterbox + crop rodam em todos os cores.
-  let per_photo: Vec<(i64, String, Vec<Vec<f32>>)> = photos
+  let unavailable = std::sync::atomic::AtomicUsize::new(0);
+  let per_photo: Vec<(i64, String, Vec<(Vec<f32>, [f32; 4])>)> = photos
     .par_iter()
     .filter_map(|p| {
       let cached = crate::catalog::get_face_embedding(p.id)
         .ok()
         .flatten()
         .and_then(|blob| parse_embeddings(&blob));
-      let embs = match cached {
-        Some(e) if !e.is_empty() => e,
+      let embs_bboxes = match cached {
+        Some(e) if !e.is_empty() => {
+          // Cache serializa só embeddings; detectar novamente para obter bboxes.
+          let path = Path::new(&p.path);
+          let (rgb, w, h) = match crate::ml::load_rgb(path, 512) {
+            Ok(v) => v,
+            Err(e) => {
+              unavailable.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+              crate::catalog::log_debug(&format!("[group] {}: {}", p.path, e));
+              return None;
+            }
+          };
+          let bboxes = match crate::ml::detect_faces(&rgb, w, h, 0.5) {
+            Ok(f) => f,
+            Err(_) => return None,
+          };
+          let mut pairs: Vec<(Vec<f32>, [f32; 4])> = Vec::new();
+          for (i, bbox) in bboxes.into_iter().enumerate() {
+            if i < e.len() {
+              pairs.push((e[i].clone(), bbox));
+            } else {
+              if let Ok(emb) = crate::ml::face_embedding(&rgb, w, h, bbox) {
+                pairs.push((emb, bbox));
+              }
+            }
+          }
+          pairs
+        }
         _ => {
           let path = Path::new(&p.path);
           let (rgb, w, h) = match crate::ml::load_rgb(path, 512) {
             Ok(v) => v,
             Err(e) => {
+              unavailable.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
               crate::catalog::log_debug(&format!("[group] {}: {}", p.path, e));
               return None;
             }
@@ -88,45 +142,69 @@ pub fn group_by_similarity(
             }
           };
           let mut embs: Vec<Vec<f32>> = Vec::new();
+          let mut pairs: Vec<(Vec<f32>, [f32; 4])> = Vec::new();
           for bbox in bboxes {
             match crate::ml::face_embedding(&rgb, w, h, bbox) {
-              Ok(emb) => embs.push(emb),
+              Ok(emb) => {
+                pairs.push((emb.clone(), bbox));
+                embs.push(emb);
+              }
               Err(e) => {
-                crate::catalog::log_debug(&format!("[group] emb {}: {}", p.path, e));
+                crate::catalog::log_debug(&format!(
+                  "[group] emb {}: {}",
+                  p.path, e
+                ));
               }
             }
           }
           if !embs.is_empty() {
-            let _ = crate::catalog::set_face_embedding(p.id, &serialize_embeddings(&embs));
+            let _ =
+              crate::catalog::set_face_embedding(p.id, &serialize_embeddings(&embs));
           }
-          embs
+          pairs
         }
       };
-      if embs.is_empty() {
-        None
-      } else {
-        Some((p.id, p.path.clone(), embs))
-      }
+      // Mantém a foto lida mesmo que não tenha rosto, para atualizar has_face.
+      Some((p.id, p.path.clone(), embs_bboxes))
     })
     .collect();
 
+  let photos_unavailable = unavailable.load(std::sync::atomic::Ordering::Relaxed);
+  if let Some(error) = unavailable_photos_error(photos.len(), photos_unavailable) {
+    return Err(error);
+  }
+
+  let photos_scanned = per_photo.len();
+  let analyzed_ids: std::collections::HashSet<i64> =
+    per_photo.iter().map(|(photo_id, _, _)| *photo_id).collect();
+
   let mut faces: Vec<FaceItem> = Vec::new();
-  for (photo_id, photo_path, embs) in per_photo {
-    for emb in embs {
+  for (photo_id, photo_path, pairs) in per_photo {
+    for (emb, bbox) in pairs {
       faces.push(FaceItem {
         photo_id,
         photo_path: photo_path.clone(),
         embedding: emb,
+        bbox,
       });
     }
   }
 
+  // Atualiza has_face somente nas fotos que puderam ser lidas. Fotos indisponíveis
+  // não devem ter seu estado apagado por uma análise que não chegou a processá-las.
+  let mut photos_with_faces: std::collections::HashSet<i64> = std::collections::HashSet::new();
+  for f in &faces {
+    photos_with_faces.insert(f.photo_id);
+  }
+  for &id in &analyzed_ids {
+    let _ = crate::catalog::set_photo_has_face(id, photos_with_faces.contains(&id));
+  }
+
   // 2) Agrupa por cosseno (agrupamento guloso por similaridade).
-  let mut groups: Vec<Vec<usize>> = Vec::new(); // índices das faces em cada grupo
+  let mut groups: Vec<Vec<usize>> = Vec::new();
   for i in 0..faces.len() {
     let mut placed = false;
     for g in groups.iter_mut() {
-      // Compara com a face representativa do grupo (a primeira).
       let rep = &faces[g[0]];
       if cosine(&faces[i].embedding, &rep.embedding) >= threshold {
         g.push(i);
@@ -139,17 +217,22 @@ pub fn group_by_similarity(
     }
   }
 
-  // 3) Converte para PersonGroup (uma pessoa por grupo com >=1 face).
+  // 3) Converte para PersonGroup e produz face->group associations.
   let mut out = Vec::new();
+  let mut grouped_faces = Vec::new();
   for (gi, g) in groups.iter().enumerate() {
     if g.is_empty() {
       continue;
     }
-    // Diferentes fotos no grupo (uma pessoa pode aparecer em várias).
     let mut photo_ids: Vec<i64> = Vec::new();
     let mut photo_paths: Vec<String> = Vec::new();
     for &fi in g {
       let f = &faces[fi];
+      grouped_faces.push(GroupedFace {
+        group_index: gi,
+        photo_id: f.photo_id,
+        bbox: f.bbox,
+      });
       if !photo_ids.contains(&f.photo_id) {
         photo_ids.push(f.photo_id);
         photo_paths.push(f.photo_path.clone());
@@ -164,11 +247,16 @@ pub fn group_by_similarity(
       photo_paths,
     });
   }
-  Ok(out)
+  Ok(GroupingResult {
+    groups: out,
+    grouped_faces,
+    photos_scanned,
+    photos_unavailable,
+  })
 }
 
 /// Serializa N embeddings (todos com o mesmo dim) num BLOB:
- /// [count: u32 LE][f32 LE × count × dim].
+/// [count: u32 LE][f32 LE × count × dim].
 fn serialize_embeddings(embs: &[Vec<f32>]) -> Vec<u8> {
   let dim = embs.first().map(|e| e.len()).unwrap_or(0);
   let mut out = Vec::with_capacity(4 + embs.len() * dim * 4);
@@ -201,8 +289,7 @@ fn parse_embeddings(blob: &[u8]) -> Option<Vec<Vec<f32>>> {
     .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
     .collect();
   Some(
-    vals
-      .chunks(dim)
+    vals.chunks(dim)
       .map(|c| c.to_vec())
       .collect::<Vec<Vec<f32>>>(),
   )
@@ -225,7 +312,8 @@ pub fn export_grouped(
   out_dir: &Path,
   threshold: f32,
 ) -> Result<serde_json::Value, String> {
-  let groups = group_by_similarity(photos, threshold)?;
+  let result = group_by_similarity(photos, threshold)?;
+  let groups = result.groups;
 
   let root = out_dir.to_path_buf();
   std::fs::create_dir_all(&root).map_err(|e| format!("criar {root:?}: {e}"))?;
@@ -293,7 +381,10 @@ mod tests {
       ([0.1, 0.1, 0.2, 0.2], vec![0.0, 1.0]),
       ([0.7, 0.2, 0.8, 0.3], vec![1.0, 0.0]),
     ];
-    assert_eq!(best_matching_face(candidates, &[1.0, 0.0]), Some([0.7, 0.2, 0.8, 0.3]));
+    assert_eq!(
+      best_matching_face(candidates, &[1.0, 0.0]),
+      Some([0.7, 0.2, 0.8, 0.3])
+    );
   }
 
   #[test]
@@ -304,5 +395,14 @@ mod tests {
     assert_eq!(parsed, embs);
     assert!(parse_embeddings(&blob[..6]).is_none()); // truncado
     assert!(parse_embeddings(&[]).is_none());
+  }
+
+  #[test]
+  fn reports_an_actionable_error_when_every_photo_is_unavailable() {
+    let error = super::unavailable_photos_error(3, 3);
+    assert!(error
+      .as_deref()
+      .is_some_and(|message| message.contains("Nenhuma das 3 foto(s)")));
+    assert_eq!(super::unavailable_photos_error(3, 2), None);
   }
 }

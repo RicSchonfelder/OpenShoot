@@ -310,6 +310,22 @@ button.ghost {
   border-color: var(--danger-strong);
 }
 
+.toast.success {
+  color: var(--success-light, #4caf50);
+  border-color: var(--success-strong, #388e3c);
+}
+
+.toast.info {
+  color: var(--accent-light, var(--text-primary));
+  border-color: var(--accent, var(--border));
+}
+
+.toast .ghost.small {
+  margin-left: 8px;
+  padding: 2px 6px;
+  font-size: 11px;
+}
+
 .scan-errors {
   margin: 12px 20px 0;
   font-size: 12px;
@@ -801,6 +817,17 @@ button.danger {
 }
 
 .toolbar-one-click:hover:not(:disabled) { background: var(--surface-selected); }
+
+.toolbar-preset-select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 5px 8px;
+  font-size: 11px;
+  border-radius: 6px;
+  cursor: pointer;
+  max-width: 150px;
+}
 
 .toolbar-count.active {
   border-color: var(--accent);
@@ -2049,6 +2076,12 @@ button.danger {
   text-align: right;
 }
 
+.people-threshold-hint {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-style: italic;
+}
+
 .people-body {
   flex: 1;
   min-height: 0;
@@ -2109,8 +2142,19 @@ button.danger {
   transition: border-color 0.15s;
 }
 
-.person-card:hover {
+.person-card:hover,
+.person-card:focus-within {
   border-color: var(--accent);
+}
+
+.person-open {
+  appearance: none;
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
 }
 
 .person-cover {
@@ -2120,10 +2164,16 @@ button.danger {
   overflow: hidden;
 }
 
-.person-cover img {
+.face-thumb-frame {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  overflow: hidden;
+}
+
+.face-thumb-frame img {
+  position: absolute;
   display: block;
 }
 
@@ -2152,9 +2202,220 @@ button.danger {
 }
 
 .person-name {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.person-name:hover {
+  color: var(--text-accent);
+}
+
+.person-name:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.person-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -4px;
+}
+
+.person-name-action {
+  flex: 0 0 auto;
+  color: var(--text-accent);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.person-review-hint {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* Rename inline */
+.person-rename-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.person-rename-input {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 2px 6px;
+  width: 100%;
+}
+
+.person-rename-error {
+  color: var(--error);
+  font-size: 11px;
+}
+
+/* Person detail view */
+.person-detail-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 12px;
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.person-detail-title {
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.person-detail-count {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.person-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.person-detail-item {
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface-inset);
+}
+
+.person-detail-thumb {
+  height: 140px;
+  background: var(--canvas);
+  position: relative;
+  overflow: hidden;
+}
+
+
+.person-detail-actions {
+  padding: 6px 8px;
+  display: flex;
+  gap: 4px;
+}
+
+.person-detail-actions button {
+  flex: 1;
+  font-size: 11px;
+  padding: 4px 6px;
+}
+
+/* People faces overlay in edit view */
+.editview-image-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.editview-image-container .editview-img {
+  position: relative;
+  z-index: 0;
+}
+
+.editview-media-layer {
+  position: absolute;
+  overflow: hidden;
+}
+
+.editview-media-layer .editview-img {
+  display: block;
+}
+
+.editview-faces-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.editview-face-bbox {
+  position: absolute;
+  border: 2px solid var(--accent);
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.editview-face-label {
+  position: absolute;
+  bottom: -20px;
+  left: 0;
+  background: var(--accent-strong);
+  color: var(--text-on-accent);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.editview-people-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.editview-people-toggle button {
+  width: auto;
+  margin: 0;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.editview-people-toggle button.active {
+  color: var(--text-on-accent);
+  background: var(--accent-strong);
+  border-color: var(--accent);
+}
+
+.editview-people-toggle button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* EditPanel people section */
+.edit-people-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.edit-people-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-selected);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.toast.success, .toast.error, .toast.info {
+  white-space: pre-line;
 }
 
 /* ------- Loupe: zoom (barra Fit/100%/+/−) ------- */
@@ -2501,6 +2762,53 @@ input[type='checkbox'] {
   color: var(--text-muted);
   font-size: 13px;
   line-height: 1.45;
+}
+
+.settings-storage-fields {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-path-field {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-path-field > span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.settings-path-field code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-storage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 2px;
+}
+
+.settings-storage-actions button {
+  font-size: 11px;
+}
+
+.settings-storage-message {
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--surface-inset);
+  font-size: 11px !important;
 }
 
 .appearance-options,
@@ -2914,6 +3222,41 @@ input[type='checkbox'] {
 
 .people-empty-card button {
   margin-top: 20px;
+}
+
+.people-reanalyze-hint {
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--surface-selected);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.people-intro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  max-width: 1200px;
+  margin: 0 auto 18px;
+}
+
+.people-intro h1 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 20px;
+}
+
+.people-intro p {
+  max-width: 540px;
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+@media (max-width: 760px) {
+  .people-intro { flex-direction: column; gap: 10px; }
 }
 
 .restorer-controls {

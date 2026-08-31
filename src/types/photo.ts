@@ -31,3 +31,11 @@ export interface PhotoListData {
   photos: PhotoMeta[]
   total: number
 }
+
+export interface PersistedFace {
+  id: number
+  group_id: number
+  photo_id: number
+  bbox: [number, number, number, number]
+  group_name: string
+}

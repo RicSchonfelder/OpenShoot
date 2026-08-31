@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { PhotoMeta } from '../../../types/photo'
+import type { PhotoMeta, PersistedFace } from '../../../types/photo'
 import { useT } from '../i18n/I18nContext'
 
 export interface EditValues {
@@ -104,6 +104,7 @@ interface EditPanelProps {
   selectedIds?: Set<number>
   onPreviewChange?: (preview: string | null) => void
   onModification?: () => void
+  photoFaces?: PersistedFace[]
 }
 
 interface PresetItem {
@@ -127,7 +128,7 @@ function AccordionSection({ title, className, defaultOpen = false, children }: {
   )
 }
 
-export default function EditPanel({ photo, variant = 'edit', onApplyAll, selectedIds, onPreviewChange, onModification }: EditPanelProps) {
+export default function EditPanel({ photo, variant = 'edit', onApplyAll, selectedIds, onPreviewChange, onModification, photoFaces = [] }: EditPanelProps) {
   const { t } = useT()
   const [values, setValues] = useState<EditValues>(EMPTY)
   const [skinIntensity, setSkinIntensity] = useState(0)
@@ -139,6 +140,7 @@ export default function EditPanel({ photo, variant = 'edit', onApplyAll, selecte
   const [presetColorType, setPresetColorType] = useState('')
   const [hslColor, setHslColor] = useState(0)
   const [faceRegions, setFaceRegions] = useState<Record<string, number>>({})
+  const [activePresetName, setActivePresetName] = useState('')
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -733,8 +735,8 @@ export default function EditPanel({ photo, variant = 'edit', onApplyAll, selecte
           <button onClick={importJson} className="ghost">
             {t('edit.importJson')}
           </button>
-          {presets.length > 0 && (
-            <button onClick={() => exportJson(presets[0].name)} className="ghost">
+          {activePresetName && (
+            <button onClick={() => exportJson(activePresetName)} className="ghost">
               {t('edit.exportJson')}
             </button>
           )}
@@ -745,7 +747,7 @@ export default function EditPanel({ photo, variant = 'edit', onApplyAll, selecte
           <ul className="edit-preset-list">
             {presets.map((p) => (
               <li key={p.name}>
-                <button className="edit-preset-load" onClick={() => applyRecipe(p.recipe)}>
+                <button className="edit-preset-load" onClick={() => { applyRecipe(p.recipe); setActivePresetName(p.name) }}>
                   {p.name}
                   {presetBadge(p) && (
                     <span
@@ -774,6 +776,18 @@ export default function EditPanel({ photo, variant = 'edit', onApplyAll, selecte
           <MetadataSection photoId={photo.id} />
         ) : (
           <p className="edit-hint">{t('edit.selecioneFoto')}</p>
+        )}
+      </AccordionSection>
+
+      <AccordionSection title={t('people.pessoasSecao')} className="edit-people">
+        {photoFaces.length > 0 ? (
+          <div className="edit-people-list">
+            {[...new Set(photoFaces.map((f) => f.group_name))].map((name) => (
+              <span key={name} className="edit-people-chip">{name}</span>
+            ))}
+          </div>
+        ) : (
+          <p className="edit-hint">{t('people.semPessoas')}</p>
         )}
       </AccordionSection>
     </aside>

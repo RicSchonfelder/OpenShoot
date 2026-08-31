@@ -1,174 +1,525 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useT } from '../i18n/I18nContext'
 import SettingsControl from './SettingsControl'
 import WorkspaceNav, { type WorkspaceSection } from './WorkspaceNav'
 
 interface PeopleViewProps {
+  albumId: number
+  activeSection: WorkspaceSection
   onBack: () => void
   onNavigate: (section: WorkspaceSection) => void
-  photoIds?: number[]
+  onOpenEdit: (photoId: number) => void
+  onOpenRetouch: (photoId: number) => void
 }
 
-interface PersonGroup {
-  person_id: number
+interface EnrichedGroup {
+  id: number
+  name: string
   count: number
-  sample_path: string
-  sample_face?: [number, number, number, number] | null
-  photo_ids: number[]
-  photo_paths: string[]
+  cover?: string | null
+  faces: Array<{ id: number; photo_id: number; bbox: [number, number, number, number]; group_name: string }>
 }
 
-function extractGroups(res: unknown): PersonGroup[] {
-  if (Array.isArray(res)) return res as PersonGroup[]
-  if (res && typeof res === 'object') {
-    const obj = res as Record<string, unknown>
-    if (typeof obj.error === 'string') throw new Error(obj.error)
-    if (Array.isArray(obj.groups)) return obj.groups as PersonGroup[]
+function faceCropStyle(
+  bbox: [number, number, number, number] | undefined,
+  natural: { width: number; height: number } | null,
+  frame: { width: number; height: number } | null
+): CSSProperties {
+  if (!bbox || !natural || !frame || frame.width <= 0 || frame.height <= 0) {
+    return { width: '100%', height: '100%', objectFit: 'cover' }
   }
-  return []
+  const [x1, y1, x2, y2] = bbox
+  const frameAspect = frame.width / frame.height
+  const faceWidth = Math.max(1, (x2 - x1) * natural.width)
+  const faceHeight = Math.max(1, (y2 - y1) * natural.height)
+  // Reserva margem suficiente para mostrar o rosto inteiro, respeitando a
+  // proporção do card e sem distorcer a imagem.
+  const margin = 1.2
+  let cropWidth = Math.max(faceWidth * margin, faceHeight * margin * frameAspect)
+  let cropHeight = cropWidth / frameAspect
+  if (cropHeight > natural.height) {
+    cropHeight = natural.height
+    cropWidth = cropHeight * frameAspect
+  }
+  if (cropWidth > natural.width) {
+    cropWidth = natural.width
+    cropHeight = cropWidth / frameAspect
+  }
+  const centerX = ((x1 + x2) / 2) * natural.width
+  const centerY = ((y1 + y2) / 2) * natural.height
+  const cropX = Math.min(Math.max(0, centerX - cropWidth / 2), natural.width - cropWidth)
+  const cropY = Math.min(Math.max(0, centerY - cropHeight / 2), natural.height - cropHeight)
+  const scale = frame.width / cropWidth
+  return {
+    width: natural.width * scale,
+    height: natural.height * scale,
+    left: -cropX * scale,
+    top: -cropY * scale,
+    maxWidth: 'none',
+    maxHeight: 'none'
+  }
 }
 
-export default function PeopleView({ onBack, onNavigate, photoIds }: PeopleViewProps) {
+function FaceThumbnail({ src, bbox, alt, className }: {
+  src?: string | null
+  bbox?: [number, number, number, number]
+  alt: string
+  className?: string
+}) {
+  if (!src) return <div className="person-cover-empty" aria-hidden="true">👤</div>
+  const frameRef = useRef<HTMLDivElement | null>(null)
+  const [natural, setNatural] = useState<{ width: number; height: number } | null>(null)
+  const [frame, setFrame] = useState<{ width: number; height: number } | null>(null)
+  useEffect(() => {
+    const element = frameRef.current
+    if (!element) return
+    const update = () => setFrame({ width: element.clientWidth, height: element.clientHeight })
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+  return (
+    <div ref={frameRef} className={`face-thumb-frame ${className ?? ''}`}>
+      <img
+        src={src}
+        alt={alt}
+        onLoad={(event) => setNatural({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
+        style={faceCropStyle(bbox, natural, frame)}
+      />
+    </div>
+  )
+}
+
+export default function PeopleView({ albumId, activeSection, onBack, onNavigate, onOpenEdit, onOpenRetouch }: PeopleViewProps) {
   const { t } = useT()
   const [threshold, setThreshold] = useState(0.5)
   const [grouping, setGrouping] = useState(false)
   const [exporting, setExporting] = useState(false)
-  const [people, setPeople] = useState<PersonGroup[]>([])
-  const [hasGrouped, setHasGrouped] = useState(false)
-  const [covers, setCovers] = useState<Record<number, string>>({})
+  const [groups, setGroups] = useState<EnrichedGroup[]>([])
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [analysisNotice, setAnalysisNotice] = useState<string | null>(null)
+  const [detailGroup, setDetailGroup] = useState<EnrichedGroup | null>(null)
+  const [detailThumbs, setDetailThumbs] = useState<Record<number, string>>({})
+  const [renamingId, setRenamingId] = useState<number | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [renameError, setRenameError] = useState<string | null>(null)
+  const renameRef = useRef<HTMLInputElement | null>(null)
+  const [albumPhotoIds, setAlbumPhotoIds] = useState<number[] | null>(null)
+  const [albumPhotoIdsError, setAlbumPhotoIdsError] = useState<string | null>(null)
+  const [exportResult, setExportResult] = useState<{ n: number; dir: string } | null>(null)
 
-  // Carrega a capa e usa a face representativa retornada pelo agrupamento.
   useEffect(() => {
     let active = true
-    Promise.all(people.map(async (p) => {
-      if (!p.sample_path) return null
+    setAlbumPhotoIds(null)
+    setAlbumPhotoIdsError(null)
+    window.openshoot.albumPhotoIds(albumId).then((ids) => {
+      if (active) setAlbumPhotoIds(ids)
+    }).catch((e) => {
+      if (active) setAlbumPhotoIdsError(String(e))
+    })
+    return () => { active = false }
+  }, [albumId])
+
+  const loadGroups = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await window.openshoot.listPersonGroups(albumId)
+      if (!res.ok || !res.groups) {
+        setError(res.error ?? t('people.erroCarregar'))
+        setGroups([])
+        return
+      }
+      const enriched: EnrichedGroup[] = []
+      for (const pg of res.groups) {
+        const facesRes = await window.openshoot.listFacesInGroup(pg.id)
+        const faces = facesRes.ok && facesRes.faces ? facesRes.faces : []
+        const uniquePhotoIds = [...new Set(faces.map((f) => f.photo_id))]
+        enriched.push({ id: pg.id, name: pg.name, count: uniquePhotoIds.length, faces })
+      }
+      setGroups(enriched)
+      setDetailGroup((prev) => {
+        if (!prev) return null
+        const updated = enriched.find((g) => g.id === prev.id)
+        return updated ?? prev
+      })
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setLoading(false)
+    }
+  }, [albumId, t])
+
+  useEffect(() => {
+    loadGroups()
+  }, [loadGroups])
+
+  useEffect(() => {
+    let active = true
+    const coverIds = groups.filter((g) => !g.cover && g.faces.length > 0).map((g) => g.faces[0].photo_id)
+    if (coverIds.length === 0) return
+    Promise.all(coverIds.map(async (photoId) => {
       try {
-        const cover = await window.openshoot.thumbForPath(p.sample_path, 500)
-        return { id: p.person_id, cover }
+        const thumb = await window.openshoot.thumbForPhoto(photoId, 500)
+        return { photoId, thumb }
       } catch {
         return null
       }
-    })).then((entries) => {
+    })).then((results) => {
       if (!active) return
-      const valid = entries.filter((entry): entry is { id: number; cover: string } => Boolean(entry?.cover))
-      setCovers(Object.fromEntries(valid.map((entry) => [entry.id, entry.cover])))
+      const map: Record<number, string> = {}
+      for (const r of results) {
+        if (r?.thumb) map[r.photoId] = r.thumb
+      }
+      setGroups((prev) => prev.map((g) => {
+        if (g.cover) return g
+        const face = g.faces[0]
+        if (face && map[face.photo_id]) return { ...g, cover: map[face.photo_id] }
+        return g
+      }))
     })
     return () => { active = false }
-  }, [people])
+  }, [groups])
+
+  const albumPhotoIdsLoaded = albumPhotoIds !== null
+  const albumEmpty = albumPhotoIdsLoaded && albumPhotoIds.length === 0
 
   const runGrouping = useCallback(async () => {
+    if (!albumPhotoIdsLoaded || albumEmpty) return
     setGrouping(true)
     setError(null)
+    setAnalysisNotice(null)
     try {
-      const res = await window.openshoot.groupBySimilarity(threshold, photoIds)
-      setPeople(extractGroups(res))
-      setHasGrouped(true)
-      setCovers({})
+      const res = await window.openshoot.groupBySimilarity(threshold, albumPhotoIds, albumId)
+      if ('error' in res) {
+        setError(String(res.error))
+        return
+      }
+      if (res.photos_unavailable > 0) {
+        setAnalysisNotice(t('people.analysisPartial', {
+          scanned: res.photos_scanned,
+          unavailable: res.photos_unavailable,
+        }))
+      } else if (res.groups.length === 0) {
+        setAnalysisNotice(t('people.analysisNoFaces', { n: res.photos_scanned }))
+      }
+      await loadGroups()
     } catch (e) {
       setError(String(e))
     } finally {
       setGrouping(false)
     }
-  }, [photoIds, threshold])
+  }, [albumId, albumPhotoIds, albumPhotoIdsLoaded, albumEmpty, threshold, loadGroups])
 
   const runExport = useCallback(async () => {
+    if (!albumPhotoIdsLoaded || albumEmpty) return
     const outDir = await window.openshoot.pickExportFolder()
     if (!outDir) return
     setExporting(true)
     setError(null)
     try {
-      const res = await window.openshoot.exportPeopleToFolders(outDir, threshold, photoIds)
+      const res = await window.openshoot.exportPersistedPeopleAlbum(albumId, outDir)
       if (!res.ok) {
         setError(res.error ?? 'erro')
       } else {
-        window.alert(t('people.exportado', { n: res.exported ?? 0, dir: res.out_dir ?? outDir }))
+        setExportResult({ n: res.exported ?? 0, dir: res.out_dir ?? outDir })
       }
     } catch (e) {
       setError(String(e))
     } finally {
       setExporting(false)
     }
-  }, [photoIds, threshold, t])
+  }, [albumId, albumPhotoIdsLoaded, albumEmpty])
+
+  const startRename = useCallback((group: EnrichedGroup) => {
+    setRenamingId(group.id)
+    setRenameValue(group.name)
+    setRenameError(null)
+    setTimeout(() => renameRef.current?.focus(), 0)
+  }, [])
+
+  const commitRename = useCallback(async () => {
+    if (renamingId == null) return
+    const name = renameValue.trim()
+    if (!name) {
+      setRenameError(t('people.erroRenomear'))
+      return
+    }
+    try {
+      const res = await window.openshoot.renamePersonGroup(renamingId, name)
+      if (!res.ok) {
+        setRenameError(res.error ?? t('people.erroRenomear'))
+        return
+      }
+      setGroups((prev) => prev.map((g) => g.id === renamingId ? { ...g, name } : g))
+      setDetailGroup((prev) => prev && prev.id === renamingId ? { ...prev, name } : prev)
+      setRenamingId(null)
+    } catch (e) {
+      setRenameError(String(e))
+    }
+  }, [renamingId, renameValue, t])
+
+  const cancelRename = useCallback(() => {
+    setRenamingId(null)
+    setRenameError(null)
+  }, [])
+
+  useEffect(() => {
+    if (detailGroup) {
+      const ids = detailGroup.faces.map((f) => f.photo_id)
+      const unique = [...new Set(ids)]
+      const missing = unique.filter((id) => !detailThumbs[id])
+      if (missing.length === 0) return
+      let active = true
+      Promise.all(missing.map(async (id) => {
+        try {
+          const thumb = await window.openshoot.thumbForPhoto(id, 300)
+          return { id, thumb }
+        } catch {
+          return null
+        }
+      })).then((results) => {
+        if (!active) return
+        const next = { ...detailThumbs }
+        for (const r of results) {
+          if (r?.thumb) next[r.id] = r.thumb
+        }
+        setDetailThumbs(next)
+      })
+      return () => { active = false }
+    }
+  }, [detailGroup, detailThumbs])
+
+  const handleOpenDetail = useCallback((group: EnrichedGroup) => {
+    setDetailGroup(group)
+  }, [])
+
+  if (detailGroup) {
+    const uniquePhotoIds = [...new Set(detailGroup.faces.map((f) => f.photo_id))]
+    return (
+      <div className="people">
+        <header className="topbar workspace-topbar">
+          <div className="workspace-left"><span className="logo">OpenShoot</span></div>
+          <WorkspaceNav active={activeSection} onNavigate={onNavigate} />
+          <div className="topbar-right workspace-actions">
+            <SettingsControl />
+          </div>
+        </header>
+        <div className="workspace-contextbar people-contextbar" aria-label={t('people.detalhes')}>
+          <button onClick={() => setDetailGroup(null)} className="ghost back-albums">
+            ← {t('people.titulo')}
+          </button>
+        </div>
+        <main className="people-body">
+          <div className="person-detail-header">
+            <span className="person-detail-title">{detailGroup.name}</span>
+            <span className="person-detail-count">{t('gallery.fotoCount', { n: uniquePhotoIds.length })}</span>
+          </div>
+          <div className="person-detail-grid">
+            {uniquePhotoIds.map((photoId) => (
+              <div key={photoId} className="person-detail-item">
+                  <div className="person-detail-thumb">
+                    <FaceThumbnail
+                      src={detailThumbs[photoId]}
+                      bbox={detailGroup.faces.find((face) => face.photo_id === photoId)?.bbox}
+                      alt={t('people.faceCropAlt', { name: detailGroup.name })}
+                      className="person-face-crop"
+                    />
+                  </div>
+                  <div className="person-detail-actions">
+                    <button
+                      onClick={() => onOpenEdit(photoId)}
+                      className="ghost small"
+                      title={t('people.abrirEditarDetalhe')}
+                    >
+                      {t('people.abrirEditarDetalhe')}
+                    </button>
+                    <button
+                      onClick={() => onOpenRetouch(photoId)}
+                      className="ghost small"
+                      title={t('people.abrirRetoqueDetalhe')}
+                    >
+                      {t('people.abrirRetoqueDetalhe')}
+                    </button>
+                  </div>
+                </div>
+            ))}
+          </div>
+          {uniquePhotoIds.length === 0 && (
+            <div className="people-empty">
+              <div className="people-empty-card">
+                <div className="people-empty-icon" aria-hidden="true">◉</div>
+                <p>{t('people.semNenhum')}</p>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="people">
       <header className="topbar workspace-topbar">
         <div className="workspace-left"><span className="logo">OpenShoot</span></div>
-        <WorkspaceNav active="edit" onNavigate={onNavigate} />
+        <WorkspaceNav active={activeSection} onNavigate={onNavigate} />
         <div className="topbar-right workspace-actions">
           <SettingsControl />
         </div>
       </header>
       <div className="workspace-contextbar people-contextbar" aria-label="Ferramentas de pessoas">
-          <label className="people-threshold">
-            <span>Similaridade</span>
-            <input
-              type="range"
-              min={0.3}
-              max={0.8}
-              step={0.01}
-              value={threshold}
-              onChange={(e) => setThreshold(Number(e.target.value))}
-            />
-            <em>{threshold.toFixed(2)}</em>
-          </label>
-          <button onClick={runGrouping} disabled={grouping || exporting}>
-            {grouping ? t('people.agrupando') : t('people.agrupar')}
-          </button>
-          <button onClick={runExport} disabled={grouping || exporting || people.length === 0}>
-            {exporting ? '…' : t('people.exportar')}
-          </button>
-          <button onClick={onBack} className="ghost back-albums">
-            ← {t('people.voltar')}
-          </button>
+        <label className="people-threshold">
+          <span>{t('people.similaridade')}</span>
+          <input
+            type="range"
+            min={0.3}
+            max={0.8}
+            step={0.01}
+            value={threshold}
+            onChange={(e) => setThreshold(Number(e.target.value))}
+            title={`${t('people.similaridadeMin')} ↔ ${t('people.similaridadeMax')}`}
+          />
+          <em>{threshold.toFixed(2)}</em>
+          <span className="people-threshold-hint">
+            {t('people.similaridadeMin')} ↔ {t('people.similaridadeMax')}
+          </span>
+        </label>
+        <button
+          onClick={runGrouping}
+          disabled={grouping || exporting || !albumPhotoIdsLoaded || albumEmpty}
+        >
+          {grouping ? t('people.agrupando') : t('people.identifyPeople')}
+        </button>
+        <button
+          onClick={runExport}
+          disabled={grouping || exporting || groups.length === 0 || !albumPhotoIdsLoaded || albumEmpty}
+        >
+          {exporting ? '…' : t('people.exportar')}
+        </button>
+        <button onClick={onBack} className="ghost back-albums">
+          ← {t('people.voltar')}
+        </button>
       </div>
 
       {error && <div className="toast error">{error}</div>}
 
-      <main className="people-body">
-        {grouping ? (
-          <div className="people-loading">
-            <span className="people-spinner" />
-            {t('people.agrupando')}
+      {analysisNotice && <div className="toast info" role="status">{analysisNotice}</div>}
+
+      {exportResult && (
+        <div className="toast success">
+          {t('people.exportSuccess', { n: exportResult.n, dir: exportResult.dir })}
+          <button onClick={() => setExportResult(null)} className="ghost small">✕</button>
+        </div>
+      )}
+
+      {!albumPhotoIdsLoaded && !albumPhotoIdsError && (
+        <div className="people-loading">
+          <span className="people-spinner" />
+          {t('people.loadingAlbum')}
+        </div>
+      )}
+
+      {albumPhotoIdsError && (
+        <div className="toast error">{albumPhotoIdsError}</div>
+      )}
+
+      {albumPhotoIdsLoaded && albumEmpty && (
+        <div className="people-empty">
+          <div className="people-empty-card">
+            <div className="people-empty-icon" aria-hidden="true">◉</div>
+            <p>{t('people.noPhotosInAlbum')}</p>
           </div>
-        ) : people.length === 0 ? (
-          <div className="people-empty">
-            <div className="people-empty-card">
-              <div className="people-empty-icon" aria-hidden="true">◉</div>
-              <div className="home-empty-title">{t('people.titulo')}</div>
-              <p>{hasGrouped ? t('people.nenhuma') : t('people.antesAgrupar')}</p>
+        </div>
+      )}
+
+      {albumPhotoIdsLoaded && !albumEmpty && (
+        <main className="people-body">
+          {loading || grouping ? (
+            <div className="people-loading">
+              <span className="people-spinner" />
+              {grouping ? t('people.identifyingPeople') : t('people.loadingAlbum')}
             </div>
-          </div>
-        ) : (
-          <div className="people-grid">
-            {people.map((p) => (
-              <div key={p.person_id} className="person-card">
-                <div className="person-cover">
-                  {covers[p.person_id] ? (
-                    <img
-                      src={covers[p.person_id]}
-                      alt={t('people.pessoa', { n: p.person_id + 1 })}
-                      style={p.sample_face ? {
-                        objectFit: 'none',
-                        objectPosition: `${((p.sample_face[0] + p.sample_face[2]) / 2) * 100}% ${((p.sample_face[1] + p.sample_face[3]) / 2) * 100}%`,
-                        width: '300%',
-                        height: '300%'
-                      } : undefined}
-                    />
-                  ) : (
-                    <div className="person-cover-empty">👤</div>
-                  )}
-                  <span className="person-count">{t('gallery.fotoCount', { n: p.count })}</span>
+          ) : groups.length === 0 ? (
+            <div className="people-empty">
+              <div className="people-empty-card">
+                <div className="people-empty-icon" aria-hidden="true">◉</div>
+                <div className="home-empty-title">{t('people.titulo')}</div>
+                <p>{t('people.analisar')}</p>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="people-intro">
+                <div>
+                  <h1>{t('people.titulo')}</h1>
+                  <p>{t('people.reviewIntro')}</p>
                 </div>
-                <div className="person-meta">
-                  <span className="person-name">{t('people.pessoa', { n: p.person_id + 1 })}</span>
+                <div className="people-reanalyze-hint">
+                  {t('people.reanalyzeWarning')}
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-      </main>
+              <div className="people-grid">
+                {groups.map((g) => (
+                  <article
+                    key={g.id}
+                    className="person-card"
+                  >
+                    <button
+                      type="button"
+                      className="person-open"
+                      onClick={() => handleOpenDetail(g)}
+                      aria-label={t('people.openGroup', { name: g.name })}
+                    >
+                      <div className="person-cover">
+                        <FaceThumbnail
+                          src={g.cover}
+                          bbox={g.faces[0]?.bbox}
+                          alt={t('people.faceCropAlt', { name: g.name })}
+                          className="person-face-crop"
+                        />
+                        <span className="person-count">{t('gallery.fotoCount', { n: g.count })}</span>
+                      </div>
+                    </button>
+                    <div className="person-meta">
+                      {renamingId === g.id ? (
+                        <div className="person-rename-row">
+                          <input
+                            ref={renameRef}
+                            type="text"
+                            className="person-rename-input"
+                            value={renameValue}
+                            onChange={(e) => { setRenameValue(e.target.value); setRenameError(null) }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') commitRename()
+                              if (e.key === 'Escape') cancelRename()
+                            }}
+                            onBlur={commitRename}
+                            aria-label={t('people.renomear')}
+                          />
+                          {renameError && <span className="person-rename-error" role="alert">{renameError}</span>}
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          className="person-name"
+                          title={t('people.confirmName')}
+                          onClick={() => startRename(g)}
+                        >
+                          <span>{g.name}</span>
+                          <span className="person-name-action">{t('people.confirmName')}</span>
+                        </button>
+                      )}
+                      <p className="person-review-hint">{t('people.openToReview')}</p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </>
+          )}
+        </main>
+      )}
     </div>
   )
 }

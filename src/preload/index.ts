@@ -12,6 +12,36 @@ export interface PersonGroup {
   photo_paths: string[]
 }
 
+export interface GroupedFace {
+  group_index: number
+  photo_id: number
+  bbox: [number, number, number, number]
+}
+
+export interface GroupBySimilarityResult {
+  ok: boolean
+  groups: PersonGroup[]
+  grouped_faces: GroupedFace[]
+  photos_scanned: number
+  photos_unavailable: number
+  error?: string
+}
+
+export interface PersistedPersonGroup {
+  id: number
+  album_id: number | null
+  name: string
+  threshold: number
+}
+
+export interface PersistedFace {
+  id: number
+  group_id: number
+  photo_id: number
+  bbox: [number, number, number, number]
+  group_name: string
+}
+
 export interface PeopleExportResult {
   ok: boolean
   out_dir?: string
@@ -21,12 +51,27 @@ export interface PeopleExportResult {
   error?: string
 }
 
+export interface StorageSettings {
+  catalogDir: string
+  cacheDir: string
+  defaultCatalogDir: string
+  defaultCacheDir: string
+  restartRequired: boolean
+}
+
 const api = {
   hello: (name: string): Promise<string> => ipcRenderer.invoke('core:hello', name),
   add: (a: number, b: number): Promise<number> => ipcRenderer.invoke('core:add', a, b),
   coreVersion: (): Promise<string> => ipcRenderer.invoke('core:version'),
   appInfo: (): Promise<{ platform: string; arch: string; versions: Record<string, string | undefined> }> =>
     ipcRenderer.invoke('app:info'),
+  getStorageSettings: (): Promise<StorageSettings> => ipcRenderer.invoke('app:getStorageSettings'),
+  pickStorageDirectory: (kind: 'catalog' | 'cache'): Promise<string | null> => ipcRenderer.invoke('app:pickStorageDirectory', kind),
+  saveStorageSettings: (settings: { catalogDir: string; cacheDir: string }): Promise<{ ok: boolean; catalogDir?: string; cacheDir?: string; copied?: boolean; restartRequired?: boolean; error?: string }> =>
+    ipcRenderer.invoke('app:saveStorageSettings', settings),
+  exportCatalogJson: (): Promise<{ ok: boolean; path?: string; error?: string }> => ipcRenderer.invoke('app:exportCatalogJson'),
+  importCatalogJson: (): Promise<{ ok: boolean; path?: string; albums_imported?: number; photos_linked?: number; photos_missing?: number; photos_updated?: number; groups_imported?: number; faces_imported?: number; error?: string }> =>
+    ipcRenderer.invoke('app:importCatalogJson'),
   // Fase 1
   scanFolder: (dir: string, includeSubdirs?: boolean, types?: string): Promise<ScanResultData | { error: string }> =>
     ipcRenderer.invoke('core:scanFolder', dir, includeSubdirs, types),
@@ -187,11 +232,22 @@ const api = {
   // Pessoas (agrupamento facial)
   groupBySimilarity: (
     threshold?: number,
-    photoIds?: number[]
-  ): Promise<PersonGroup[] | { groups?: PersonGroup[] } | { error: string }> =>
-    ipcRenderer.invoke('core:groupBySimilarity', threshold, photoIds),
+    photoIds?: number[],
+    albumId?: number
+  ): Promise<GroupBySimilarityResult | { error: string }> =>
+    ipcRenderer.invoke('core:groupBySimilarity', threshold, photoIds, albumId),
   exportPeopleToFolders: (outDir: string, threshold?: number, photoIds?: number[]): Promise<PeopleExportResult> =>
     ipcRenderer.invoke('core:exportPeopleToFolders', outDir, threshold, photoIds),
+  listPersonGroups: (albumId: number): Promise<{ ok: boolean; groups?: PersistedPersonGroup[]; error?: string }> =>
+    ipcRenderer.invoke('core:listPersonGroups', albumId),
+  listFacesInGroup: (groupId: number): Promise<{ ok: boolean; faces?: PersistedFace[]; error?: string }> =>
+    ipcRenderer.invoke('core:listFacesInGroup', groupId),
+  listFacesForPhoto: (photoId: number): Promise<{ ok: boolean; faces?: PersistedFace[]; error?: string }> =>
+    ipcRenderer.invoke('core:listFacesForPhoto', photoId),
+  renamePersonGroup: (groupId: number, newName: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('core:renamePersonGroup', groupId, newName),
+  exportPersistedPeopleAlbum: (albumId: number, outDir: string): Promise<PeopleExportResult> =>
+    ipcRenderer.invoke('core:exportPersistedPeopleAlbum', albumId, outDir),
   // Labels de cor (agent-10)
   setPhotoLabel: (id: number, label: string): Promise<void> =>
     ipcRenderer.invoke('core:setPhotoLabel', id, label),

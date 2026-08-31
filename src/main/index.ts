@@ -1,8 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron'
-import { existsSync } from 'node:fs'
-import { appendFile, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { existsSync, readFileSync } from 'node:fs'
+import { appendFile, copyFile, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { loadCore, getCore } from './core'
 
 function createWindow(): void {
@@ -37,6 +37,26 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  const defaultCatalogDir = app.getPath('userData')
+  const cacheBase = process.platform === 'darwin'
+    ? join(app.getPath('home'), 'Library', 'Caches')
+    : process.platform === 'win32'
+      ? (process.env.LOCALAPPDATA || app.getPath('appData'))
+      : (process.env.XDG_CACHE_HOME || join(app.getPath('home'), '.cache'))
+  const defaultCacheDir = join(cacheBase, 'OpenShoot', 'thumbs')
+  const storageSettingsPath = join(defaultCatalogDir, 'storage-settings.json')
+  let configuredStorage: { catalogDir?: string; cacheDir?: string } = {}
+  try {
+    configuredStorage = JSON.parse(readFileSync(storageSettingsPath, 'utf8')) as typeof configuredStorage
+  } catch { /* primeira execução ou arquivo inválido: usa os padrões */ }
+  const configuredCatalogDir = typeof configuredStorage.catalogDir === 'string' && configuredStorage.catalogDir.trim()
+    ? resolve(configuredStorage.catalogDir)
+    : defaultCatalogDir
+  const configuredCacheDir = typeof configuredStorage.cacheDir === 'string' && configuredStorage.cacheDir.trim()
+    ? resolve(configuredStorage.cacheDir)
+    : defaultCacheDir
+  process.env.OPENSHOOT_CACHE_DIR = configuredCacheDir
+
   // Modelos ONNX: aponta o core Rust para core/models antes de carregar o addon.
   // No app empacotado os modelos ficam em app.asar.unpacked (asarUnpack).
   const modelsCandidates = [
@@ -48,14 +68,16 @@ app.whenReady().then(() => {
 
   loadCore()
 
-  // Inicializa o catálogo SQLite no diretório de dados do usuário.
+  // Inicializa o catálogo SQLite no diretório configurado pelo usuário.
   const core = getCore()
+  let activeCatalogDir = configuredCatalogDir
   try {
-    core.setup(app.getPath('userData'))
+    core.setup(configuredCatalogDir)
   } catch (e) {
     // fallback multi-plataforma: home do usuário (Program Files bloqueia escrita)
     try {
-      core.setup(join(app.getPath('home'), '.openshoot-data'))
+      activeCatalogDir = join(app.getPath('home'), '.openshoot-data')
+      core.setup(activeCatalogDir)
     } catch (e2) {
       console.error('Falha ao inicializar catálogo:', e2)
     }
@@ -73,6 +95,90 @@ app.whenReady().then(() => {
       chrome: process.versions.chrome
     }
   }))
+
+  ipcMain.handle('app:getStorageSettings', () => ({
+    catalogDir: activeCatalogDir,
+    cacheDir: process.env.OPENSHOOT_CACHE_DIR || defaultCacheDir,
+    defaultCatalogDir,
+    defaultCacheDir,
+    restartRequired: false
+  }))
+
+  ipcMain.handle('app:pickStorageDirectory', async (event, kind: 'catalog' | 'cache') => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return null
+    const result = await dialog.showOpenDialog(win, {
+      title: kind === 'catalog' ? 'Escolha onde salvar o catálogo' : 'Escolha onde salvar os previews',
+      properties: ['openDirectory', 'createDirectory']
+    })
+    return result.canceled || !result.filePaths.length ? null : result.filePaths[0]
+  })
+
+  ipcMain.handle('app:saveStorageSettings', async (_event, next: { catalogDir: string; cacheDir: string }) => {
+    const catalogDir = resolve(typeof next?.catalogDir === 'string' && next.catalogDir.trim() ? next.catalogDir : defaultCatalogDir)
+    const cacheDir = resolve(typeof next?.cacheDir === 'string' && next.cacheDir.trim() ? next.cacheDir : defaultCacheDir)
+    try {
+      await mkdir(catalogDir, { recursive: true })
+      await mkdir(cacheDir, { recursive: true })
+      const catalogChanged = catalogDir !== resolve(activeCatalogDir)
+      let copied = false
+      if (catalogChanged) {
+        const sourceDb = join(activeCatalogDir, 'catalog.db')
+        const targetDb = join(catalogDir, 'catalog.db')
+        if (existsSync(sourceDb) && !existsSync(targetDb)) {
+          await copyFile(sourceDb, targetDb)
+          for (const suffix of ['-wal', '-shm']) {
+            const sourceSidecar = `${sourceDb}${suffix}`
+            if (existsSync(sourceSidecar)) await copyFile(sourceSidecar, `${targetDb}${suffix}`)
+          }
+          copied = true
+        }
+      }
+      const payload = JSON.stringify({ catalogDir, cacheDir }, null, 2)
+      const temp = `${storageSettingsPath}.${process.pid}.tmp`
+      await writeFile(temp, payload, { encoding: 'utf8', mode: 0o600 })
+      await rename(temp, storageSettingsPath)
+      process.env.OPENSHOOT_CACHE_DIR = cacheDir
+      return { ok: true, catalogDir, cacheDir, copied, restartRequired: catalogChanged }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle('app:exportCatalogJson', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return { ok: false, error: 'Janela indisponível.' }
+    const result = await dialog.showSaveDialog(win, {
+      title: 'Exportar catálogo OpenShoot',
+      defaultPath: join(app.getPath('documents'), `OpenShoot-catalog-${new Date().toISOString().slice(0, 10)}.json`),
+      filters: [{ name: 'Manifesto JSON', extensions: ['json'] }]
+    })
+    if (result.canceled || !result.filePath) return { ok: false }
+    try {
+      await writeFile(result.filePath, getCore().exportCatalogJson(), { encoding: 'utf8', mode: 0o600 })
+      return { ok: true, path: result.filePath }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle('app:importCatalogJson', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return { ok: false, error: 'Janela indisponível.' }
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Importar catálogo OpenShoot',
+      properties: ['openFile'],
+      filters: [{ name: 'Manifesto JSON', extensions: ['json'] }]
+    })
+    if (result.canceled || !result.filePaths.length) return { ok: false }
+    try {
+      const manifest = await readFile(result.filePaths[0], 'utf8')
+      const imported = getCore().importCatalogJson(manifest)
+      return { ...imported, ok: imported.ok !== false, path: result.filePaths[0] }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
 
   ipcMain.handle('app:saveRestoredPreview', async (event, dataUrl: string, defaultName: string) => {
     const win = BrowserWindow.fromWebContents(event.sender)
@@ -749,12 +855,17 @@ app.whenReady().then(() => {
 
   // ---- Pessoas: agrupamento facial + exportação por pessoa ----
   type CoreWithPeople = typeof import('*.node') & {
-    groupBySimilarityAsync(threshold: number | null | undefined, photoIds?: number[] | null): Promise<unknown>
+    groupBySimilarityAsync(threshold: number | null | undefined, photoIds?: number[] | null, albumId?: number | null): Promise<unknown>
     exportPeopleToFolders(outDir: string, threshold: number | null | undefined, photoIds?: number[] | null): Promise<unknown>
+    listPersonGroups(albumId: number): Promise<unknown>
+    listFacesInGroup(groupId: number): Promise<unknown>
+    listFacesForPhoto(photoId: number): Promise<unknown>
+    renamePersonGroup(groupId: number, newName: string): Promise<unknown>
+    exportPersistedPeopleAlbum(albumId: number, outDir: string): Promise<unknown>
   }
-  ipcMain.handle('core:groupBySimilarity', async (_e, threshold?: number, photoIds?: number[]) => {
+  ipcMain.handle('core:groupBySimilarity', async (_e, threshold?: number, photoIds?: number[], albumId?: number) => {
     try {
-      return await (getCore() as CoreWithPeople).groupBySimilarityAsync(threshold ?? null, photoIds ?? null)
+      return await (getCore() as CoreWithPeople).groupBySimilarityAsync(threshold ?? null, photoIds ?? null, albumId ?? null)
     } catch (e) {
       return { error: String(e) }
     }
@@ -762,6 +873,41 @@ app.whenReady().then(() => {
   ipcMain.handle('core:exportPeopleToFolders', async (_e, outDir: string, threshold?: number, photoIds?: number[]) => {
     try {
       return await (getCore() as CoreWithPeople).exportPeopleToFolders(outDir, threshold ?? null, photoIds ?? null)
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+  ipcMain.handle('core:listPersonGroups', async (_e, albumId: number) => {
+    try {
+      return await (getCore() as CoreWithPeople).listPersonGroups(albumId)
+    } catch (e) {
+      return { error: String(e) }
+    }
+  })
+  ipcMain.handle('core:listFacesInGroup', async (_e, groupId: number) => {
+    try {
+      return await (getCore() as CoreWithPeople).listFacesInGroup(groupId)
+    } catch (e) {
+      return { error: String(e) }
+    }
+  })
+  ipcMain.handle('core:listFacesForPhoto', async (_e, photoId: number) => {
+    try {
+      return await (getCore() as CoreWithPeople).listFacesForPhoto(photoId)
+    } catch (e) {
+      return { error: String(e) }
+    }
+  })
+  ipcMain.handle('core:renamePersonGroup', async (_e, groupId: number, newName: string) => {
+    try {
+      return await (getCore() as CoreWithPeople).renamePersonGroup(groupId, newName)
+    } catch (e) {
+      return { error: String(e) }
+    }
+  })
+  ipcMain.handle('core:exportPersistedPeopleAlbum', async (_e, albumId: number, outDir: string) => {
+    try {
+      return await (getCore() as CoreWithPeople).exportPersistedPeopleAlbum(albumId, outDir)
     } catch (e) {
       return { ok: false, error: String(e) }
     }

@@ -110,14 +110,38 @@ por ser o seletor de sessão antes de existir um álbum ativo.
 Na galeria, um clique seleciona a foto; abrir uma ferramenta é explícito
 (duplo clique ou `Enter`). Em Seleção, essa abertura leva à lupa; em Editar e
 Retoque, leva à edição da foto. Isso preserva o fluxo de culling e evita que
-uma seleção simples troque de contexto. Aplicações em lote de edição usam
-somente as fotos selecionadas e gravam os respectivos sidecars XMP — nunca o
-catálogo inteiro por engano.
+uma seleção simples troque de contexto. A ferramenta "Pessoas" é uma ação
+estável do cabeçalho esquerdo do álbum, visível em Importar/Seleção/Editar/
+Retoque, sem mudar de lugar. PeopleView recebe e reflete a seção ativa atual
+no WorkspaceNav. No editor detalhado, acesso equivalente no cabeçalho.
+Aplicações em lote de edição usam somente as fotos selecionadas e gravam os
+respectivos sidecars XMP — nunca o catálogo inteiro por engano.
 
 A exportação possui uma única área de configuração, seja para fotos visíveis
 ou para a seleção atual; a tela declara esse escopo antes da confirmação. As
 opções expostas refletem o pipeline atual: JPEG ou PNG, sRGB ou aproximação de
 Display P3. Recursos não suportados não são apresentados como escolhas.
+
+### Persistência e armazenamento
+
+O catálogo SQLite continua sendo a fonte canônica dos metadados. Por padrão,
+ele fica no diretório de dados do usuário, mas a janela Configurações permite
+escolher outro diretório. A alteração é salva em `storage-settings.json` e
+entra em vigor após reiniciar o aplicativo; quando possível, o banco atual é
+copiado para a nova localização sem apagar a origem. O cache de thumbnails tem
+local configurável e pode ser apagado sem perda de dados.
+
+O comando de exportação do catálogo gera um manifesto JSON versionado
+(`format: openshoot-catalog`, `schema_version: 1`). O manifesto guarda caminhos,
+hashes, metadados, álbuns, grupos de pessoas e bounding boxes, mas nunca pixels
+ou thumbnails. A importação reconcilia fotos por caminho e, como fallback, por
+SHA-256; arquivos que não existem no computador atual são reportados sem serem
+criados artificialmente. Isso permite backup e transporte de organização sem
+transformar JSON em banco de consulta.
+
+Os originais permanecem referenciados no local escolhido pelo usuário. Copiar
+originais para um projeto portátil é uma operação explícita de exportação e
+não acontece ao criar um álbum.
 
 ---
 
@@ -175,6 +199,83 @@ completo continua sendo o escopo padrão.
 
 O culling e os contadores do painel também recebem esse escopo. Assim, as
 quantidades e as marcações de seleção não misturam fotos de outros álbuns.
+
+#### Reconhecimento de pessoas — Fase 1 (persistência local)
+
+O agrupamento facial agora persiste resultados em tabelas SQLite locais:
+
+- **`person_groups`**: `id`, `album_id` (pertence ao álbum), `name` (editável),
+  `threshold` (similaridade usada).
+- **`photo_person_faces`**: `id`, `group_id` (FK), `photo_id` (FK),
+  `bbox_x1/y1/x2/y2` (coordenadas normalizadas 0..1).
+
+**Migrações idempotentes**: as tabelas são criadas via `CREATE TABLE IF NOT
+EXISTS` no `ensure_schema`, garantindo que reaberturas do app não quebrem.
+
+**Fluxo de agrupamento com persistência**:
+1. `group_by_similarity_async(threshold, photo_ids, album_id)` detecta faces,
+   gera embeddings, agrupa por cosseno e retorna `{ok, groups, grouped_faces,
+   photos_scanned, photos_unavailable}`.
+2. Cada `GroupedFace` traz `group_index`, `photo_id` e `bbox` preservada.
+3. Se `album_id` é fornecido, os grupos são persistidos atomicamente
+   (transação SQLite): os grupos antigos do álbum são substituídos pelos novos.
+4. `photos.has_face` é atualizado somente para as fotos que puderam ser lidas
+   (true/false). Se todas estiverem indisponíveis, a operação retorna erro
+   acionável e preserva os grupos existentes; se apenas algumas falharem, a UI
+   mostra um aviso com a contagem sem interromper os resultados válidos.
+
+**APIs de consulta** (100% locais, offline):
+- `listPersonGroups(albumId)` → lista grupos do álbum.
+- `listFacesInGroup(groupId)` → lista faces de um grupo com bbox.
+- `listFacesForPhoto(photoId)` → lista todas as faces de uma foto em todos os
+  grupos.
+- `renamePersonGroup(groupId, newName)` → renomeia um grupo.
+- `exportPersistedPeopleAlbum(albumId, outDir)` → exporta os grupos persistidos
+  para pastas nomeadas (nomes sanitizados, sem sobrescrever colisões). Retorna
+  `{ok, out_dir, groups, exported}`.
+
+Todas as APIs retornam `{error}` preservando a mensagem em caso de falha.
+
+#### Reconhecimento de pessoas — Fase 2 (UI integrada)
+
+A UI de pessoas agora opera dentro do escopo do álbum aberto:
+
+- **PeopleView** recebe `albumId` obrigatório e `activeSection` (reflete a seção
+  ativa no WorkspaceNav). Carrega grupos persistidos no mount via
+  `listPersonGroups(albumId)` + `listFacesInGroup` para cada grupo. Sair e voltar
+  mantém os grupos (persistidos no SQLite). Estado de carregamento/erro do escopo
+  de fotos do álbum é tratado explicitamente: ações ficam desabilitadas enquanto
+  carrega ou quando o álbum está vazio.
+- **Botão "Identificar pessoas"** (pt-BR) / "Identify people" (en) executa o
+  agrupamento. Um aviso persistente informa que reanalisar substitui os grupos/
+  nomes atuais.
+- **Exportação** usa `exportPersistedPeopleAlbum(albumId, outDir)` — exporta os
+  grupos persistidos com nomes sanitizados para pastas, sem reexecutar agrupamento
+  nem ignorar nomes renomeados. Não sobrescreve colisões (sufixo numérico).
+  Feedback de sucesso exibido como toast, sem `window.alert`.
+- **Renomear** inline com Enter/Escape, usando `renamePersonGroup`. Erros são
+  visíveis e editáveis.
+- **Cards acessíveis** abrem detalhes do grupo com miniaturas de todas as fotos.
+  Cada foto tem ações "Abrir em Editar" e "Abrir em Retoque" que abrem a foto
+  no modo correspondente sem trocar o modo pedido.
+- **Navegação**: "Pessoas" é uma ferramenta contextual dentro de Seleção,
+  ao lado do comando de culling. Não aparece como uma etapa independente do
+  processo principal; ao abrir, a aba Seleção permanece ativa como contexto.
+- **Revisão visual**: os cards usam o `bbox` persistido para recortar o rosto
+  representativo, em vez de repetir a foto inteira. Abrir um card mostra os
+  rostos associados às fotos do grupo; "Nomear pessoa" torna a confirmação do
+  nome explícita antes da exportação.
+- **EditViewPhoto** ganha toggle "Mostrar pessoas" que desenha bbox e
+  `group_name` na imagem, acompanhando zoom/pan. Imagem e overlay estão na
+  mesma camada (`editview-media-layer`) com o mesmo transform. Quando não há
+  faces, o toggle fica desabilitado. O botão 1:1 calcula zoom de 1 pixel do
+  preview para 1 pixel de tela (naturalWidth/contain). No slider, overlay fica
+  oculto com título explicativo.
+- **EditPanel** ganha seção "Pessoas" somente leitura com nomes únicos das
+  faces detectadas. Quando vazio, orienta analisar em Seleção.
+
+O App carrega `listFacesForPhoto` para a foto aberta e passa os dados a
+`EditViewPhoto` (overlay de bbox) e `EditPanel` (lista de nomes).
 
 > Modelos até ~100 MB baixados sob demanda (CRCs verificados) em `core/models/` — nunca viajar no repo.
 
@@ -271,6 +372,15 @@ comparação deslizante, com fallback para a foto original quando não há ediç
 - [ ] Sugestão de organização/comparação de ensaio (casamento, newborn, esportes)
 - [ ] Legendas/e-mails para clientes
 - [ ] Modo "descreva previews" (somente thumbnails que o usuário optar por enviar)
+
+### Fase 7 — Reconhecimento de pessoas (local)
+- [x] Detecção SCRFD + embeddings MobileFaceNet + agrupamento por cosseno
+- [x] Persistência: `person_groups` + `photo_person_faces` com bbox normalizada
+- [x] Substituição atômica por álbum (`replace_person_groups`)
+- [x] Atualização de `photos.has_face` para todas as fotos analisadas
+- [x] APIs: listar grupos, listar faces, renomear grupo, faces por foto
+- [x] IPC/preload/tipos TS explícitos (sem `any`)
+- [x] Testes Rust: migration idempotente, roundtrip, renomeação, has_face
 
 ---
 

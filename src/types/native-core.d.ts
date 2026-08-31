@@ -98,9 +98,16 @@ declare module '*.node' {
   export function addFolderToAlbum(albumId: number, dir: string): number
   export function setAlbumSessionType(albumId: number, sessionType: string): void
   export function albumPhotoIds(albumId: number): number[]
+  export function catalogPath(): string
+  export function exportCatalogJson(): string
+  export function importCatalogJson(manifest: string): { ok: boolean; albums_imported?: number; photos_linked?: number; photos_missing?: number; photos_updated?: number; groups_imported?: number; faces_imported?: number; error?: string }
   export function exportPhotos(ids: number[], destDir: string, format: string, quality: number, colorProfile: string, naming: string): { ok: boolean; exported?: number; errors?: number; files?: string[]; dest_dir?: string; error?: string }
   export function applyRetouchAll(ids: number[], destDir: string, skin: number, regions: Record<string, number>, format: string, quality: number): { ok: boolean; exported?: number; errors?: number; files?: string[]; dest_dir?: string; error?: string }
   export function createWebGallery(ids: number[], destDir: string, title: string): { ok: boolean; path?: string; count?: number; error?: string }
+  export function listPersonGroups(albumId: number): { ok: boolean; groups?: Array<{ id: number; album_id: number | null; name: string; threshold: number }>; error?: string }
+  export function listFacesInGroup(groupId: number): { ok: boolean; faces?: Array<{ id: number; group_id: number; photo_id: number; bbox: [number, number, number, number]; group_name: string }>; error?: string }
+  export function listFacesForPhoto(photoId: number): { ok: boolean; faces?: Array<{ id: number; group_id: number; photo_id: number; bbox: [number, number, number, number]; group_name: string }>; error?: string }
+  export function renamePersonGroup(groupId: number, newName: string): { ok: boolean; error?: string }
   export function scanFolderProgress(
     dir: string,
     includeSubdirs: boolean,
