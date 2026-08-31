@@ -99,7 +99,8 @@ function toJson(values: EditValues): string {
 
 interface EditPanelProps {
   photo: PhotoMeta | null
-  onApplyAll: (json: string) => void
+  variant?: 'edit' | 'retouch'
+  onApplyAll: (json: string, ids: number[]) => void
   selectedIds?: Set<number>
   onPreviewChange?: (preview: string | null) => void
   onModification?: () => void
@@ -126,7 +127,7 @@ function AccordionSection({ title, className, defaultOpen = false, children }: {
   )
 }
 
-export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewChange, onModification }: EditPanelProps) {
+export default function EditPanel({ photo, variant = 'edit', onApplyAll, selectedIds, onPreviewChange, onModification }: EditPanelProps) {
   const { t } = useT()
   const [values, setValues] = useState<EditValues>(EMPTY)
   const [skinIntensity, setSkinIntensity] = useState(0)
@@ -353,7 +354,10 @@ export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewCha
       .applyEditOne(photo.id, json, 400)
       .then((t) => t && setPreview(t))
       .finally(() => setBusy(false))
-    onApplyAll(json)
+    const targets = selectedIds && selectedIds.size > 0 ? Array.from(selectedIds) : [photo.id]
+    // A foto atual já foi gravada por applyEditOne; aplica a receita somente
+    // às outras fotos escolhidas, nunca ao catálogo inteiro.
+    onApplyAll(json, targets.filter((id) => id !== photo.id))
   }
 
   const removeDistraction = () => {
@@ -423,16 +427,16 @@ export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewCha
 
   if (!photo) {
     return (
-      <aside className="edit-panel">
-        <h3>{t('edit.titulo')}</h3>
-        <p className="edit-hint">{t('edit.hint')}</p>
+      <aside className={`edit-panel ${variant === 'retouch' ? 'retouch-mode' : ''}`}>
+        <h3>{variant === 'retouch' ? t('edit.retoque') : t('edit.titulo')}</h3>
+        <p className="edit-hint">{variant === 'retouch' ? 'Selecione uma foto para remover distrações ou suavizar áreas específicas.' : t('edit.hint')}</p>
       </aside>
     )
   }
 
   return (
-    <aside className="edit-panel">
-      <h3>{t('edit.tituloFoto', { name: photo.fileName })}</h3>
+    <aside className={`edit-panel ${variant === 'retouch' ? 'retouch-mode' : ''}`}>
+      <h3>{variant === 'retouch' ? `Retoque — ${photo.fileName}` : t('edit.tituloFoto', { name: photo.fileName })}</h3>
       <div className="edit-preview">
         {preview ? (
           <img src={preview} alt="preview editado" />
@@ -442,7 +446,7 @@ export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewCha
           </div>
         )}
       </div>
-      <AccordionSection title="BÁSICO" className="edit-sliders" defaultOpen>
+      <AccordionSection title="BÁSICO" className="edit-sliders" defaultOpen={variant === 'edit'}>
         {SLIDERS.map((s) => {
           const neutral = s.key === 'temperature' ? 6500 : 0
           const v = values[s.key] ?? neutral
@@ -560,7 +564,7 @@ export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewCha
         })}
       </AccordionSection>
 
-      <AccordionSection title={t('edit.retoque')} className="edit-retouch">
+      <AccordionSection title={t('edit.retoque')} className="edit-retouch" defaultOpen={variant === 'retouch'}>
         <label className="edit-slider">
           <span>
             {t('edit.suavizacaoPele')}
@@ -649,7 +653,7 @@ export default function EditPanel({ photo, onApplyAll, selectedIds, onPreviewCha
 
       <div className="edit-action-stack">
         <button onClick={applyCurrent} disabled={busy}>
-          {t('edit.aplicarLote')}
+          {selectedIds && selectedIds.size > 1 ? `Aplicar em ${selectedIds.size} fotos` : 'Aplicar nesta foto'}
         </button>
         <button onClick={removeDistraction} disabled={busy} className="ghost full">
           {t('edit.removerDistracao')}

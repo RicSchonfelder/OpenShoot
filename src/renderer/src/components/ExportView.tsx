@@ -1,21 +1,23 @@
 import { useState } from 'react'
 import { useT } from '../i18n/I18nContext'
+import SettingsControl from './SettingsControl'
+import WorkspaceNav, { type WorkspaceSection } from './WorkspaceNav'
 
 interface ExportViewProps {
   photos: Array<{ id: number; path: string; filename?: string }>
+  scope: 'selection' | 'visible'
   onClose: () => void
+  onNavigate: (section: WorkspaceSection) => void
 }
 
-export default function ExportView({ photos, onClose }: ExportViewProps) {
+export default function ExportView({ photos, scope, onClose, onNavigate }: ExportViewProps) {
   const { t } = useT()
-  const [format, setFormat] = useState<'jpeg' | 'png' | 'tiff'>('jpeg')
+  const [format, setFormat] = useState<'jpeg' | 'png'>('jpeg')
   const [quality, setQuality] = useState(95)
-  const [colorProfile, setColorProfile] = useState<'srgb' | 'display-p3' | 'adobe-rgb'>('srgb')
-  const [resize, setResize] = useState<number | null>(null)
+  const [colorProfile, setColorProfile] = useState<'srgb' | 'display-p3'>('srgb')
   const [naming, setNaming] = useState('{original}')
   const [destDir, setDestDir] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
 
   const pickDest = () => {
     window.openshoot.pickExportFolder().then((d) => d && setDestDir(d))
@@ -24,10 +26,9 @@ export default function ExportView({ photos, onClose }: ExportViewProps) {
   const run = async () => {
     if (!destDir || photos.length === 0) return
     setBusy(true)
-    setProgress({ done: 0, total: photos.length })
     try {
       const ids = photos.map((p) => p.id)
-      const res = await window.openshoot.exportPhotos(ids, destDir, format === 'tiff' ? 'jpeg' : format, quality, colorProfile === 'adobe-rgb' ? 'srgb' : colorProfile, naming)
+      const res = await window.openshoot.exportPhotos(ids, destDir, format, quality, colorProfile, naming)
       if (res.ok) {
         alert(t('export.feito', { n: res.exported ?? 0 }))
       } else {
@@ -36,23 +37,30 @@ export default function ExportView({ photos, onClose }: ExportViewProps) {
       onClose()
     } finally {
       setBusy(false)
-      setProgress(null)
     }
   }
 
   return (
     <div className="export-view">
-      <header className="topbar">
-        <span className="logo">OpenShoot</span>
-        <h2>{t('export.titulo', { n: photos.length })}</h2>
-        <div className="topbar-right">
+      <header className="topbar workspace-topbar export-topbar">
+        <div className="workspace-left"><span className="logo">OpenShoot</span></div>
+        <WorkspaceNav active="export" onNavigate={onNavigate} />
+        <div className="topbar-right workspace-actions">
+          <SettingsControl />
           <button onClick={onClose} className="ghost">
-            ← {t('app.voltarGaleria')}
+            {t('app.voltarGaleria')}
           </button>
         </div>
       </header>
       <main className="content export-content">
-        <div className="export-section">
+        <div className="export-page-heading">
+          <h1>{t('export.titulo', { n: photos.length })}</h1>
+          <p>
+            {scope === 'selection' ? 'Você está exportando as fotos selecionadas.' : 'Você está exportando as fotos visíveis neste álbum e filtro.'}
+            {' '}Defina destino e formato antes de criar as cópias exportadas.
+          </p>
+        </div>
+        <section className="export-section export-destination-section">
           <h3>{t('export.local')}</h3>
           <div className="export-dest">
             <span className="export-dest-path">{destDir || t('export.semDestino')}</span>
@@ -60,9 +68,9 @@ export default function ExportView({ photos, onClose }: ExportViewProps) {
               {t('export.escolher')}
             </button>
           </div>
-        </div>
+        </section>
 
-        <div className="export-section">
+        <section className="export-section export-config-section">
           <h3>{t('export.config')}</h3>
           <label className="edit-slider">
             <span>
@@ -70,7 +78,7 @@ export default function ExportView({ photos, onClose }: ExportViewProps) {
               <em>{format.toUpperCase()}</em>
             </span>
             <div className="export-formats">
-              {(['jpeg', 'png', 'tiff'] as const).map((f) => (
+              {(['jpeg', 'png'] as const).map((f) => (
                 <button
                   key={f}
                   className={`${format === f ? 'active' : ''}`}
@@ -100,27 +108,15 @@ export default function ExportView({ photos, onClose }: ExportViewProps) {
           <label className="edit-slider">
             <span>
               {t('export.espacoCor')}
-              <em>{colorProfile === 'srgb' ? 'sRGB' : colorProfile === 'display-p3' ? 'Display P3' : 'Adobe RGB'}</em>
+                <em>{colorProfile === 'srgb' ? 'sRGB' : 'Display P3'}</em>
             </span>
             <select
               value={colorProfile}
-              onChange={(e) => setColorProfile(e.target.value as 'srgb' | 'display-p3' | 'adobe-rgb')}
+              onChange={(e) => setColorProfile(e.target.value as 'srgb' | 'display-p3')}
             >
               <option value="srgb">sRGB</option>
-              <option value="display-p3">Display P3</option>
-              <option value="adobe-rgb">Adobe RGB</option>
+              <option value="display-p3">Display P3 (aproximação)</option>
             </select>
-          </label>
-          <label className="edit-slider">
-            <span>{t('export.redimensionar')}</span>
-            <input
-              type="number"
-              value={resize ?? ''}
-              onChange={(e) => setResize(e.target.value ? Number(e.target.value) : null)}
-              placeholder={t('export.semRedimensionar')}
-              min={100}
-              max={10000}
-            />
           </label>
           <label className="edit-slider">
             <span>{t('export.nomeacao')}</span>
@@ -146,28 +142,19 @@ export default function ExportView({ photos, onClose }: ExportViewProps) {
               </button>
             ))}
           </div>
-        </div>
+        </section>
 
-        {progress && (
-          <div className="export-progress">
-            <span>{t('export.exportando')} {progress.done}/{progress.total}</span>
-            <div className="progress-bar">
-              <div
-                className="progress-fill"
-                style={{ width: `${Math.round((progress.done / progress.total) * 100)}%` }}
-              />
-            </div>
+        <footer className="export-footer">
+          {busy && <div className="export-progress">{t('export.exportando')} — preparando cópias…</div>}
+          <div className="import-actions">
+            <button onClick={onClose} className="ghost">
+              {t('dialog.cancel')}
+            </button>
+            <button onClick={run} disabled={busy || !destDir || photos.length === 0} className="primary">
+              {busy ? t('export.exportando') : t('export.exportar', { n: photos.length })}
+            </button>
           </div>
-        )}
-
-        <div className="import-actions">
-          <button onClick={onClose} className="ghost">
-            {t('dialog.cancel')}
-          </button>
-          <button onClick={run} disabled={busy || !destDir || photos.length === 0} className="primary">
-            {busy ? t('export.exportando') : t('export.exportar', { n: photos.length })}
-          </button>
-        </div>
+        </footer>
       </main>
     </div>
   )

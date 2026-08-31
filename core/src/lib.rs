@@ -1753,6 +1753,15 @@ pub fn create_web_gallery(ids: Vec<i64>, dest_dir: String, title: String) -> Res
     ] {
       let _ = conn.execute(col, []);
     }
+    // A mesma proteção vale para presets. Em execuções repetidas, o OnceLock
+    // pode apontar para um banco temporário de uma versão anterior do schema.
+    for col in [
+      "ALTER TABLE presets ADD COLUMN file_type TEXT DEFAULT ''",
+      "ALTER TABLE presets ADD COLUMN color_type TEXT DEFAULT ''",
+      "ALTER TABLE presets ADD COLUMN source TEXT DEFAULT 'manual'",
+    ] {
+      let _ = conn.execute(col, []);
+    }
     // Limpa resíduos de execuções anteriores (escopo deste teste — outros
     // testes rodam em paralelo no mesmo BD via OnceLock).
     conn

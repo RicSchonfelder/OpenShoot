@@ -38,6 +38,15 @@ declare module '*.node' {
     picks: number
     review: number
   }
+  export interface NativeExifDetail {
+    iso: number | null
+    aperture: number | null
+    focal_length: number | null
+    shutter_speed: string | null
+    lens: string
+    flash: string | null
+    white_balance: string | null
+  }
   export function setup(dataDir: string): string
   export function add(a: number, b: number): number
   export function coreVersion(): string
@@ -78,6 +87,7 @@ declare module '*.node' {
   export function importLightroomPreset(path: string, name?: string): { ok: boolean; name?: string; recipe?: string; error?: string }
   export function setSessionType(pathPrefix: string, sessionType: string): { ok: boolean; updated?: number; error?: string }
   export function detectFacesInPhoto(id: number): { count: number; faces: number[][]; width: number; height: number }
+  export function getExifDetail(id: number): NativeExifDetail
   export function exportPresetToFile(name: string, dest: string): { ok: boolean; name?: string; error?: string }
   export function importPresetFromFile(path: string): { ok: boolean; name?: string; error?: string }
   export function subjectMaskPhoto(id: number, blur: number, maxDim: number): Promise<string | null>

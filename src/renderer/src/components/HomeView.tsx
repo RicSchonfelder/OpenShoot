@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useT } from '../i18n/I18nContext'
+import SettingsControl from './SettingsControl'
 
 interface AlbumItem {
   id: number
@@ -19,6 +20,7 @@ export default function HomeView({ onOpenAlbum }: HomeViewProps) {
   const { t } = useT()
   const [albums, setAlbums] = useState<AlbumItem[]>([])
   const [creating, setCreating] = useState(false)
+  const [albumToDelete, setAlbumToDelete] = useState<AlbumItem | null>(null)
   const [name, setName] = useState('')
   const [covers, setCovers] = useState<Record<number, string>>({})
 
@@ -54,8 +56,11 @@ export default function HomeView({ onOpenAlbum }: HomeViewProps) {
   }, [name, load])
 
   const del = useCallback(
-    (id: number) => {
-      window.openshoot.deleteAlbum(id).then(() => load())
+    (album: AlbumItem) => {
+      window.openshoot.deleteAlbum(album.id).then(() => {
+        setAlbumToDelete(null)
+        load()
+      })
     },
     [load]
   )
@@ -65,6 +70,7 @@ export default function HomeView({ onOpenAlbum }: HomeViewProps) {
       <header className="topbar">
         <span className="logo">OpenShoot</span>
         <div className="topbar-right">
+          <SettingsControl />
           <button onClick={() => setCreating(true)} className="primary">
             + {t('home.novoAlbum')}
           </button>
@@ -99,6 +105,19 @@ export default function HomeView({ onOpenAlbum }: HomeViewProps) {
         </div>
       )}
 
+      {albumToDelete && (
+        <div className="dialog-overlay" role="presentation">
+          <section className="dialog" role="dialog" aria-modal="true" aria-labelledby="delete-album-title">
+            <h3 id="delete-album-title">Excluir “{albumToDelete.name}”?</h3>
+            <p className="edit-hint">O álbum e sua organização serão removidos. As fotos originais e seus arquivos XMP não serão apagados.</p>
+            <div className="import-actions">
+              <button onClick={() => setAlbumToDelete(null)} className="ghost">Cancelar</button>
+              <button onClick={() => del(albumToDelete)} className="danger">Excluir álbum</button>
+            </div>
+          </section>
+        </div>
+      )}
+
       <main className="home-body">
         {albums.length === 0 ? (
           <div className="home-empty">
@@ -115,7 +134,20 @@ export default function HomeView({ onOpenAlbum }: HomeViewProps) {
               <span>{t('home.novoAlbum')}</span>
             </div>
             {albums.map((a) => (
-              <div key={a.id} className="album-card" onClick={() => onOpenAlbum(a.id)}>
+              <div
+                key={a.id}
+                className="album-card"
+                role="button"
+                tabIndex={0}
+                aria-label={`Abrir álbum ${a.name}`}
+                onClick={() => onOpenAlbum(a.id)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    onOpenAlbum(a.id)
+                  }
+                }}
+              >
                 <div className="album-cover">
                   {covers[a.id] ? (
                     <img src={covers[a.id]} alt={a.name} />
@@ -132,7 +164,7 @@ export default function HomeView({ onOpenAlbum }: HomeViewProps) {
                   className="album-delete"
                   onClick={(e) => {
                     e.stopPropagation()
-                    del(a.id)
+                    setAlbumToDelete(a)
                   }}
                   title={t('home.deletarAlbum')}
                 >

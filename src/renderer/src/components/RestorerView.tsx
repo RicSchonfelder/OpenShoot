@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PhotoMeta } from '../../../types/photo'
+import SettingsControl from './SettingsControl'
+import WorkspaceNav, { type WorkspaceSection } from './WorkspaceNav'
 
 type Operation = 'sharpen' | 'denoise' | 'exposure' | 'color' | 'horizon'
 type ProcessStatus = 'idle' | 'processing' | 'done' | 'error'
@@ -23,10 +25,11 @@ const DEFAULT_OPERATIONS: Record<Operation, boolean> = {
 
 interface RestorerViewProps {
   onBack: () => void
+  onNavigate: (section: WorkspaceSection) => void
   photoIds?: number[]
 }
 
-export default function RestorerView({ onBack, photoIds }: RestorerViewProps) {
+export default function RestorerView({ onBack, onNavigate, photoIds }: RestorerViewProps) {
   const [photos, setPhotos] = useState<PhotoMeta[]>([])
   const [photoId, setPhotoId] = useState<number | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
@@ -414,9 +417,13 @@ Use structural references such as stage edges, table lines, walls, floors and ar
 
   return (
     <div className="app restorer-view">
-      <header className="topbar">
-        <span className="logo">OpenShoot · Bancada de restauração</span>
-        <button className="ghost" onClick={onBack}>← Voltar</button>
+      <header className="topbar workspace-topbar">
+        <div className="workspace-left"><span className="logo">OpenShoot</span></div>
+        <WorkspaceNav active="retouch" onNavigate={onNavigate} />
+        <div className="topbar-right workspace-actions">
+          <SettingsControl />
+          <button className="ghost" onClick={onBack}>← Voltar</button>
+        </div>
       </header>
       <main className="restorer-body">
         <aside className="restorer-controls">
@@ -442,8 +449,12 @@ Use structural references such as stage edges, table lines, walls, floors and ar
           <button className="primary" onClick={runLocalRestore} disabled={!selectedPhotos.length || busy || !Object.values(operations).some(Boolean)}>
             {busy ? (progress || 'Processando…') : 'Restaurar com ferramentas locais'}
           </button>
-          <div className="restorer-online">
-            <h3>IA online experimental</h3>
+          <details className="restorer-online">
+            <summary>
+              <span>IA online experimental</span>
+              <small>opcional · pode gerar cobrança</small>
+            </summary>
+            <div className="restorer-online-content">
             <p>Envia a foto à OpenAI e pode gerar cobrança. Só funciona após confirmação.</p>
             <label className="restorer-field">Modelo para este lote
               <select value={cloudModel} onChange={(event) => setCloudModel(event.target.value)} disabled={busy}>
@@ -464,9 +475,13 @@ Use structural references such as stage edges, table lines, walls, floors and ar
             <button className="online-button" onClick={runCloudRestore} disabled={!selectedPhotos.length || !keyConfigured || busy}>
               Restaurar com IA online
             </button>
+            <button className="ghost" onClick={exportUsageReport}>Exportar relatório de uso</button>
+            </div>
+          </details>
+          <div className="restorer-output">
+            <span>Destino das cópias</span>
             <button className="ghost" onClick={chooseOutputDir} disabled={busy}>{outputDir ? 'Trocar pasta de destino' : 'Escolher pasta de destino'}</button>
             {outputDir && <p className="restorer-destination">Destino: {outputDir}</p>}
-            <button className="ghost" onClick={exportUsageReport}>Exportar relatório de uso</button>
           </div>
           <button className="ghost" onClick={save} disabled={!preview || busy}>Salvar cópia JPEG</button>
           <button className="ghost" onClick={saveBatch} disabled={!selectedPhotos.some((item) => Boolean(previews[item.id])) || busy}>Salvar lote em uma pasta</button>

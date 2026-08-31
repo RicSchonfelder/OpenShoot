@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useT } from '../i18n/I18nContext'
+import SettingsControl from './SettingsControl'
+import WorkspaceNav, { type WorkspaceSection } from './WorkspaceNav'
 
 interface PeopleViewProps {
   onBack: () => void
+  onNavigate: (section: WorkspaceSection) => void
   photoIds?: number[]
 }
 
@@ -25,12 +28,13 @@ function extractGroups(res: unknown): PersonGroup[] {
   return []
 }
 
-export default function PeopleView({ onBack, photoIds }: PeopleViewProps) {
+export default function PeopleView({ onBack, onNavigate, photoIds }: PeopleViewProps) {
   const { t } = useT()
   const [threshold, setThreshold] = useState(0.5)
   const [grouping, setGrouping] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [people, setPeople] = useState<PersonGroup[]>([])
+  const [hasGrouped, setHasGrouped] = useState(false)
   const [covers, setCovers] = useState<Record<number, string>>({})
   const [error, setError] = useState<string | null>(null)
 
@@ -59,6 +63,7 @@ export default function PeopleView({ onBack, photoIds }: PeopleViewProps) {
     try {
       const res = await window.openshoot.groupBySimilarity(threshold, photoIds)
       setPeople(extractGroups(res))
+      setHasGrouped(true)
       setCovers({})
     } catch (e) {
       setError(String(e))
@@ -88,10 +93,16 @@ export default function PeopleView({ onBack, photoIds }: PeopleViewProps) {
 
   return (
     <div className="people">
-      <header className="topbar">
-        <span className="logo">OpenShoot</span>
-        <div className="topbar-right">
+      <header className="topbar workspace-topbar">
+        <div className="workspace-left"><span className="logo">OpenShoot</span></div>
+        <WorkspaceNav active="edit" onNavigate={onNavigate} />
+        <div className="topbar-right workspace-actions">
+          <SettingsControl />
+        </div>
+      </header>
+      <div className="workspace-contextbar people-contextbar" aria-label="Ferramentas de pessoas">
           <label className="people-threshold">
+            <span>Similaridade</span>
             <input
               type="range"
               min={0.3}
@@ -111,8 +122,7 @@ export default function PeopleView({ onBack, photoIds }: PeopleViewProps) {
           <button onClick={onBack} className="ghost back-albums">
             ← {t('people.voltar')}
           </button>
-        </div>
-      </header>
+      </div>
 
       {error && <div className="toast error">{error}</div>}
 
@@ -124,8 +134,11 @@ export default function PeopleView({ onBack, photoIds }: PeopleViewProps) {
           </div>
         ) : people.length === 0 ? (
           <div className="people-empty">
-            <div className="home-empty-title">{t('people.titulo')}</div>
-            <p>{t('people.nenhuma')}</p>
+            <div className="people-empty-card">
+              <div className="people-empty-icon" aria-hidden="true">◉</div>
+              <div className="home-empty-title">{t('people.titulo')}</div>
+              <p>{hasGrouped ? t('people.nenhuma') : t('people.antesAgrupar')}</p>
+            </div>
           </div>
         ) : (
           <div className="people-grid">

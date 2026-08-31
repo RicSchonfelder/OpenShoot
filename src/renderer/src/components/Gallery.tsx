@@ -114,10 +114,20 @@ function Thumb({
       className={`cell ${selected ? 'selected' : ''} ${isPick ? 'flag-pick' : ''} ${
         isReject ? 'flag-reject' : ''
       }`}
+      role="button"
+      tabIndex={0}
+      aria-label={`${label}${selected ? ', selecionada' : ''}. Enter abre.`}
       onClick={(e) =>
         onSelect(photo.id, { extend: e.shiftKey, toggle: e.metaKey || e.ctrlKey })
       }
       onDoubleClick={() => onActivate(photo.id)}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onActivate(photo.id)
+        }
+      }}
       title={photo.path}
       onContextMenu={(e) => {
         e.preventDefault()
@@ -140,14 +150,7 @@ function Thumb({
             className="cell-label-dot"
             title={t(`label.${colorLabel}`)}
             style={{
-              position: 'absolute',
-              top: 6,
-              left: 6,
-              width: 10,
-              height: 10,
-              borderRadius: '50%',
-              background: labelColor(colorLabel),
-              boxShadow: '0 0 0 1px rgba(0, 0, 0, 0.55)'
+              background: labelColor(colorLabel)
             }}
           />
         )}
@@ -373,11 +376,7 @@ export default function Gallery({
             flexDirection: 'column',
             gap: 2,
             minWidth: 140,
-            padding: 4,
-            background: '#1b2029',
-            border: '1px solid #333a46',
-            borderRadius: 8,
-            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)'
+            padding: 4
           }}
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
@@ -391,19 +390,7 @@ export default function Gallery({
                 handleSetLabel(labelMenu.id, value)
                 setLabelMenu(null)
               }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '6px 10px',
-                background: 'transparent',
-                border: 'none',
-                borderRadius: 6,
-                color: '#e7ecf3',
-                fontSize: 13,
-                textAlign: 'left',
-                cursor: 'pointer'
-              }}
+              className="label-menu-option"
             >
               <span
                 style={{
@@ -424,19 +411,7 @@ export default function Gallery({
               handleSetLabel(labelMenu.id, '')
               setLabelMenu(null)
             }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '6px 10px',
-              background: 'transparent',
-              border: 'none',
-              borderRadius: 6,
-              color: '#9aa4b2',
-              fontSize: 13,
-              textAlign: 'left',
-              cursor: 'pointer'
-            }}
+            className="label-menu-option label-menu-clear"
           >
             {t('label.limpar')}
           </button>

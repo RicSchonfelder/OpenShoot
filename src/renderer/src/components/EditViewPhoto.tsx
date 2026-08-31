@@ -105,26 +105,28 @@ export default function EditViewPhoto({ photoId, modifiedSrc, compareMode, onCom
 
   return (
     <div className={`editview-imgwrap ${compareMode === 'side-by-side' ? 'compare' : ''}`} onWheel={handleWheel}>
-      {src ? (compareMode === 'side-by-side'
-        ? <>
-            {renderPane('original', src, 'Foto original', 'Original')}
-            {renderPane('modified', modifiedSrc ?? src, 'Foto modificada', modifiedSrc ? 'Modificada' : 'Original · sem edição')}
-          </>
-        : compareMode === 'slider'
-          ? <div className="editview-slider-comparison">
-              <span>Comparação</span>
-              <div className="editview-slider-viewport" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); setSplitFromPointer(event) }} onPointerMove={(event) => { if (event.buttons === 1) setSplitFromPointer(event) }}>
-                <img className="editview-slider-before" src={src} alt="Original" style={{ transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)` }} />
-                <div className="editview-slider-after" style={{ clipPath: `inset(0 ${100 - splitPosition}% 0 0)` }}>
-                  <img src={modifiedSrc ?? src} alt="Modificada" style={{ transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)` }} />
+      <div className="editview-canvas">
+        {src ? (compareMode === 'side-by-side'
+          ? <>
+              {renderPane('original', src, 'Foto original', 'Original')}
+              {renderPane('modified', modifiedSrc ?? src, 'Foto modificada', modifiedSrc ? 'Modificada' : 'Original · sem edição')}
+            </>
+          : compareMode === 'slider'
+            ? <div className="editview-slider-comparison">
+                <span>Comparação</span>
+                <div className="editview-slider-viewport" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); setSplitFromPointer(event) }} onPointerMove={(event) => { if (event.buttons === 1) setSplitFromPointer(event) }}>
+                  <img className="editview-slider-before" src={src} alt="Original" style={{ transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)` }} />
+                  <div className="editview-slider-after" style={{ clipPath: `inset(0 ${100 - splitPosition}% 0 0)` }}>
+                    <img src={modifiedSrc ?? src} alt="Modificada" style={{ transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)` }} />
+                  </div>
+                  <div className="editview-slider-handle" style={{ left: `${splitPosition}%` }}><span>↔</span></div>
                 </div>
-                <div className="editview-slider-handle" style={{ left: `${splitPosition}%` }}><span>↔</span></div>
               </div>
-            </div>
-        : compareMode === 'modified'
-          ? renderPane('modified', modifiedSrc ?? src, modifiedSrc ? 'Foto modificada' : 'Foto original', modifiedSrc ? 'Modificada' : 'Original · sem edição')
-          : renderPane('original', src, 'Foto original', 'Original'))
-        : <div className="editview-loading">{t('loupe.carregando')}</div>}
+          : compareMode === 'modified'
+            ? renderPane('modified', modifiedSrc ?? src, modifiedSrc ? 'Foto modificada' : 'Foto original', modifiedSrc ? 'Modificada' : 'Original · sem edição')
+            : renderPane('original', src, 'Foto original', 'Original'))
+          : <div className="editview-loading">{t('loupe.carregando')}</div>}
+      </div>
       <div className="editview-bottom-toolbar">
         <div className="editview-modebar" role="group" aria-label="Modo de comparação">
           <button type="button" onClick={() => onCompareModeChange('original')} className={compareMode === 'original' ? 'active' : ''}>Original</button>

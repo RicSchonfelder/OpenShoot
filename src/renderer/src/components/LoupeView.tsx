@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PhotoMeta } from '../../../types/photo'
 import { useT } from '../i18n/I18nContext'
+import SettingsControl from './SettingsControl'
+import WorkspaceNav, { type WorkspaceSection } from './WorkspaceNav'
 
 interface LoupeViewProps {
   photos: PhotoMeta[]
@@ -8,6 +10,7 @@ interface LoupeViewProps {
   onNavigate: (index: number) => void
   onApplyRating: (rating: number, advance: boolean) => void
   onClose: () => void
+  onNavigateWorkspace: (section: WorkspaceSection) => void
 }
 
 interface SelRect {
@@ -31,7 +34,8 @@ export default function LoupeView({
   currentIndex,
   onNavigate,
   onApplyRating,
-  onClose
+  onClose,
+  onNavigateWorkspace
 }: LoupeViewProps) {
   const { t } = useT()
   const [src, setSrc] = useState<string | null>(null)
@@ -294,11 +298,12 @@ export default function LoupeView({
 
   return (
     <div className="loupe">
-      <div className="loupe-topbar">
-        <span className="loupe-counter">
+      <div className="loupe-topbar workspace-topbar">
+        <div className="workspace-left loupe-summary">
+          <span className="loupe-counter">
           {t('loupe.contador', { current: currentIndex + 1, total, name: photo.fileName })}
-        </span>
-        <div className="loupe-flags">
+          </span>
+          <div className="loupe-flags">
           <span className={`flag flag-pick ${flags.pick ? 'on' : ''}`}>P</span>
           <span className={`flag flag-reject ${flags.reject ? 'on' : ''}`}>X</span>
           <div className="loupe-stars" role="radiogroup" aria-label={t('gallery.starRating')}>
@@ -316,7 +321,11 @@ export default function LoupeView({
               </button>
             ))}
           </div>
+          </div>
         </div>
+        <WorkspaceNav active="cull" onNavigate={onNavigateWorkspace} />
+        <div className="topbar-right workspace-actions loupe-actions">
+        <SettingsControl />
         <button className="loupe-close" onClick={onClose}>✕ {t('loupe.fechar')} (Esc)</button>
         <button
           className={`loupe-faces ${showFaces ? 'active' : ''}`}
@@ -324,6 +333,7 @@ export default function LoupeView({
         >
           {t('loupe.mostrarRostos')}
         </button>
+        </div>
       </div>
 
       <div

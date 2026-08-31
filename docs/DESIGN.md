@@ -70,6 +70,55 @@ Processamento 100% local, não-destrutivo, offline.
 | Persistência | SQLite (crate `rusqlite`) c/ sidecar XMP | catálogo + metadata |
 | Tarefas | `tokio` + rayon (pool p/ CPU) | paralelismo |
 
+### Sistema visual e temas
+
+A interface usa tokens CSS semânticos para superfícies, bordas, tipografia,
+ações e estados. O renderer aplica o tema no atributo `data-theme` do elemento
+raiz; componentes nunca devem introduzir cores de interface fixas fora desses
+tokens. Cores de etiquetas fotográficas e controles HSL são exceções, pois
+representam metadados e canais de cor, não a aparência do aplicativo.
+
+O tema padrão é **Café**, pensado para uma área de trabalho de fotografia com
+contraste suave e acento quente. O botão **Configurações** abre uma janela de
+aparência que permite alternar entre os modos Escuro e Claro e entre Café,
+Grafite, Oceano ou Floresta. As escolhas ficam somente no `localStorage` do
+renderer (`openshoot-theme` e `openshoot-appearance`), persistem entre
+aberturas e não são transmitidas nem sincronizadas com serviços externos.
+
+O sistema de foco é visível para teclado, os controles compartilham altura,
+bordas e estados de interação, e `prefers-reduced-motion` reduz animações. Ao
+criar uma nova tela, usar os componentes/classes globais de botão e os tokens
+`--canvas`, `--surface`, `--border`, `--text-*` e `--accent*` para manter a
+coerência visual.
+
+Fluxos de trabalho de tela cheia (exportação, lupa, pessoas e restauração)
+possuem raiz visual própria: não podem ser renderizados sobre a galeria nem
+deixar ações do fundo acessíveis. A exportação ocupa a janela inteira. No
+culling, os indicadores do painel lateral são calculados no mesmo escopo do
+álbum aberto, e não no catálogo global. A restauração local é a rota principal;
+recursos de IA online ficam recolhidos, explicitamente opcionais e com o aviso
+de possível cobrança antes de qualquer configuração ou uso.
+
+Dentro de um álbum, a navegação primária é sempre a mesma e ocupa a posição
+central do cabeçalho: **Importar, Seleção, Editar, Retoque e Exportar**. A
+mesma barra também aparece nas visualizações de foto, exportação, pessoas e
+restauração. Ferramentas contextuais (filtros, executar seleção, pessoas,
+restauração, importação e configurações) ficam nas laterais e nunca substituem
+ou deslocam essa navegação. A tela inicial de álbuns é a exceção deliberada,
+por ser o seletor de sessão antes de existir um álbum ativo.
+
+Na galeria, um clique seleciona a foto; abrir uma ferramenta é explícito
+(duplo clique ou `Enter`). Em Seleção, essa abertura leva à lupa; em Editar e
+Retoque, leva à edição da foto. Isso preserva o fluxo de culling e evita que
+uma seleção simples troque de contexto. Aplicações em lote de edição usam
+somente as fotos selecionadas e gravam os respectivos sidecars XMP — nunca o
+catálogo inteiro por engano.
+
+A exportação possui uma única área de configuração, seja para fotos visíveis
+ou para a seleção atual; a tela declara esse escopo antes da confirmação. As
+opções expostas refletem o pipeline atual: JPEG ou PNG, sRGB ou aproximação de
+Display P3. Recursos não suportados não são apresentados como escolhas.
+
 ---
 
 ## 4. Estrutura de Pastas

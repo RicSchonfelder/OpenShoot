@@ -202,6 +202,7 @@
   "people.exportado": "{n} photo(s) exported to:\n{dir}",
   "people.voltar": "Back to gallery",
   "people.nenhuma": "No photos with detected faces yet. Adjust the similarity threshold and click \"Group by person\".",
+  "people.antesAgrupar": "There are no groups yet. Adjust similarity and use \"Group by person\" to analyze this album's photos.",
   "people.pessoa": "Person {n}",
   "loupe.ajustar": "Fit",
   "loupe.zoom100": "100%",
