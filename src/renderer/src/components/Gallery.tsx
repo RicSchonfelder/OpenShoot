@@ -16,8 +16,13 @@ interface GalleryProps {
 }
 
 const CELL_SIZE = 200
-const ROW_HEIGHT = CELL_SIZE + 40
 const DEFAULT_WIDTH = 1200
+
+function availableGalleryWidth(mode?: GalleryProps['mode']): number {
+  if (typeof window === 'undefined') return DEFAULT_WIDTH
+  const sidePanel = mode === 'cull' ? 220 : mode === 'edit' || mode === 'retouch' ? 300 : 0
+  return Math.max(1, window.innerWidth - sidePanel - 40)
+}
 
 // Labels de cor (agent-10): paleta padrão AfterShoot.
 export const LABEL_COLORS: Array<{ value: string; color: string }> = [
@@ -33,7 +38,8 @@ function labelColor(label?: string): string {
 }
 
 function computeCols(width: number): number {
-  return Math.max(2, Math.floor(width / CELL_SIZE))
+  // Em janelas estreitas uma única coluna é preferível a cortar a última foto.
+  return Math.max(1, Math.floor(width / CELL_SIZE))
 }
 
 interface CellData {
@@ -253,19 +259,44 @@ export default function Gallery({
   mode
 }: GalleryProps) {
   const { t } = useT()
-  const [cols, setCols] = useState(() => computeCols(DEFAULT_WIDTH))
+  const [gridWidth, setGridWidth] = useState(() => availableGalleryWidth(mode))
   const gridRef = useRef<any>(null)
+  const galleryRef = useRef<HTMLDivElement>(null)
+
+  // Mede a própria área da galeria, já depois de o painel lateral participar do
+  // layout. Isso continua correto em Retina e em qualquer largura de janela.
+  useEffect(() => {
+    const element = galleryRef.current
+    const updateWidth = () => {
+      const width = element
+        ? Math.floor(element.getBoundingClientRect().width - 40)
+        : availableGalleryWidth(mode)
+      if (width > 0) setGridWidth((current) => (current === width ? current : width))
+    }
+    updateWidth()
+    window.addEventListener('resize', updateWidth)
+    const observer = element && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateWidth) : null
+    if (observer && element) observer.observe(element)
+    return () => {
+      window.removeEventListener('resize', updateWidth)
+      observer?.disconnect()
+    }
+  }, [mode])
 
   // Labels de cor (agent-10): carregados em lote e mantidos localmente.
   const [labels, setLabels] = useState<Record<number, string>>({})
   const [labelMenu, setLabelMenu] = useState<{ id: number; x: number; y: number } | null>(null)
 
-  const colCount = cols
+  const colCount = computeCols(gridWidth)
+  // Divide a largura real entre as colunas. Antes, columnWidth=200 combinado
+  // com defaultWidth=1200 fazia o Grid manter colunas fora da área disponível.
+  const columnWidth = Math.max(1, Math.floor(gridWidth / colCount))
+  const rowHeight = Math.max(220, Math.round(columnWidth * 0.92) + 40)
   const rowCount = Math.max(1, Math.ceil(photos.length / colCount))
   const cellProps: CellData = {
     photos,
     cols: colCount,
-    maxDim: CELL_SIZE * 2,
+    maxDim: Math.max(320, Math.min(800, columnWidth * 2)),
     selectedIds,
     onSelect,
     onActivate,
@@ -329,7 +360,7 @@ export default function Gallery({
   }, [anchorId, colCount])
 
   return (
-    <div className="gallery">
+    <div ref={galleryRef} className="gallery">
       <div className="gallery-bar">
         <span>
           {t('gallery.fotoCount', { n: photos.length })}
@@ -353,13 +384,12 @@ export default function Gallery({
             cellComponent={cellComponent}
             cellProps={cellProps}
             columnCount={colCount}
-            columnWidth={CELL_SIZE}
+            columnWidth={columnWidth}
             rowCount={rowCount}
-            rowHeight={ROW_HEIGHT}
+            rowHeight={rowHeight}
             defaultWidth={DEFAULT_WIDTH}
             defaultHeight={600}
             overscanCount={3}
-            onResize={({ width }) => setCols(computeCols(width))}
           />
         </div>
       )}

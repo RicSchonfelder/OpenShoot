@@ -117,6 +117,12 @@ no WorkspaceNav. No editor detalhado, acesso equivalente no cabeçalho.
 Aplicações em lote de edição usam somente as fotos selecionadas e gravam os
 respectivos sidecars XMP — nunca o catálogo inteiro por engano.
 
+A galeria usa uma malha virtualizada responsiva: a largura da área efetivamente
+disponível (já descontados filtros e painel de edição) é observada durante o
+redimensionamento, e as colunas redistribuem essa largura sem ultrapassar a
+viewport. Assim, a última miniatura não fica cortada nem muda de posição ao
+alternar entre Importar, Seleção, Editar e Retoque.
+
 A exportação possui uma única área de configuração, seja para fotos visíveis
 ou para a seleção atual; a tela declara esse escopo antes da confirmação. As
 opções expostas refletem o pipeline atual: JPEG ou PNG, sRGB ou aproximação de
