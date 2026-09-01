@@ -2740,8 +2740,8 @@ input[type='checkbox'] {
 }
 
 .settings-dialog {
-  width: min(620px, 100%);
-  max-width: 620px;
+  width: min(760px, 100%);
+  max-width: 760px;
   padding: 0;
   overflow: hidden;
   border-radius: 16px;
@@ -2780,6 +2780,75 @@ input[type='checkbox'] {
 .settings-close {
   min-width: 34px;
   padding: 6px;
+}
+
+.settings-layout {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  min-height: 420px;
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 10px;
+  border-right: 1px solid var(--border-subtle);
+  background: var(--surface-inset);
+}
+
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.settings-nav-item:hover {
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+}
+
+.settings-nav-item.active {
+  background: var(--surface-elevated);
+  border-color: var(--border);
+  color: var(--text-primary);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.settings-nav-icon {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--surface-elevated);
+  font-size: 13px;
+}
+
+.settings-nav-item.active .settings-nav-icon {
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  color: var(--text-accent);
+}
+
+.settings-panel {
+  min-width: 0;
+  overflow-y: auto;
+  background: var(--surface);
+}
+
+.settings-panel .settings-section {
+  border-bottom: none;
 }
 
 .settings-section {
@@ -3142,6 +3211,29 @@ input[type='checkbox'] {
 @media (max-width: 520px) {
   .settings-overlay {
     padding: 10px;
+  }
+
+  .settings-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 10px 12px;
+    border-right: none;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .settings-nav-item {
+    width: auto;
+    padding: 7px 10px;
+  }
+
+  .settings-nav-item.active {
+    box-shadow: none;
+    border-color: var(--accent);
   }
 
   .settings-dialog-header,

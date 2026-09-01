@@ -79,11 +79,15 @@ tokens. Cores de etiquetas fotográficas e controles HSL são exceções, pois
 representam metadados e canais de cor, não a aparência do aplicativo.
 
 O tema padrão é **Café**, pensado para uma área de trabalho de fotografia com
-contraste suave e acento quente. O botão **Configurações** abre uma janela de
-aparência que permite alternar entre os modos Escuro e Claro e entre Café,
-Grafite, Oceano ou Floresta. As escolhas ficam somente no `localStorage` do
-renderer (`openshoot-theme` e `openshoot-appearance`), persistem entre
-aberturas e não são transmitidas nem sincronizadas com serviços externos.
+contraste suave e acento quente. O botão **Configurações** abre uma janela com
+menu lateral que organiza os assuntos em seções visíveis — **Aparência**, **Tema**,
+**Armazenamento** e **Presets de edição** —, cada uma exibida no painel principal.
+A seção ativa é destacada no menu à esquerda; em telas estreitas o menu vira uma
+faixa horizontal acima do conteúdo. A janela permite alternar entre os modos
+Escuro e Claro e entre Café, Grafite, Oceano ou Floresta. As escolhas ficam
+somente no `localStorage` do renderer (`openshoot-theme` e
+`openshoot-appearance`), persistem entre aberturas e não são transmitidas nem
+sincronizadas com serviços externos.
 
 O sistema de foco é visível para teclado, os controles compartilham altura,
 bordas e estados de interação, e `prefers-reduced-motion` reduz animações. Ao
