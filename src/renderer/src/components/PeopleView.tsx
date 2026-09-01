@@ -20,13 +20,25 @@ interface EnrichedGroup {
   faces: Array<{ id: number; photo_id: number; bbox: [number, number, number, number]; group_name: string }>
 }
 
-function faceCropStyle(
+interface FaceCrop {
+  style: CSSProperties
+  crop: { x: number; y: number; w: number; h: number } | null
+  naturalW: number
+  naturalH: number
+}
+
+function faceCrop(
   bbox: [number, number, number, number] | undefined,
   natural: { width: number; height: number } | null,
   frame: { width: number; height: number } | null
-): CSSProperties {
+): FaceCrop {
   if (!bbox || !natural || !frame || frame.width <= 0 || frame.height <= 0) {
-    return { width: '100%', height: '100%', objectFit: 'cover' }
+    return {
+      style: { width: '100%', height: '100%', objectFit: 'cover' },
+      crop: null,
+      naturalW: natural?.width ?? 1,
+      naturalH: natural?.height ?? 1
+    }
   }
   const [x1, y1, x2, y2] = bbox
   const frameAspect = frame.width / frame.height
@@ -51,18 +63,46 @@ function faceCropStyle(
   const cropY = Math.min(Math.max(0, centerY - cropHeight / 2), natural.height - cropHeight)
   const scale = frame.width / cropWidth
   return {
-    width: natural.width * scale,
-    height: natural.height * scale,
-    left: -cropX * scale,
-    top: -cropY * scale,
-    maxWidth: 'none',
-    maxHeight: 'none'
+    style: {
+      width: natural.width * scale,
+      height: natural.height * scale,
+      left: -cropX * scale,
+      top: -cropY * scale,
+      maxWidth: 'none',
+      maxHeight: 'none'
+    },
+    crop: { x: cropX, y: cropY, w: cropWidth, h: cropHeight },
+    naturalW: natural.width,
+    naturalH: natural.height
   }
 }
 
-function FaceThumbnail({ src, bbox, alt, className }: {
+// Converte uma bbox normalizada (da foto original) para o espaço do crop
+// (posição em % dentro do frame). Retorna null se estiver totalmente fora.
+function bboxInCrop(
+  bbox: [number, number, number, number],
+  crop: { x: number; y: number; w: number; h: number },
+  naturalW: number,
+  naturalH: number
+): CSSProperties | null {
+  const pxX1 = bbox[0] * naturalW
+  const pxY1 = bbox[1] * naturalH
+  const pxX2 = bbox[2] * naturalW
+  const pxY2 = bbox[3] * naturalH
+  if (pxX2 < crop.x || pxY2 < crop.y || pxX1 > crop.x + crop.w || pxY1 > crop.y + crop.h) {
+    return null
+  }
+  const left = ((pxX1 - crop.x) / crop.w) * 100
+  const top = ((pxY1 - crop.y) / crop.h) * 100
+  const width = ((pxX2 - pxX1) / crop.w) * 100
+  const height = ((pxY2 - pxY1) / crop.h) * 100
+  return { left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${height}%` }
+}
+
+function FaceThumbnail({ src, bbox, faces, alt, className }: {
   src?: string | null
   bbox?: [number, number, number, number]
+  faces?: Array<[number, number, number, number]>
   alt: string
   className?: string
 }) {
@@ -79,14 +119,25 @@ function FaceThumbnail({ src, bbox, alt, className }: {
     observer.observe(element)
     return () => observer.disconnect()
   }, [])
+  const cropInfo = faceCrop(bbox, natural, frame)
+  const cropRect = cropInfo.crop
   return (
     <div ref={frameRef} className={`face-thumb-frame ${className ?? ''}`}>
       <img
         src={src}
         alt={alt}
         onLoad={(event) => setNatural({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
-        style={faceCropStyle(bbox, natural, frame)}
+        style={cropInfo.style}
       />
+      {faces && faces.length > 0 && cropRect && (
+        <div className="face-thumb-overlay">
+          {faces.map((fb, i) => {
+            const pos = bboxInCrop(fb, cropRect, cropInfo.naturalW, cropInfo.naturalH)
+            if (!pos) return null
+            return <span key={i} className="face-thumb-box" style={pos} />
+          })}
+        </div>
+      )}
     </div>
   )
 }
@@ -137,7 +188,15 @@ export default function PeopleView({ albumId, activeSection, onBack, onNavigate,
         const facesRes = await window.openshoot.listFacesInGroup(pg.id)
         const faces = facesRes.ok && facesRes.faces ? facesRes.faces : []
         const uniquePhotoIds = [...new Set(faces.map((f) => f.photo_id))]
-        enriched.push({ id: pg.id, name: pg.name, count: uniquePhotoIds.length, faces })
+        let cover: string | null = null
+        if (faces.length > 0) {
+          try {
+            cover = await window.openshoot.thumbForPhoto(faces[0].photo_id, 500)
+          } catch {
+            cover = null
+          }
+        }
+        enriched.push({ id: pg.id, name: pg.name, count: uniquePhotoIds.length, faces, cover })
       }
       setGroups(enriched)
       setDetailGroup((prev) => {
@@ -155,33 +214,6 @@ export default function PeopleView({ albumId, activeSection, onBack, onNavigate,
   useEffect(() => {
     loadGroups()
   }, [loadGroups])
-
-  useEffect(() => {
-    let active = true
-    const coverIds = groups.filter((g) => !g.cover && g.faces.length > 0).map((g) => g.faces[0].photo_id)
-    if (coverIds.length === 0) return
-    Promise.all(coverIds.map(async (photoId) => {
-      try {
-        const thumb = await window.openshoot.thumbForPhoto(photoId, 500)
-        return { photoId, thumb }
-      } catch {
-        return null
-      }
-    })).then((results) => {
-      if (!active) return
-      const map: Record<number, string> = {}
-      for (const r of results) {
-        if (r?.thumb) map[r.photoId] = r.thumb
-      }
-      setGroups((prev) => prev.map((g) => {
-        if (g.cover) return g
-        const face = g.faces[0]
-        if (face && map[face.photo_id]) return { ...g, cover: map[face.photo_id] }
-        return g
-      }))
-    })
-    return () => { active = false }
-  }, [groups])
 
   const albumPhotoIdsLoaded = albumPhotoIds !== null
   const albumEmpty = albumPhotoIdsLoaded && albumPhotoIds.length === 0
@@ -476,6 +508,7 @@ export default function PeopleView({ albumId, activeSection, onBack, onNavigate,
                         <FaceThumbnail
                           src={g.cover}
                           bbox={g.faces[0]?.bbox}
+                          faces={g.faces.map((f) => f.bbox)}
                           alt={t('people.faceCropAlt', { name: g.name })}
                           className="person-face-crop"
                         />

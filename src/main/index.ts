@@ -672,6 +672,13 @@ app.whenReady().then(() => {
       return { ok: false, error: String(e) }
     }
   })
+  ipcMain.handle('core:importLightroomFolder', async (_e, dir: string) => {
+    try {
+      return await getCore().importLightroomFolder(dir)
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
   ipcMain.handle('core:setSessionType', async (_e, pathPrefix: string, sessionType: string) => {
     try {
       return await getCore().setSessionType(pathPrefix, sessionType)

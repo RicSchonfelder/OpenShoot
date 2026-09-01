@@ -6,6 +6,43 @@ const APPEARANCE_OPTIONS: Array<{ id: AppearanceId; label: string; description: 
   { id: 'light', label: 'Claro', description: 'Para uma interface clara e luminosa.' }
 ]
 
+interface PresetItem {
+  name: string
+  recipe: string
+  file_type?: string
+  color_type?: string
+  source?: string
+}
+
+const PRESET_SOURCES: Record<string, string> = {
+  manual: 'Manual',
+  lightroom: 'Lightroom',
+  imported: 'Importado',
+  learned: 'Aprendido'
+}
+
+const PRESET_CATEGORIES: Array<{ key: string; label: string; icon: string }> = [
+  { key: 'b&w', label: 'Preto & Branco', icon: '◐' },
+  { key: 'color', label: 'Cor', icon: '🎨' },
+  { key: 'creative', label: 'Criativo', icon: '✦' },
+  { key: 'curve', label: 'Curva', icon: '∿' },
+  { key: 'grain', label: 'Granulação', icon: '≋' },
+  { key: 'vignetting', label: 'Vinheta', icon: '◍' },
+  { key: 'portraits', label: 'Retratos', icon: '👤' },
+  { key: 'sharpening', label: 'Nitidez', icon: '△' },
+  { key: 'other', label: 'Outros', icon: '•' }
+]
+
+function presetCategory(name: string): string {
+  const lower = name.toLowerCase()
+  for (const c of PRESET_CATEGORIES) {
+    if (c.key === 'other') continue
+    if (lower.startsWith(c.key)) return c.key
+    if (lower.includes(c.key)) return c.key
+  }
+  return 'other'
+}
+
 export default function SettingsControl() {
   const [open, setOpen] = useState(false)
   const dialogRef = useRef<HTMLElement | null>(null)
@@ -14,6 +51,9 @@ export default function SettingsControl() {
   const [storage, setStorage] = useState<{ catalogDir: string; cacheDir: string; defaultCatalogDir: string; defaultCacheDir: string } | null>(null)
   const [storageBusy, setStorageBusy] = useState(false)
   const [storageMessage, setStorageMessage] = useState<string | null>(null)
+  const [presets, setPresets] = useState<PresetItem[]>([])
+  const [presetBusy, setPresetBusy] = useState(false)
+  const [presetMessage, setPresetMessage] = useState<string | null>(null)
 
   const close = () => {
     setOpen(false)
@@ -51,6 +91,83 @@ export default function SettingsControl() {
     setStorageMessage(null)
     window.openshoot.getStorageSettings().then((settings) => setStorage(settings)).catch((error) => setStorageMessage(String(error)))
   }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    setPresetMessage(null)
+    window.openshoot.listPresets().then((p) => setPresets(p)).catch(() => setPresets([]))
+  }, [open])
+
+  const loadPresets = () => {
+    window.openshoot.listPresets().then((p) => setPresets(p)).catch(() => setPresets([]))
+  }
+
+  const importPresetFile = async () => {
+    const path = await window.openshoot.pickPresetFile()
+    if (!path) return
+    setPresetBusy(true)
+    setPresetMessage(null)
+    try {
+      const res = await window.openshoot.importLightroomPreset(path)
+      if (res.ok && res.name) {
+        setPresetMessage(`Preset '${res.name}' importado.`)
+        loadPresets()
+      } else {
+        setPresetMessage(res.error ?? 'Não foi possível importar o preset.')
+      }
+    } catch (error) {
+      setPresetMessage(String(error))
+    } finally {
+      setPresetBusy(false)
+    }
+  }
+
+  const importPresetFolder = async () => {
+    const dir = await window.openshoot.pickFolder()
+    if (!dir) return
+    setPresetBusy(true)
+    setPresetMessage(null)
+    try {
+      const res = await window.openshoot.importLightroomFolder(dir)
+      if (res.ok) {
+        const n = res.imported?.length ?? 0
+        const errs = res.errors?.length ?? 0
+        setPresetMessage(`${n} preset(s) importado(s)${errs > 0 ? `, ${errs} erro(s)` : ''}.`)
+        loadPresets()
+      } else {
+        setPresetMessage(res.error ?? 'Não foi possível importar a pasta.')
+      }
+    } catch (error) {
+      setPresetMessage(String(error))
+    } finally {
+      setPresetBusy(false)
+    }
+  }
+
+  const importPresetJson = async () => {
+    const path = await window.openshoot.pickPresetJson()
+    if (!path) return
+    setPresetBusy(true)
+    setPresetMessage(null)
+    try {
+      const res = await window.openshoot.importPresetFromFile(path)
+      if (res.ok) {
+        setPresetMessage(`Preset '${res.name}' importado.`)
+        loadPresets()
+      } else {
+        setPresetMessage(res.error ?? 'Não foi possível importar o preset.')
+      }
+    } catch (error) {
+      setPresetMessage(String(error))
+    } finally {
+      setPresetBusy(false)
+    }
+  }
+
+  const removePreset = async (name: string) => {
+    await window.openshoot.deletePreset(name)
+    loadPresets()
+  }
 
   const chooseStorageDirectory = async (kind: 'catalog' | 'cache') => {
     const selected = await window.openshoot.pickStorageDirectory(kind)
@@ -208,6 +325,73 @@ export default function SettingsControl() {
                   </div>
                   {storageMessage && <p className="settings-storage-message" role="status">{storageMessage}</p>}
                 </div>
+              )}
+            </section>
+
+            <section className="settings-section settings-presets" aria-labelledby="presets-title">
+              <div>
+                <h3 id="presets-title">Presets de edição</h3>
+                <p>Instale presets do Lightroom (.xmp/.lrtemplate), de pastas inteiras ou arquivos JSON. Eles ficam disponíveis no painel de edição.</p>
+              </div>
+              <div className="settings-preset-actions">
+                <button type="button" onClick={importPresetFile} disabled={presetBusy}>
+                  <span aria-hidden="true">＋</span> Importar preset Lightroom
+                </button>
+                <button type="button" className="ghost" onClick={importPresetFolder} disabled={presetBusy}>
+                  <span aria-hidden="true">📁</span> Importar pasta
+                </button>
+                <button type="button" className="ghost" onClick={importPresetJson} disabled={presetBusy}>
+                  <span aria-hidden="true">⇄</span> Importar JSON
+                </button>
+              </div>
+              {presetMessage && <p className="settings-storage-message" role="status">{presetMessage}</p>}
+              {presets.length > 0 ? (
+                <div className="settings-preset-browser">
+                  <div className="settings-preset-summary">
+                    <span className="settings-preset-total"><strong>{presets.length}</strong> presets</span>
+                    {PRESET_CATEGORIES.map((cat) => {
+                      const count = presets.filter((p) => presetCategory(p.name) === cat.key).length
+                      return count > 0 ? (
+                        <span key={cat.key} className="settings-preset-cat-count" data-cat={cat.key}>
+                          {cat.icon} {count}
+                        </span>
+                      ) : null
+                    })}
+                  </div>
+                  <div className="settings-preset-groups">
+                    {PRESET_CATEGORIES.map((cat) => {
+                      const items = presets.filter((p) => presetCategory(p.name) === cat.key)
+                      if (items.length === 0) return null
+                      return (
+                        <details key={cat.key} className="settings-preset-group" open={items.length <= 10}>
+                          <summary>
+                            <span className="settings-preset-group-icon">{cat.icon}</span>
+                            <span className="settings-preset-group-label">{cat.label}</span>
+                            <span className="settings-preset-group-count">{items.length}</span>
+                          </summary>
+                          <ul className="settings-preset-list">
+                            {items.map((p) => (
+                              <li key={p.name}>
+                                <span className="settings-preset-name" title={p.name}>{p.name}</span>
+                                <span className="settings-preset-meta">
+                                  {p.source && PRESET_SOURCES[p.source] && (
+                                    <em title={`Origem: ${p.source}`}>{PRESET_SOURCES[p.source]}</em>
+                                  )}
+                                  {p.file_type === 'raw' || p.file_type === 'jpeg' ? <em>{p.file_type.toUpperCase()}</em> : null}
+                                  {p.color_type === 'color' ? <em>Cor</em> : null}
+                                  {p.color_type === 'bw' ? <em>P&B</em> : null}
+                                </span>
+                                <button type="button" className="ghost small settings-preset-del" onClick={() => removePreset(p.name)} aria-label={`Remover ${p.name}`}>✕</button>
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <p className="settings-storage-message">Nenhum preset instalado ainda. Use os botões acima para importar.</p>
               )}
             </section>
 

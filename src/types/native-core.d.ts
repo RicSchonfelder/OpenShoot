@@ -85,6 +85,7 @@ declare module '*.node' {
   export function retouchFacePhoto(id: number, region: string, intensity: number, maxDim: number): Promise<string | null>
   export function learnProfile(): { ok: boolean; name?: string; photos?: number; error?: string }
   export function importLightroomPreset(path: string, name?: string): { ok: boolean; name?: string; recipe?: string; error?: string }
+  export function importLightroomFolder(dir: string): { ok: boolean; imported?: Array<{ name: string }>; errors?: Array<{ file: string; error: string }>; error?: string }
   export function setSessionType(pathPrefix: string, sessionType: string): { ok: boolean; updated?: number; error?: string }
   export function detectFacesInPhoto(id: number): { count: number; faces: number[][]; width: number; height: number }
   export function getExifDetail(id: number): NativeExifDetail

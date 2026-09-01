@@ -86,6 +86,8 @@ const api = {
   pickPresetFile: (): Promise<string | null> => ipcRenderer.invoke('core:pickPresetFile'),
   importLightroomPreset: (path: string, name?: string): Promise<{ ok: boolean; name?: string; recipe?: string; error?: string }> =>
     ipcRenderer.invoke('core:importLightroomPreset', path, name),
+  importLightroomFolder: (dir: string): Promise<{ ok: boolean; imported?: Array<{ name: string }>; errors?: Array<{ file: string; error: string }>; error?: string }> =>
+    ipcRenderer.invoke('core:importLightroomFolder', dir),
   setSessionType: (pathPrefix: string, sessionType: string): Promise<{ ok: boolean; updated?: number; error?: string }> =>
     ipcRenderer.invoke('core:setSessionType', pathPrefix, sessionType),
   detectFacesInPhoto: (id: number): Promise<{ count: number; faces: number[][]; width: number; height: number }> =>

@@ -99,6 +99,9 @@ export default function App() {
     if (section !== 'export') {
       setMode(section)
     }
+    if (section === 'import') {
+      setFilter('all')
+    }
     if (section === 'cull' || section === 'edit' || section === 'retouch' || section === 'import') {
       window.openshoot.listPresets().then((p) => setAppPresets(p)).catch(() => {})
     }
@@ -210,13 +213,11 @@ export default function App() {
 
   const handleActivate = useCallback((id: number) => {
     const idx = photosRef.current.findIndex((p) => p.id === id)
-    if (mode === 'import') {
-      if (idx >= 0) {
-        setLoupeIndex(idx)
-        setLoupeOpen(true)
-      }
-      setAnchorId(id)
+    // Em import/seleção, o duplo clique abre a edição.
+    if (mode === 'import' || mode === 'cull') {
+      setEditViewId(id)
       setSelectedIds(new Set([id]))
+      setAnchorId(id)
       return
     }
     if (mode === 'edit' || mode === 'retouch') {
@@ -232,6 +233,16 @@ export default function App() {
     setAnchorId(id)
     setSelectedIds(new Set([id]))
     }, [mode])
+
+  // Visualização (loupe) no clique único em import/seleção.
+  const handlePreview = useCallback((id: number) => {
+    const idx = photosRef.current.findIndex((p) => p.id === id)
+    if (idx < 0) return
+    setLoupeIndex(idx)
+    setLoupeOpen(true)
+    setAnchorId(id)
+    setSelectedIds(new Set([id]))
+  }, [])
 
   // ---- Loupe ----
   const loupeNavigate = useCallback((index: number) => {
@@ -632,15 +643,16 @@ export default function App() {
     return () => document.removeEventListener('mousedown', onDoc)
   }, [moreOpen])
 
-  // Carrega faces da foto aberta no modo edição.
+  // Carrega faces da foto aberta no modo edição (tela grande ou painel lateral).
+  const facesPhotoId = editViewId ?? selectedPhoto?.id ?? null
   useEffect(() => {
-    if (editViewId == null) {
+    if (facesPhotoId == null) {
       setPhotoFaces([])
       return
     }
     let active = true
     window.openshoot
-      .listFacesForPhoto(editViewId)
+      .listFacesForPhoto(facesPhotoId)
       .then((res) => {
         if (active) setPhotoFaces(res.ok && res.faces ? res.faces : [])
       })
@@ -648,7 +660,7 @@ export default function App() {
         if (active) setPhotoFaces([])
       })
     return () => { active = false }
-  }, [editViewId])
+  }, [facesPhotoId])
 
   // Atalhos do modo de edição em tela grande.
   useEffect(() => {
@@ -1114,6 +1126,7 @@ export default function App() {
             anchorId={anchorId}
             onSelect={handleSelect}
             onActivate={handleActivate}
+            onPreview={handlePreview}
             onRate={handleRate}
             mode={mode}
           />

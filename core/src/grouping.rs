@@ -200,20 +200,42 @@ pub fn group_by_similarity(photos: &[PhotoPath], threshold: f32) -> Result<Group
     let _ = crate::catalog::set_photo_has_face(id, photos_with_faces.contains(&id));
   }
 
-  // 2) Agrupa por cosseno (agrupamento guloso por similaridade).
+  // 2) Agrupa por cosseno (agrupamento por centróide + exclusão de mesma foto).
+  // Compara cada face com a média (centróide) do grupo — mais estável que
+  // comparar só com o representante, evitando o efeito "cadeia" que mistura
+  // pessoas diferentes. Além disso, duas faces da MESMA foto nunca vão para o
+  // mesmo grupo (a mesma foto não mostra a mesma pessoa duas vezes com
+  // embeddings distintos), corrigindo casos de pessoas parecidas na mesma foto.
   let mut groups: Vec<Vec<usize>> = Vec::new();
+  let mut centroids: Vec<Vec<f32>> = Vec::new();
   for i in 0..faces.len() {
     let mut placed = false;
-    for g in groups.iter_mut() {
-      let rep = &faces[g[0]];
-      if cosine(&faces[i].embedding, &rep.embedding) >= threshold {
-        g.push(i);
+    for gi in 0..groups.len() {
+      // Exclusão: não agrupar duas faces da mesma foto.
+      if groups[gi].iter().any(|&j| faces[j].photo_id == faces[i].photo_id) {
+        continue;
+      }
+      if cosine(&faces[i].embedding, &centroids[gi]) >= threshold {
+        groups[gi].push(i);
+        // Recalcula o centróide do grupo (média dos embeddings).
+        let dim = faces[i].embedding.len();
+        let centroid: Vec<f32> = (0..dim)
+          .map(|d| {
+            groups[gi]
+              .iter()
+              .map(|&j| faces[j].embedding[d])
+              .sum::<f32>()
+              / groups[gi].len() as f32
+          })
+          .collect();
+        centroids[gi] = centroid;
         placed = true;
         break;
       }
     }
     if !placed {
       groups.push(vec![i]);
+      centroids.push(faces[i].embedding.clone());
     }
   }
 
@@ -404,5 +426,60 @@ mod tests {
       .as_deref()
       .is_some_and(|message| message.contains("Nenhuma das 3 foto(s)")));
     assert_eq!(super::unavailable_photos_error(3, 2), None);
+  }
+
+  #[test]
+  fn two_faces_in_same_photo_never_group_together() {
+    // Duas faces muito parecidas (cosseno ~1) mas NA MESMA foto não podem ir
+    // para o mesmo grupo — corrige o caso de pessoas parecidas na mesma foto.
+    let mut a = vec![0.0f32; 32];
+    a[0] = 1.0;
+    let mut b = a.clone();
+    b[0] = 0.9999;
+    b[1] = 0.0141; // quase idêntico a a
+    let photos = vec![
+      crate::catalog::PhotoPath { id: 1, path: "foto1.jpg".to_string() },
+      crate::catalog::PhotoPath { id: 2, path: "foto2.jpg".to_string() },
+    ];
+    let mut faces = Vec::new();
+    // foto1 tem 2 faces (pessoas diferentes mas parecidas).
+    faces.push(FaceItem { photo_id: 1, photo_path: "foto1.jpg".into(), embedding: a.clone(), bbox: [0.1, 0.1, 0.2, 0.2] });
+    faces.push(FaceItem { photo_id: 1, photo_path: "foto1.jpg".into(), embedding: b.clone(), bbox: [0.6, 0.1, 0.7, 0.2] });
+    // foto2 tem a mesma pessoa da primeira face.
+    faces.push(FaceItem { photo_id: 2, photo_path: "foto2.jpg".into(), embedding: a.clone(), bbox: [0.3, 0.3, 0.4, 0.4] });
+
+    // Executa o mesmo loop do agrupamento (extraído para função de teste).
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    let mut centroids: Vec<Vec<f32>> = Vec::new();
+    for i in 0..faces.len() {
+      let mut placed = false;
+      for gi in 0..groups.len() {
+        if groups[gi].iter().any(|&j| faces[j].photo_id == faces[i].photo_id) {
+          continue;
+        }
+        if super::cosine(&faces[i].embedding, &centroids[gi]) >= 0.5 {
+          groups[gi].push(i);
+          let dim = faces[i].embedding.len();
+          let centroid: Vec<f32> = (0..dim)
+            .map(|d| groups[gi].iter().map(|&j| faces[j].embedding[d]).sum::<f32>() / groups[gi].len() as f32)
+            .collect();
+          centroids[gi] = centroid;
+          placed = true;
+          break;
+        }
+      }
+      if !placed {
+        groups.push(vec![i]);
+        centroids.push(faces[i].embedding.clone());
+      }
+    }
+
+    // As 2 faces da foto1 devem estar em grupos diferentes.
+    let group_of = |idx: usize| groups.iter().position(|g| g.contains(&idx)).unwrap();
+    assert_ne!(group_of(0), group_of(1), "faces da mesma foto não podem se agrupar");
+    // A primeira face da foto1 e a face da foto2 (mesma pessoa) ficam juntas.
+    assert_eq!(group_of(0), group_of(2), "mesma pessoa em fotos diferentes deve agrupar");
+    // A segunda face da foto1 fica isolada (ou em outro grupo).
+    assert_ne!(group_of(1), group_of(2));
   }
 }

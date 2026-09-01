@@ -159,7 +159,7 @@ pub fn import_lightroom_preset(path: String, name: Option<String>) -> Result<ser
           .map(|s| s.to_string_lossy().to_string())
           .unwrap_or_else(|| "Preset Lightroom".to_string())
       });
-      let result = catalog::save_preset(&preset_name, &recipe);
+      let result = catalog::save_preset_full(&preset_name, &recipe, "", "", "lightroom");
       match result {
         Ok(()) => {
           Ok(serde_json::json!({ "ok": true, "name": preset_name, "recipe": recipe }))
@@ -169,6 +169,64 @@ pub fn import_lightroom_preset(path: String, name: Option<String>) -> Result<ser
     }
     Err(e) => Ok(serde_json::json!({ "ok": false, "error": e })),
   }
+}
+
+/// Importa uma pasta inteira de presets do Lightroom (.xmp/.lrtemplate),
+/// recursivamente, e salva cada um como preset OpenShoot.
+/// Retorna JSON { ok, imported: [{name}], errors: [{file, error}] }.
+#[napi]
+pub fn import_lightroom_folder(dir: String) -> Result<serde_json::Value> {
+  let root = PathBuf::from(&dir);
+  if !root.is_dir() {
+    return Ok(serde_json::json!({ "ok": false, "error": "pasta não encontrada" }));
+  }
+  let mut imported: Vec<serde_json::Value> = Vec::new();
+  let mut errors: Vec<serde_json::Value> = Vec::new();
+  let mut stack = vec![root];
+  while let Some(d) = stack.pop() {
+    let entries = match std::fs::read_dir(&d) {
+      Ok(e) => e,
+      Err(e) => {
+        errors.push(serde_json::json!({ "file": d.display().to_string(), "error": e.to_string() }));
+        continue;
+      }
+    };
+    for entry in entries.flatten() {
+      let path = entry.path();
+      if path.is_dir() {
+        stack.push(path);
+        continue;
+      }
+      let ext = path
+        .extension()
+        .map(|s| s.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+      if ext != "xmp" && ext != "lrtemplate" {
+        continue;
+      }
+      match lrimport::import_lightroom_preset(&path) {
+        Ok(recipe) => {
+          let preset_name = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "Preset Lightroom".to_string());
+          if let Err(e) = catalog::save_preset_full(&preset_name, &recipe, "", "", "lightroom") {
+            errors.push(serde_json::json!({ "file": path.display().to_string(), "error": e }));
+          } else {
+            imported.push(serde_json::json!({ "name": preset_name }));
+          }
+        }
+        Err(e) => {
+          errors.push(serde_json::json!({ "file": path.display().to_string(), "error": e }));
+        }
+      }
+    }
+  }
+  Ok(serde_json::json!({
+    "ok": true,
+    "imported": imported,
+    "errors": errors
+  }))
 }
 
 /// Exporta um preset para um arquivo JSON (estilo compartilhável).

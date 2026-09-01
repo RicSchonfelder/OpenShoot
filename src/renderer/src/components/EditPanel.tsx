@@ -18,6 +18,19 @@ export interface EditValues {
   hsl: number[] | null
   sharpen: number | null
   denoise: number | null
+  whites: number | null
+  blacks: number | null
+  vibrance: number | null
+  clarity: number | null
+  texture: number | null
+  dehaze: number | null
+  grain: number | null
+  vignette: number | null
+  splitShadowHue: number | null
+  splitShadowSat: number | null
+  splitHighlightHue: number | null
+  splitHighlightSat: number | null
+  splitBalance: number | null
 }
 
 const EMPTY: EditValues = {
@@ -35,7 +48,20 @@ const EMPTY: EditValues = {
   toneShadows: null,
   hsl: null,
   sharpen: null,
-  denoise: null
+  denoise: null,
+  whites: null,
+  blacks: null,
+  vibrance: null,
+  clarity: null,
+  texture: null,
+  dehaze: null,
+  grain: null,
+  vignette: null,
+  splitShadowHue: null,
+  splitShadowSat: null,
+  splitHighlightHue: null,
+  splitHighlightSat: null,
+  splitBalance: null
 }
 
 const HSL_COLORS = [
@@ -50,7 +76,7 @@ const HSL_COLORS = [
 ] as const
 
 interface SliderDef {
-  key: 'exposure' | 'temperature' | 'tint' | 'contrast' | 'saturation' | 'shadows' | 'highlights' | 'brightness'
+  key: 'exposure' | 'temperature' | 'tint' | 'contrast' | 'saturation' | 'vibrance' | 'whites' | 'blacks' | 'shadows' | 'highlights' | 'brightness' | 'dehaze'
   labelKey: string
   min: number
   max: number
@@ -64,9 +90,13 @@ const SLIDERS: SliderDef[] = [
   { key: 'tint', labelKey: 'edit.tint', min: -100, max: 100, step: 1, unit: '' },
   { key: 'contrast', labelKey: 'edit.contraste', min: -100, max: 100, step: 1, unit: '' },
   { key: 'saturation', labelKey: 'edit.saturacao', min: -100, max: 100, step: 1, unit: '' },
+  { key: 'vibrance', labelKey: 'edit.vibracao', min: -100, max: 100, step: 1, unit: '' },
+  { key: 'whites', labelKey: 'edit.brancos', min: -100, max: 100, step: 1, unit: '' },
+  { key: 'blacks', labelKey: 'edit.pretos', min: -100, max: 100, step: 1, unit: '' },
   { key: 'shadows', labelKey: 'edit.sombras', min: -100, max: 100, step: 1, unit: '' },
   { key: 'highlights', labelKey: 'edit.realces', min: -100, max: 100, step: 1, unit: '' },
-  { key: 'brightness', labelKey: 'edit.brilho', min: -100, max: 100, step: 1, unit: '' }
+  { key: 'brightness', labelKey: 'edit.brilho', min: -100, max: 100, step: 1, unit: '' },
+  { key: 'dehaze', labelKey: 'edit.nehbla', min: -100, max: 100, step: 1, unit: '' }
 ]
 
 const TONE_SLIDERS: Array<{ key: 'toneHighlights' | 'toneLights' | 'toneDarks' | 'toneShadows'; labelKey: string }> = [
@@ -94,6 +124,18 @@ function toJson(values: EditValues): string {
   if (values.hsl && values.hsl.some((v) => v !== 0)) o.hsl = values.hsl
   if (values.sharpen != null && values.sharpen !== 0) o.sharpen = values.sharpen
   if (values.denoise != null && values.denoise !== 0) o.denoise = values.denoise
+  if (values.clarity != null && values.clarity !== 0) o.clarity = values.clarity
+  if (values.texture != null && values.texture !== 0) o.texture = values.texture
+  if (values.grain != null && values.grain !== 0) o.grain = values.grain
+  if (values.vignette != null && values.vignette !== 0) o.vignette = values.vignette
+  const split = [
+    values.splitShadowHue ?? 0,
+    values.splitShadowSat ?? 0,
+    values.splitHighlightHue ?? 0,
+    values.splitHighlightSat ?? 0,
+    values.splitBalance ?? 0
+  ]
+  if (split.some((v) => v !== 0)) o.split_toning = split
   return JSON.stringify(o)
 }
 
@@ -164,12 +206,17 @@ export default function EditPanel({ photo, variant = 'edit', onApplyAll, selecte
       try {
         const p = JSON.parse(recipe)
         const c = p.tone_curve as number[] | undefined
+        const st = p.split_toning as number[] | undefined
         const next: EditValues = {
           exposure: p.exposure ?? null,
           temperature: p.temperature ?? null,
           tint: p.tint ?? null,
           contrast: p.contrast ?? null,
           saturation: p.saturation ?? null,
+          vibrance: p.vibrance ?? null,
+          whites: p.whites ?? null,
+          blacks: p.blacks ?? null,
+          dehaze: p.dehaze ?? null,
           shadows: p.shadows ?? null,
           highlights: p.highlights ?? null,
           brightness: p.brightness ?? null,
@@ -179,7 +226,16 @@ export default function EditPanel({ photo, variant = 'edit', onApplyAll, selecte
           toneShadows: c?.[3] ?? null,
           hsl: Array.isArray(p.hsl) ? (p.hsl as number[]) : null,
           sharpen: p.sharpen ?? null,
-          denoise: p.denoise ?? null
+          denoise: p.denoise ?? null,
+          clarity: p.clarity ?? null,
+          texture: p.texture ?? null,
+          grain: p.grain ?? null,
+          vignette: p.vignette ?? null,
+          splitShadowHue: st?.[0] ?? null,
+          splitShadowSat: st?.[1] ?? null,
+          splitHighlightHue: st?.[2] ?? null,
+          splitHighlightSat: st?.[3] ?? null,
+          splitBalance: st?.[4] ?? null
         }
         setValues(next)
         if (photo) updatePreview(next)
@@ -278,12 +334,17 @@ export default function EditPanel({ photo, variant = 'edit', onApplyAll, selecte
       try {
         const p = JSON.parse(json)
         const c = p.tone_curve as number[] | undefined
+        const st = p.split_toning as number[] | undefined
         setValues({
           exposure: p.exposure ?? null,
           temperature: p.temperature ?? null,
           tint: p.tint ?? null,
           contrast: p.contrast ?? null,
           saturation: p.saturation ?? null,
+          vibrance: p.vibrance ?? null,
+          whites: p.whites ?? null,
+          blacks: p.blacks ?? null,
+          dehaze: p.dehaze ?? null,
           shadows: p.shadows ?? null,
           highlights: p.highlights ?? null,
           brightness: p.brightness ?? null,
@@ -293,7 +354,16 @@ export default function EditPanel({ photo, variant = 'edit', onApplyAll, selecte
           toneShadows: c?.[3] ?? null,
           hsl: Array.isArray(p.hsl) ? (p.hsl as number[]) : null,
           sharpen: p.sharpen ?? null,
-          denoise: p.denoise ?? null
+          denoise: p.denoise ?? null,
+          clarity: p.clarity ?? null,
+          texture: p.texture ?? null,
+          grain: p.grain ?? null,
+          vignette: p.vignette ?? null,
+          splitShadowHue: st?.[0] ?? null,
+          splitShadowSat: st?.[1] ?? null,
+          splitHighlightHue: st?.[2] ?? null,
+          splitHighlightSat: st?.[3] ?? null,
+          splitBalance: st?.[4] ?? null
         })
       } catch {
         /* ignore */
@@ -341,6 +411,20 @@ export default function EditPanel({ photo, variant = 'edit', onApplyAll, selecte
   }
 
   const onDetailSlider = (key: 'sharpen' | 'denoise', val: number) => {
+    const next = { ...values, [key]: val === 0 ? null : val }
+    setValues(next)
+    if (debounce.current) clearTimeout(debounce.current)
+    debounce.current = setTimeout(() => updatePreview(next), 200)
+  }
+
+  const onEffectSlider = (key: 'clarity' | 'texture' | 'grain' | 'vignette', val: number) => {
+    const next = { ...values, [key]: val === 0 ? null : val }
+    setValues(next)
+    if (debounce.current) clearTimeout(debounce.current)
+    debounce.current = setTimeout(() => updatePreview(next), 200)
+  }
+
+  const onSplitSlider = (key: 'splitShadowHue' | 'splitShadowSat' | 'splitHighlightHue' | 'splitHighlightSat' | 'splitBalance', val: number) => {
     const next = { ...values, [key]: val === 0 ? null : val }
     setValues(next)
     if (debounce.current) clearTimeout(debounce.current)
@@ -560,6 +644,93 @@ export default function EditPanel({ photo, variant = 'edit', onApplyAll, selecte
                 value={v}
                 onChange={(e) => onDetailSlider(key, Number(e.target.value))}
                 onDoubleClick={() => onDetailSlider(key, 0)}
+              />
+            </label>
+          )
+        })}
+      </AccordionSection>
+
+      <AccordionSection title={t('edit.efeitosTitulo')} className="edit-effects">
+        {(
+          [
+            ['edit.clareza', 'clarity'],
+            ['edit.textura', 'texture']
+          ] as Array<[string, 'clarity' | 'texture']>
+        ).map(([labelKey, key]) => {
+          const v = values[key] ?? 0
+          return (
+            <label key={key} className="edit-slider">
+              <span>
+                {t(labelKey)}
+                <em>{v}</em>
+              </span>
+              <input
+                type="range"
+                min={-100}
+                max={100}
+                step={1}
+                value={v}
+                onChange={(e) => onEffectSlider(key, Number(e.target.value))}
+                onDoubleClick={() => onEffectSlider(key, 0)}
+              />
+            </label>
+          )
+        })}
+      </AccordionSection>
+
+      <AccordionSection title={t('edit.granulacaoTitulo')} className="edit-grain">
+        {(
+          [
+            ['edit.granulacao', 'grain'],
+            ['edit.vinheta', 'vignette']
+          ] as Array<[string, 'grain' | 'vignette']>
+        ).map(([labelKey, key]) => {
+          const v = values[key] ?? 0
+          return (
+            <label key={key} className="edit-slider">
+              <span>
+                {t(labelKey)}
+                <em>{v}</em>
+              </span>
+              <input
+                type="range"
+                min={-100}
+                max={100}
+                step={1}
+                value={v}
+                onChange={(e) => onEffectSlider(key, Number(e.target.value))}
+                onDoubleClick={() => onEffectSlider(key, 0)}
+              />
+            </label>
+          )
+        })}
+      </AccordionSection>
+
+      <AccordionSection title={t('edit.splitToningTitulo')} className="edit-split">
+        {(
+          [
+            ['edit.splitSombraMatiz', 'splitShadowHue'],
+            ['edit.splitSombraSat', 'splitShadowSat'],
+            ['edit.splitRealceMatiz', 'splitHighlightHue'],
+            ['edit.splitRealceSat', 'splitHighlightSat'],
+            ['edit.splitBalanco', 'splitBalance']
+          ] as Array<[string, 'splitShadowHue' | 'splitShadowSat' | 'splitHighlightHue' | 'splitHighlightSat' | 'splitBalance']>
+        ).map(([labelKey, key]) => {
+          const v = values[key] ?? 0
+          return (
+            <label key={key} className="edit-slider">
+              <span>
+                {t(labelKey)}
+                <em>{v}</em>
+              </span>
+              <input
+                type="range"
+                min={-100}
+                max={100}
+                step={1}
+                value={v}
+                onChange={(e) => onSplitSlider(key, Number(e.target.value))}
+                onDoubleClick={() => onSplitSlider(key, 0)}
               />
             </label>
           )

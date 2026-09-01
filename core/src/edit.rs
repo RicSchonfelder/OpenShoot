@@ -36,6 +36,25 @@ pub struct EditParams {
   pub sharpen: Option<f32>,
   /// Redução de ruído (-100..100). 0 = neutro. Blur seletivo preservando bordas.
   pub denoise: Option<f32>,
+  /// Brancos (-100..100): ajusta os pontos mais claros (LR Whites2012).
+  pub whites: Option<f32>,
+  /// Pretos (-100..100): ajusta os pontos mais escuros (LR Blacks2012).
+  pub blacks: Option<f32>,
+  /// Vibração (-100..100): saturação seletiva protegendo tons de pele (LR Vibrance).
+  pub vibrance: Option<f32>,
+  /// Clareza (-100..100): contraste local em médias frequências (LR Clarity2012).
+  pub clarity: Option<f32>,
+  /// Textura (-100..100): contraste local em altas frequências (LR Texture).
+  pub texture: Option<f32>,
+  /// Névoa (-100..100): remove/adiciona neblina com contraste e saturação (LR Dehaze).
+  pub dehaze: Option<f32>,
+  /// Granulação (-100..100): textura de filme (LR Grain Amount).
+  pub grain: Option<f32>,
+  /// Vinheta pós-corte (-100..100): escurece/clareia as bordas (LR PostCropVignetteAmount).
+  pub vignette: Option<f32>,
+  /// Split toning: [sombra_matiz, sombra_sat, realce_matiz, realce_sat, balanço]
+  /// em -100..100 (matizes em 0..360 mapeados para -100..100 no import).
+  pub split_toning: Option<[f32; 5]>,
 }
 
 /// Centros de matiz das 8 cores HSL (graus).
@@ -176,6 +195,55 @@ impl EditParams {
       b = (b - p) * c + p;
     }
 
+    // Brancos: empurra os tons mais claros (acima de ~0.75 luma).
+    if let Some(whites) = self.whites {
+      let w = whites / 100.0;
+      let t = ((luma - 0.75) / 0.25).clamp(0.0, 1.0); // 1 nos realces extremos
+      let amt = w * t * 0.5;
+      r += amt;
+      g += amt;
+      b += amt;
+    }
+    // Pretos: empurra os tons mais escuros (abaixo de ~0.25 luma).
+    if let Some(blacks) = self.blacks {
+      let k = blacks / 100.0;
+      let t = ((0.25 - luma) / 0.25).clamp(0.0, 1.0); // 1 nas sombras extremas
+      let amt = k * t * 0.5;
+      r += amt;
+      g += amt;
+      b += amt;
+    }
+    // Vibração: saturação seletiva — protege tons de pele (matiz 20-50°).
+    if let Some(vibrance) = self.vibrance {
+      let v = vibrance / 100.0;
+      let (h, _, _) = rgb_to_hsl([r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0)]);
+      // Suaviza o efeito em tons de pele.
+      let skin_w = (-((h - 35.0).powi(2)) / (2.0 * 30.0 * 30.0)).exp();
+      let sat = 1.0 + v * (0.8 - 0.5 * skin_w);
+      let l = luma;
+      r = l + (r - l) * sat;
+      g = l + (g - l) * sat;
+      b = l + (b - l) * sat;
+    }
+    // Névoa (Dehaze): aumenta contraste e saturação em áreas de baixo contraste.
+    if let Some(dehaze) = self.dehaze {
+      let d = dehaze / 100.0;
+      let c = 1.0 + d * 0.4;
+      let p = 0.5;
+      r = (r - p) * c + p;
+      g = (g - p) * c + p;
+      b = (b - p) * c + p;
+      let s = 1.0 + d * 0.3;
+      let l = 0.299 * r + 0.587 * g + 0.114 * b;
+      r = l + (r - l) * s;
+      g = l + (g - l) * s;
+      b = l + (b - l) * s;
+    }
+    // Clareza/Textura: contraste local aplicado via unsharp mask (imagem inteira,
+    // ver apply_to_rgb8). Aqui fica o placeholder para o sinal; nada por pixel.
+    let _clarity = self.clarity;
+    let _texture = self.texture;
+
     // Sombras/realces: ajuste tonal por faixa de luminância.
     if let Some(shadows) = self.shadows {
       let s = shadows / 100.0;
@@ -209,6 +277,41 @@ impl EditParams {
     // HSL por cor (8 cores).
     if let Some(hsl) = self.hsl {
       let adj = apply_hsl_pixel([r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0)], &hsl);
+      r = adj[0];
+      g = adj[1];
+      b = adj[2];
+    }
+
+    // Split toning: tinge sombras e realces com matiz/saturação próprios.
+    if let Some(st) = self.split_toning {
+      let (sh_hue, sh_sat, hl_hue, hl_sat, balance) = (
+        st[0], st[1], st[2], st[3], st[4],
+      );
+      // Matizes armazenados em -100..100 → 0..360.
+      let sh_h = ((sh_hue + 100.0) / 200.0 * 360.0).clamp(0.0, 360.0);
+      let hl_h = ((hl_hue + 100.0) / 200.0 * 360.0).clamp(0.0, 360.0);
+      // Peso por luminância: sombras pesam em luma baixa, realces em luma alta.
+      let sh_w = (1.0 - luma).clamp(0.0, 1.0);
+      let hl_w = luma.clamp(0.0, 1.0);
+      let sh_s = (sh_sat / 100.0).clamp(0.0, 1.0);
+      let hl_s = (hl_sat / 100.0).clamp(0.0, 1.0);
+      // Cor de tintura (saturada, luminância 0.5).
+      let tint_c = |hue: f32| hsl_to_rgb(hue, 1.0, 0.5);
+      // Mistura sutil: quanto maior a saturação do split, mais a cor domina.
+      let mix = |base: [f32; 3], tint: [f32; 3], weight: f32, sat: f32| {
+        let mut out = [0f32; 3];
+        for i in 0..3 {
+          out[i] = base[i] * (1.0 - weight * sat * 0.6) + tint[i] * weight * sat * 0.6;
+        }
+        out
+      };
+      let adj = mix(
+        [r, g, b],
+        tint_c(sh_h),
+        sh_w * (0.5 + balance / 200.0),
+        sh_s,
+      );
+      let adj = mix(adj, tint_c(hl_h), hl_w * (0.5 - balance / 200.0), hl_s);
       r = adj[0];
       g = adj[1];
       b = adj[2];
@@ -259,11 +362,27 @@ pub fn apply_to_rgb8(
 
   // Nitidez (unsharp mask) e redução de ruído operam na imagem inteira.
   let mut result = out;
+  // Clareza (clarity): unsharp em média frequência (raio maior).
+  if let Some(clarity) = params.clarity {
+    result = unsharp_mask_radius(&result, width, height, clarity, 3);
+  }
+  // Textura: unsharp em alta frequência (raio pequeno).
+  if let Some(texture) = params.texture {
+    result = unsharp_mask_radius(&result, width, height, texture, 1);
+  }
   if params.sharpen.is_some() {
     result = unsharp_mask(&result, width, height, params.sharpen.unwrap_or(0.0));
   }
   if params.denoise.is_some() {
     result = denoise_preserve_edges(&result, width, height, params.denoise.unwrap_or(0.0));
+  }
+  // Granulação: ruído pseudoaleatório com luminância da imagem.
+  if let Some(grain) = params.grain {
+    result = apply_grain(&result, width, height, grain);
+  }
+  // Vinheta: escurece/clareia as bordas proporcionalmente à distância ao centro.
+  if let Some(vignette) = params.vignette {
+    result = apply_vignette(&result, width, height, vignette);
   }
   let _ = (width, height);
   result
@@ -324,17 +443,95 @@ fn denoise_preserve_edges(rgb: &[u8], w: u32, h: u32, amount: f32) -> Vec<u8> {
   out
 }
 
-/// Blur 3x3 (para unsharp mask).
-fn box_blur(rgb: &[u8], w: u32, h: u32, _radius: u32) -> Vec<u8> {
+/// Unsharp mask com raio configurável (clarity/texture).
+/// amount -100..100 (0 = neutro). radius em pixels do blur.
+fn unsharp_mask_radius(rgb: &[u8], w: u32, h: u32, amount: f32, radius: u32) -> Vec<u8> {
+  let blur = box_blur(rgb, w, h, radius);
+  let a = amount / 100.0;
+  let mut out = Vec::with_capacity(rgb.len());
+  for (i, px) in rgb.chunks_exact(3).enumerate() {
+    for c in 0..3 {
+      let orig = px[c] as f32;
+      let b = blur[i * 3 + c] as f32;
+      let sharp = orig + (orig - b) * a * 2.5;
+      out.push(sharp.clamp(0.0, 255.0) as u8);
+    }
+  }
+  out
+}
+
+/// Granulação (grain): ruído pseudoaleatório com magnitude proporcional à
+/// luminância local e ao valor -100..100. 0 = neutro.
+fn apply_grain(rgb: &[u8], w: u32, h: u32, amount: f32) -> Vec<u8> {
+  let a = (amount / 100.0).clamp(-1.0, 1.0);
+  if a == 0.0 {
+    return rgb.to_vec();
+  }
   let (wi, hi) = (w as i32, h as i32);
+  // Semente determinística (hash do índice) para não depender de RNG global.
+  let mut out = rgb.to_vec();
+  for y in 0..hi {
+    for x in 0..wi {
+      let idx = (y * wi + x) as usize;
+      for c in 0..3 {
+        let px = rgb[(idx * 3 + c) as usize] as f32;
+        let mut seed = (idx as u32).wrapping_mul(374761393).wrapping_add(c as u32 * 668265263);
+        seed = seed ^ (seed >> 13);
+        seed = seed.wrapping_mul(1274126177);
+        let noise = (seed >> 16) as f32 / 65535.0 - 0.5; // -0.5..0.5
+        // Grão mais visível em tons médios; luz/sombra puras menos.
+        let luma = 0.299 * (rgb[(idx * 3) as usize] as f32) + 0.587 * (rgb[(idx * 3 + 1) as usize] as f32) + 0.114 * (rgb[(idx * 3 + 2) as usize] as f32);
+        let mid = (1.0 - (luma - 128.0).abs() / 128.0).clamp(0.0, 1.0);
+        let delta = noise * a * 28.0 * (0.4 + mid * 0.6);
+        out[(idx * 3 + c) as usize] = (px + delta).clamp(0.0, 255.0) as u8;
+      }
+    }
+  }
+  out
+}
+
+/// Vinheta pós-corte: escurece (amount < 0) ou clareia (amount > 0) as bordas,
+/// com falloff suave da distância ao centro (0..1).
+fn apply_vignette(rgb: &[u8], w: u32, h: u32, amount: f32) -> Vec<u8> {
+  let a = (amount / 100.0).clamp(-1.0, 1.0);
+  if a == 0.0 {
+    return rgb.to_vec();
+  }
+  let (wi, hi) = (w as i32, h as i32);
+  let cx = wi as f32 / 2.0;
+  let cy = hi as f32 / 2.0;
+  let max_d = (cx * cx + cy * cy).sqrt().max(1.0);
+  let mut out = rgb.to_vec();
+  for y in 0..hi {
+    for x in 0..wi {
+      let dx = (x as f32 - cx) / (cx.max(1.0));
+      let dy = (y as f32 - cy) / (cy.max(1.0));
+      let d = ((dx * dx + dy * dy).sqrt() / max_d * (cx.max(1.0) * 1.414)).clamp(0.0, 1.0);
+      // Curva: cresce suavemente a partir de ~0.45 (distância ao centro).
+      let t = ((d - 0.35) / 0.65).clamp(0.0, 1.0);
+      let mult = 1.0 - a * t * t * 0.7;
+      let idx = (y * wi + x) as usize;
+      for c in 0..3 {
+        let px = rgb[idx * 3 + c] as f32;
+        out[idx * 3 + c] = (px * mult).clamp(0.0, 255.0) as u8;
+      }
+    }
+  }
+  out
+}
+
+/// Blur de caixa com raio configurável (para unsharp mask).
+fn box_blur(rgb: &[u8], w: u32, h: u32, radius: u32) -> Vec<u8> {
+  let (wi, hi) = (w as i32, h as i32);
+  let r = radius.max(1) as i32;
   let mut out = Vec::with_capacity(rgb.len());
   for y in 0..hi {
     for x in 0..wi {
       for c in 0..3 {
         let mut sum = 0f32;
         let mut n = 0f32;
-        for dy in -1i32..=1 {
-          for dx in -1i32..=1 {
+        for dy in -r..=r {
+          for dx in -r..=r {
             let (nx, ny) = (x + dx, y + dy);
             if nx >= 0 && nx < wi && ny >= 0 && ny < hi {
               sum += rgb[((ny * wi + nx) * 3 + c) as usize] as f32;

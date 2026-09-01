@@ -11,6 +11,7 @@ interface GalleryProps {
   anchorId: number | null
   onSelect: (id: number, opts: { extend: boolean; toggle: boolean }) => void
   onActivate: (id: number) => void
+  onPreview?: (id: number) => void
   onRate: (id: number, rating: number) => void
   mode?: 'import' | 'cull' | 'edit' | 'retouch'
 }
@@ -49,6 +50,7 @@ interface CellData {
   selectedIds: Set<number>
   onSelect: (id: number, opts: { extend: boolean; toggle: boolean }) => void
   onActivate: (id: number) => void
+  onPreview?: (id: number) => void
   onRate: (id: number, rating: number) => void
   labels: Record<number, string>
   onOpenLabelMenu: (id: number, x: number, y: number) => void
@@ -61,6 +63,7 @@ function Thumb({
   selected,
   onSelect,
   onActivate,
+  onPreview,
   onRate,
   colorLabel,
   onOpenLabelMenu,
@@ -71,6 +74,7 @@ function Thumb({
   selected: boolean
   onSelect: (id: number, opts: { extend: boolean; toggle: boolean }) => void
   onActivate: (id: number) => void
+  onPreview?: (id: number) => void
   onRate: (id: number, rating: number) => void
   colorLabel: string | undefined
   onOpenLabelMenu: (id: number, x: number, y: number) => void
@@ -79,6 +83,13 @@ function Thumb({
   const { t } = useT()
   const [src, setSrc] = useState<string | null>(() => getThumb(photo.id))
   const [failed, setFailed] = useState(false)
+  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (clickTimer.current) clearTimeout(clickTimer.current)
+    }
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -123,10 +134,21 @@ function Thumb({
       role="button"
       tabIndex={0}
       aria-label={`${label}${selected ? ', selecionada' : ''}. Enter abre.`}
-      onClick={(e) =>
+      onClick={(e) => {
         onSelect(photo.id, { extend: e.shiftKey, toggle: e.metaKey || e.ctrlKey })
-      }
-      onDoubleClick={() => onActivate(photo.id)}
+        if ((mode === 'import' || mode === 'cull') && onPreview) {
+          // 1 clique visualiza; 2 cliques edita. Aguarda para distinguir.
+          if (clickTimer.current) clearTimeout(clickTimer.current)
+          clickTimer.current = setTimeout(() => onPreview(photo.id), 250)
+        }
+      }}
+      onDoubleClick={() => {
+        if (clickTimer.current) {
+          clearTimeout(clickTimer.current)
+          clickTimer.current = null
+        }
+        onActivate(photo.id)
+      }}
       onKeyDown={(e) => {
         if (e.target !== e.currentTarget) return
         if (e.key === 'Enter' || e.key === ' ') {
@@ -209,6 +231,7 @@ function cellComponent({
   selectedIds,
   onSelect,
   onActivate,
+  onPreview,
   onRate,
   labels,
   onOpenLabelMenu,
@@ -223,6 +246,7 @@ function cellComponent({
   selectedIds: Set<number>
   onSelect: (id: number, opts: { extend: boolean; toggle: boolean }) => void
   onActivate: (id: number) => void
+  onPreview?: (id: number) => void
   onRate: (id: number, rating: number) => void
   labels: Record<number, string>
   onOpenLabelMenu: (id: number, x: number, y: number) => void
@@ -239,6 +263,7 @@ function cellComponent({
         selected={selectedIds.has(photo.id)}
         onSelect={onSelect}
         onActivate={onActivate}
+        onPreview={onPreview}
         onRate={onRate}
         colorLabel={labels[photo.id]}
         onOpenLabelMenu={onOpenLabelMenu}
@@ -255,6 +280,7 @@ export default function Gallery({
   anchorId,
   onSelect,
   onActivate,
+  onPreview,
   onRate,
   mode
 }: GalleryProps) {
@@ -300,6 +326,7 @@ export default function Gallery({
     selectedIds,
     onSelect,
     onActivate,
+    onPreview,
     onRate,
     labels,
     onOpenLabelMenu: (id, x, y) => setLabelMenu({ id, x, y }),
