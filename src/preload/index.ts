@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { PhotoListData, PhotoMeta, ScanResultData } from '../types/photo'
+import type { CodeFormerRunResult, CodeFormerSaveResult, CodeFormerSettings, CodeFormerStatus } from '../types/codeformer'
 
 export type { PhotoListData, PhotoMeta, ScanResultData }
 
@@ -126,6 +127,13 @@ const api = {
     ipcRenderer.invoke('app:cloudRestorePhoto', path, prompt, model),
   saveRestorationCache: (sourcePath: string, dataUrl: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('app:saveRestorationCache', sourcePath, dataUrl),
   loadRestorationCache: (items: Array<{ id: number; sourcePath: string }>): Promise<Record<number, string>> => ipcRenderer.invoke('app:loadRestorationCache', items),
+  // CodeFormer local (opt-in, subprocesso sem shell; ver docs/CODEFORMER.md)
+  getCodeFormerSettings: (): Promise<CodeFormerSettings> => ipcRenderer.invoke('app:getCodeFormerSettings'),
+  saveCodeFormerSettings: (next: Partial<CodeFormerSettings>): Promise<CodeFormerSaveResult> =>
+    ipcRenderer.invoke('app:saveCodeFormerSettings', next),
+  getCodeFormerStatus: (): Promise<CodeFormerStatus> => ipcRenderer.invoke('app:getCodeFormerStatus'),
+  codeFormerRestore: (sourcePath: string): Promise<CodeFormerRunResult> =>
+    ipcRenderer.invoke('app:codeFormerRestore', sourcePath),
   getOpenAiUsageReport: (): Promise<Array<Record<string, unknown>>> => ipcRenderer.invoke('app:getOpenAiUsageReport'),
   exportOpenAiUsageReport: (): Promise<{ ok: boolean; path?: string; error?: string }> =>
     ipcRenderer.invoke('app:exportOpenAiUsageReport'),

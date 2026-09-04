@@ -301,6 +301,37 @@ alinhamento. A tela mostra original/prévia e salva somente uma cópia JPEG por
 diálogo do Electron; o arquivo original nunca é sobrescrito. O modo local não
 faz chamada de rede nem usa chave externa.
 
+**CodeFormer local (opt-in, experimental).** Terceira via de restauração, ao
+lado das ferramentas locais e da IA online: restauração de rostos via
+CodeFormer executada por um **comando local do usuário** (ponte CLI), nunca
+pelo app. Regras de projeto (detalhes e setup em `docs/CODEFORMER.md`):
+
+- **Opt-in OFF por padrão**: `codeformer-settings.json` (`enabled: false`);
+  seção recolhida na bancada; nada roda sem ativação explícita.
+- **100% local/offline**: subprocesso criado **sem shell** (argv direto),
+  ambiente com `HF_HUB_OFFLINE=1`/`TRANSFORMERS_OFFLINE=1`; o app não faz
+  rede para esta funcionalidade e **não baixa pesos** — pesos oficiais
+  (licença NTU S-Lab do upstream) são fornecidos manualmente pelo usuário.
+- **Compatível com `OPENSHOOT_MODELS_DIR`**: pesos resolvem em
+  `settings.weightsDir` → `OPENSHOOT_CODEFORMER_WEIGHTS_DIR` →
+  `$OPENSHOOT_MODELS_DIR/codeformer`; comando em `settings.command` →
+  `OPENSHOOT_CODEFORMER_COMMAND`.
+- **Status explícito e acionável**: `disabled | ready | error` com mensagens
+  (comando ausente/não executável, pesos ausentes) e próximos passos; erros de
+  execução incluem exit code/stderr/timeout.
+- **Contrato CLI v1** (`docs/CODEFORMER.md`):
+  `<command> [extraArgs...] --input <file> --output-dir <dir> --fidelity-weight <0..1> [--weights-dir <dir>]`,
+  saída obrigatoriamente de **um** JPEG/PNG em `--output-dir`, validada por
+  magic bytes; entrada somente leitura; exit 0 em sucesso.
+- **Não-destrutivo**: job em diretório temporário (`0700`) sob
+  `userData/codeformer-jobs`, lido, validado e removido; resultado entra no
+  fluxo de cópias da bancada (sufixo numérico em colisão).
+- **Arquitetura**: serviço isolado em `src/main/codeformer.ts` (main process),
+  IPC `app:getCodeFormerSettings|saveCodeFormerSettings|getCodeFormerStatus|codeFormerRestore`,
+  tipos compartilhados em `src/types/codeformer.ts` (strict, sem `any`), UI
+  recolhida em `RestorerView`. Testes determinísticos sem pesos/GPU:
+  `npm run test:codeformer`.
+
 O modo de revelação ocupa a área principal com uma foto ampliada e um filmstrip
 horizontal do álbum na parte inferior. A roda do mouse sobre o filmstrip move a
 faixa lateralmente, e a foto ativa pode ser comparada lado a lado com a prévia

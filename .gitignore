@@ -16,6 +16,9 @@ release/
 # TypeScript
 *.tsbuildinfo
 
+# Testes TS compilados (npm run test:codeformer)
+tests/codeformer/out/
+
 # Core .node binaries (built locally per platform)
 core/*.node
 

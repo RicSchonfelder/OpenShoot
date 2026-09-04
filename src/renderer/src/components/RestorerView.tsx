@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PhotoMeta } from '../../../types/photo'
+import { CODEFORMER_FIDELITY_WEIGHTS } from '../../../types/codeformer'
+import type { CodeFormerFidelityChoice, CodeFormerSettings, CodeFormerStatus } from '../../../types/codeformer'
 import SettingsControl from './SettingsControl'
 import WorkspaceNav, { type WorkspaceSection } from './WorkspaceNav'
 
@@ -52,6 +54,11 @@ export default function RestorerView({ onBack, onNavigate, photoIds }: RestorerV
   const [keyConfigured, setKeyConfigured] = useState(false)
   const [editingKey, setEditingKey] = useState(false)
   const [panningViewport, setPanningViewport] = useState<'before' | 'after' | null>(null)
+  const [cfSettings, setCfSettings] = useState<CodeFormerSettings | null>(null)
+  const [cfStatus, setCfStatus] = useState<CodeFormerStatus | null>(null)
+  const [cfCommand, setCfCommand] = useState('')
+  const [cfWeightsDir, setCfWeightsDir] = useState('')
+  const [cfWeight, setCfWeight] = useState<CodeFormerFidelityChoice>(0.7)
   const beforeViewportRef = useRef<HTMLDivElement | null>(null)
   const afterViewportRef = useRef<HTMLDivElement | null>(null)
   const panStateRef = useRef<{ source: 'before' | 'after'; x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null)
@@ -93,6 +100,32 @@ export default function RestorerView({ onBack, onNavigate, photoIds }: RestorerV
   useEffect(() => {
     window.openshoot.hasOpenAiKey().then(setKeyConfigured).catch(() => setKeyConfigured(false))
   }, [])
+
+  useEffect(() => {
+    window.openshoot.getCodeFormerSettings().then((settings) => {
+      setCfSettings(settings)
+      setCfCommand(settings.command ?? '')
+      setCfWeightsDir(settings.weightsDir ?? '')
+      setCfWeight((CODEFORMER_FIDELITY_WEIGHTS as readonly number[]).includes(settings.fidelityWeight)
+        ? (settings.fidelityWeight as CodeFormerFidelityChoice)
+        : 0.7)
+      return window.openshoot.getCodeFormerStatus()
+    }).then(setCfStatus).catch(() => setCfStatus(null))
+  }, [])
+
+  const saveCodeFormerSettings = async (patch: Partial<CodeFormerSettings>) => {
+    try {
+      const result = await window.openshoot.saveCodeFormerSettings(patch)
+      if (result.ok && result.settings) {
+        setCfSettings(result.settings)
+        setCfStatus(await window.openshoot.getCodeFormerStatus())
+      } else {
+        setMessage(result.error ?? 'Não foi possível salvar as configurações do CodeFormer.')
+      }
+    } catch {
+      setMessage('Não foi possível salvar as configurações do CodeFormer.')
+    }
+  }
 
   useEffect(() => {
     setOriginal(null)
@@ -156,6 +189,39 @@ export default function RestorerView({ onBack, onNavigate, photoIds }: RestorerV
     setBusy(false)
     setProgress('')
     setMessage(failures ? `${completed - failures} foto(s) restaurada(s); ${failures} falha(s).` : `${completed} foto(s) restaurada(s) com as ferramentas locais.`)
+  }
+
+  const runCodeFormerRestore = async () => {
+    if (!selectedPhotos.length || !cfStatus || cfStatus.level !== 'ready' || busy) return
+    setBusy(true)
+    setMessage(null)
+    setProgress(`CodeFormer: processando 0/${selectedPhotos.length}`)
+    let completed = 0
+    let failures = 0
+    let firstError: string | null = null
+    for (const item of selectedPhotos) {
+      setStatuses((current) => ({ ...current, [item.id]: 'processing' }))
+      try {
+        const result = await window.openshoot.codeFormerRestore(item.path)
+        if (!result.ok) throw new Error(result.error)
+        setPreviews((current) => ({ ...current, [item.id]: result.dataUrl }))
+        await window.openshoot.saveRestorationCache(item.path, result.dataUrl)
+        setStatuses((current) => ({ ...current, [item.id]: 'done' }))
+      } catch (error) {
+        failures += 1
+        if (!firstError) firstError = error instanceof Error ? error.message : String(error)
+        setStatuses((current) => ({ ...current, [item.id]: 'error' }))
+      }
+      completed += 1
+      setProgress(`CodeFormer: processando ${completed}/${selectedPhotos.length}`)
+    }
+    setBusy(false)
+    setProgress('')
+    if (failures) {
+      setMessage(`CodeFormer: ${completed - failures} foto(s) restaurada(s); ${failures} falha(s). ${firstError ?? ''}`)
+    } else {
+      setMessage(`CodeFormer: ${completed} foto(s) restaurada(s) localmente (100% offline). O original permanece intocado.`)
+    }
   }
 
   const save = async () => {
@@ -476,6 +542,56 @@ Use structural references such as stage edges, table lines, walls, floors and ar
               Restaurar com IA online
             </button>
             <button className="ghost" onClick={exportUsageReport}>Exportar relatório de uso</button>
+            </div>
+          </details>
+          <details className="restorer-online" onToggle={(event) => { if ((event.target as HTMLDetailsElement).open && !cfStatus) { window.openshoot.getCodeFormerStatus().then(setCfStatus).catch(() => {}) } }}>
+            <summary>
+              <span>CodeFormer local (offline)</span>
+              <small>opt-in · desligado por padrão</small>
+            </summary>
+            <div className="restorer-online-content">
+              <p>Restauração de rostos com CodeFormer executada 100% na sua máquina por um comando local que você configura. O OpenShoot não baixa pesos nem código: você fornece o executável da ponte CLI e os pesos oficiais (licença NTU S-Lab do upstream). Consulte docs/CODEFORMER.md.</p>
+              <label className="restorer-check">
+                <input
+                  type="checkbox"
+                  checked={cfStatus?.enabled ?? false}
+                  onChange={(event) => saveCodeFormerSettings({ enabled: event.target.checked })}
+                />
+                Ativar integração CodeFormer (opt-in)
+              </label>
+              {cfStatus?.enabled && <>
+                <label className="restorer-field">Comando da ponte CLI (caminho absoluto)
+                  <input
+                    value={cfCommand}
+                    onChange={(event) => setCfCommand(event.target.value)}
+                    onBlur={() => { if ((cfSettings?.command ?? '') !== cfCommand.trim()) saveCodeFormerSettings({ command: cfCommand.trim() || null }) }}
+                    placeholder="/caminho/para/codeformer-bridge"
+                    disabled={busy}
+                  />
+                </label>
+                <label className="restorer-field">Pasta de pesos (.pth/.onnx)
+                  <input
+                    value={cfWeightsDir}
+                    onChange={(event) => setCfWeightsDir(event.target.value)}
+                    onBlur={() => { if ((cfSettings?.weightsDir ?? '') !== cfWeightsDir.trim()) saveCodeFormerSettings({ weightsDir: cfWeightsDir.trim() || null }) }}
+                    placeholder="vazio usa $OPENSHOOT_MODELS_DIR/codeformer"
+                    disabled={busy}
+                  />
+                </label>
+                <label className="restorer-field">Fidelidade (w) — menor = mais restauração
+                  <select value={cfWeight} onChange={(event) => { const next = Number(event.target.value) as CodeFormerFidelityChoice; setCfWeight(next); saveCodeFormerSettings({ fidelityWeight: next }) }} disabled={busy}>
+                    <option value={0.9}>0.9 · fidelidade alta (mudança mínima)</option>
+                    <option value={0.7}>0.7 · equilíbrio (padrão upstream)</option>
+                    <option value={0.5}>0.5 · restauração mais forte</option>
+                  </select>
+                </label>
+                {cfStatus.level === 'ready' && <p className="restorer-key-status">Pronto: comando e pesos encontrados. Execução local, sem rede.</p>}
+                {cfStatus.level === 'error' && cfStatus.errors.map((error) => <p className="restorer-cf-error" key={error}>{error}</p>)}
+                {cfStatus.level === 'error' && cfStatus.hints.map((hint) => <p className="restorer-hint" key={hint}>{hint}</p>)}
+                <button className="online-button" onClick={runCodeFormerRestore} disabled={cfStatus.level !== 'ready' || !selectedPhotos.length || busy}>
+                  {busy && progress ? progress : 'Restaurar com CodeFormer (local)'}
+                </button>
+              </>}
             </div>
           </details>
           <div className="restorer-output">

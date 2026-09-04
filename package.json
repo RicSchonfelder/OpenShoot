@@ -20,6 +20,7 @@
     "dist:win": "npm run build:core && electron-vite build && electron-builder --win",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "test": "cargo test --manifest-path core/Cargo.toml",
+    "test:codeformer": "tsc -p tests/codeformer/tsconfig.json && node --test tests/codeformer/out/tests/codeformer/codeformer.test.js",
     "lint": "eslint .",
     "smoke:core": "node scripts/smoke-core.mjs"
   },

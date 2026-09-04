@@ -1,6 +1,6 @@
 # OpenShoot — Roadmap de Ações Pendentes
 
-> **Atualizado:** 2026-08-25 · Fonte única de tarefas pendentes (consolida PARIDADE-FUNCIONAL.md e sessões anteriores).
+> **Atualizado:** 2026-09-04 · Fonte única de tarefas pendentes (consolida PARIDADE-FUNCIONAL.md e sessões anteriores).
 > **Estado geral:** paridade funcional com a referência ~completa. **P1 concluído** — app compila e roda em Windows (60 testes Rust, smoke test OK, culling IA via DirectML validado). Detalhes: docs/MULTIPLATAFORMA.md.
 > **Ambiente principal de desenvolvimento:** Windows 11 (`D:\Programas\OpenShoot`). O macOS foi desativado da rede.
 
@@ -96,6 +96,26 @@ Labels (Red/Yellow/Green/Blue/Purple) já existem com menu de contexto no grid (
 - [ ] Comparação lado-a-lado de fotos no loupe.
 - [ ] Tema claro (hoje só dark).
 - [ ] Mais idiomas no i18n (estrutura pt-BR/en já pronta).
+
+## 🟢 P9 — CodeFormer local (opt-in) — CONCLUÍDO 2026-09-04
+
+Restauração de rostos via CodeFormer executada por **ponte CLI local do
+usuário** (subprocesso sem shell, sem rede, opt-in OFF por padrão), integrada à
+bancada de restauração. Setup, contrato CLI, nomes de pesos, limitações e
+licença NTU S-Lab do upstream: `docs/CODEFORMER.md`.
+
+- [x] Serviço isolado no main (`src/main/codeformer.ts`): settings opt-in
+  (`codeformer-settings.json`), status acionável (`disabled|ready|error`),
+  runner com timeout/validação.
+- [x] Pesos compatíveis com `OPENSHOOT_MODELS_DIR` (fallback
+  `OPENSHOOT_CODEFORMER_WEIGHTS_DIR`); app nunca baixa pesos.
+- [x] Saída exclusiva validada (exatamente 1 JPEG/PNG, magic bytes); job em
+  diretório temporário removido ao final; originais jamais sobrescritos.
+- [x] IPC/preload/tipos strict (sem `any`) + seção opt-in em RestorerView.
+- [x] Testes determinísticos sem pesos/GPU/rede (`npm run test:codeformer`),
+  com ponte CLI simulada por scripts Node.
+- [ ] Fatia futura: inferência nativa ONNX do CodeFormer no core Rust (exige
+  pesos reais para validação; mantida fora por licença/opt-in).
 
 ---
 

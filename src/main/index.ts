@@ -1,9 +1,11 @@
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, safeStorage, shell } from 'electron'
 import { existsSync, readFileSync } from 'node:fs'
 import { appendFile, copyFile, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
 import { join, resolve } from 'node:path'
 import { loadCore, getCore } from './core'
+import { DEFAULT_CODEFORMER_SETTINGS, getCodeFormerStatus, parseCodeFormerSettings, runCodeFormerRestore } from './codeformer'
+import type { CodeFormerRunResult, CodeFormerSettings } from '../types/codeformer'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -389,6 +391,54 @@ app.whenReady().then(() => {
       await writeUsage({ ...baseRecord, completedAt: new Date().toISOString(), elapsedMs: Date.now() - startedAt, status: timedOut ? 'timeout_unknown' : 'network_error_unknown', usage: null, usageNote: 'não repetir automaticamente: a requisição pode ter sido recebida', error: safeError })
       return { ok: false, error: `Falha na restauração online: ${safeError}. Confira o cache e o relatório antes de tentar novamente.` }
     }
+  })
+
+  // ---- CodeFormer local (opt-in, OFF por padrão) ----
+  const codeFormerSettingsPath = () => join(app.getPath('userData'), 'codeformer-settings.json')
+  const codeFormerJobsRoot = () => join(app.getPath('userData'), 'codeformer-jobs')
+  let codeFormerSettings: CodeFormerSettings = { ...DEFAULT_CODEFORMER_SETTINGS }
+  try {
+    codeFormerSettings = parseCodeFormerSettings(JSON.parse(readFileSync(codeFormerSettingsPath(), 'utf8')))
+  } catch { /* primeira execução ou arquivo inválido: permanece desligado (padrão) */ }
+
+  ipcMain.handle('app:getCodeFormerSettings', () => codeFormerSettings)
+
+  ipcMain.handle('app:saveCodeFormerSettings', async (_event, next: unknown) => {
+    const patch = typeof next === 'object' && next !== null ? (next as Record<string, unknown>) : {}
+    const merged = parseCodeFormerSettings({ ...codeFormerSettings, ...patch })
+    try {
+      const temp = `${codeFormerSettingsPath()}.${process.pid}.tmp`
+      await writeFile(temp, JSON.stringify(merged, null, 2), { encoding: 'utf8', mode: 0o600 })
+      await rename(temp, codeFormerSettingsPath())
+      codeFormerSettings = merged
+      return { ok: true, settings: merged }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle('app:getCodeFormerStatus', () => getCodeFormerStatus(codeFormerSettings, process.env))
+
+  ipcMain.handle('app:codeFormerRestore', async (_event, sourcePath: string): Promise<CodeFormerRunResult> => {
+    const result = await runCodeFormerRestore({
+      settings: codeFormerSettings,
+      env: process.env,
+      sourcePath,
+      jobsRoot: codeFormerJobsRoot()
+    })
+    if (result.ok && result.mime === 'image/png') {
+      // Normaliza para JPEG (contrato dos fluxos de salvamento/cachê é .jpg).
+      try {
+        const decoded = nativeImage.createFromBuffer(Buffer.from(result.dataUrl.slice(result.dataUrl.indexOf(',') + 1), 'base64'))
+        if (!decoded.isEmpty()) {
+          const jpeg = decoded.toJPEG(92)
+          if (jpeg.length) {
+            return { ok: true, dataUrl: `data:image/jpeg;base64,${jpeg.toString('base64')}`, mime: 'image/jpeg', bytes: jpeg.length, outputName: result.outputName }
+          }
+        }
+      } catch { /* mantém o PNG original se a conversão falhar */ }
+    }
+    return result
   })
 
   ipcMain.handle('app:getOpenAiUsageReport', async () => {
