@@ -12,6 +12,7 @@ export interface PhotoMeta {
   hasXmp: boolean
   previewAvailable: boolean
   cullScore: number | null
+  eyesScore: number | null
   hash: string
   hasFace: boolean
   review: boolean

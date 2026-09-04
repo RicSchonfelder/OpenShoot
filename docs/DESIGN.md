@@ -210,6 +210,19 @@ completo continua sendo o escopo padrão.
 O culling e os contadores do painel também recebem esse escopo. Assim, as
 quantidades e as marcações de seleção não misturam fotos de outros álbuns.
 
+#### Aviso de olhos fechados
+
+O culling reaproveita a detecção SCRFD com cinco keypoints (`bnkps`) para
+calcular um `eyes_score` local por foto, como uma análise composta de detecção
+e landmarks. A implementação segue a ideia de API unificada observada no
+UniFace, mas permanece nativa em Rust/ONNX: não adiciona runtime Python, não
+baixa modelos automaticamente e não abre uma segunda sessão de detecção.
+
+O score médio dos rostos é persistido em `photos.eyes_score`; `-1` significa
+que não houve análise facial válida. Fotos com score abaixo de `0.40` entram no
+filtro `eyes_warning` e também no bucket de revisão. O resultado é indicativo,
+não uma classificação biométrica definitiva, e deve ser validado visualmente.
+
 #### Reconhecimento de pessoas — Fase 1 (persistência local)
 
 O agrupamento facial agora persiste resultados em tabelas SQLite locais:

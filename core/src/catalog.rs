@@ -353,10 +353,11 @@ fn row_to_photo(row: &rusqlite::Row) -> rusqlite::Result<PhotoMeta> {
     has_xmp: row.get::<_, i64>(10).unwrap_or(0) != 0,
     preview_available: row.get::<_, i64>(11).unwrap_or(0) != 0,
     cull_score: row.get(12).unwrap_or(None),
-    hash: row.get::<_, String>(13).unwrap_or_default(),
-    has_face: row.get::<_, i64>(14).unwrap_or(0) != 0,
-    review: row.get::<_, i64>(15).unwrap_or(0) != 0,
-    ai_pick: row.get::<_, i64>(16).unwrap_or(0) != 0,
+    eyes_score: row.get::<_, Option<f64>>(13).unwrap_or(None),
+    hash: row.get::<_, String>(14).unwrap_or_default(),
+    has_face: row.get::<_, i64>(15).unwrap_or(0) != 0,
+    review: row.get::<_, i64>(16).unwrap_or(0) != 0,
+    ai_pick: row.get::<_, i64>(17).unwrap_or(0) != 0,
   })
 }
 
@@ -399,6 +400,9 @@ pub fn list_photos(
     }
     "faces" => {
       conds.push("has_face = 1".to_string());
+    }
+    "eyes_warning" => {
+      conds.push("eyes_score >= 0 AND eyes_score < 0.40".to_string());
     }
     "review" => {
       conds.push("review = 1".to_string());
@@ -455,7 +459,7 @@ pub fn list_photos(
 
   // SELECT com paginação. Parâmetros de busca/filtro vêm antes de LIMIT/OFFSET.
   let list_sql = format!(
-  "SELECT id, path, file_name, ext, file_size, width, height, camera, taken_at, rating, has_xmp, preview_available, cull_score, sha256, has_face, review, ai_pick
+  "SELECT id, path, file_name, ext, file_size, width, height, camera, taken_at, rating, has_xmp, preview_available, cull_score, eyes_score, sha256, has_face, review, ai_pick
    FROM photos {} ORDER BY rating DESC, cull_score DESC, id DESC LIMIT ? OFFSET ?",
   where_clause
   );
@@ -479,7 +483,7 @@ pub fn get_photo(id: i64) -> Result<Option<PhotoMeta>, String> {
   let conn = open()?;
   conn
   .query_row(
-    "SELECT id, path, file_name, ext, file_size, width, height, camera, taken_at, rating, has_xmp, preview_available, cull_score, sha256, has_face, review, ai_pick
+    "SELECT id, path, file_name, ext, file_size, width, height, camera, taken_at, rating, has_xmp, preview_available, cull_score, eyes_score, sha256, has_face, review, ai_pick
      FROM photos WHERE id=?1",
     [id],
     row_to_photo,

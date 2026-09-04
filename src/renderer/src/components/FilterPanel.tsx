@@ -12,6 +12,7 @@ export type FilterKey =
   | 'selecionado'
   | 'duplicates'
   | 'faces'
+  | 'eyes_warning'
   | 'edited'
 
 interface FilterPanelProps {
@@ -30,6 +31,7 @@ interface Counts {
   selecionado: number
   duplicates: number
   faces: number
+  eyes_warning: number
   edited: number
 }
 
@@ -68,6 +70,7 @@ export default function FilterPanel({ active, onSelect, photoIds }: FilterPanelP
     { key: 'selecionado', label: t('app.selecionado'), icon: '✔', count: counts?.selecionado ?? '—' },
     { key: 'duplicates', label: t('app.duplicatas'), icon: '⧉', count: counts?.duplicates ?? '—' },
     { key: 'faces', label: t('app.comRosto'), icon: '◉', count: counts?.faces ?? '—' },
+    { key: 'eyes_warning', label: t('app.olhosFechados'), icon: '◌', count: counts?.eyes_warning ?? '—' },
     { key: 'edited', label: t('app.editadas'), icon: '✎', count: counts?.edited ?? '—' }
   ]
 
@@ -114,6 +117,7 @@ function buildCounts(photos: PhotoMeta[]): Counts {
     selecionado: photos.filter((photo) => photo.rating >= 4 && !photo.aiPick).length,
     duplicates: photos.filter((photo) => duplicateHashes.has(photo.hash)).length,
     faces: photos.filter((photo) => photo.hasFace).length,
+    eyes_warning: photos.filter((photo) => photo.eyesScore != null && photo.eyesScore >= 0 && photo.eyesScore < 0.40).length,
     edited: photos.filter((photo) => photo.hasXmp).length
   }
 }

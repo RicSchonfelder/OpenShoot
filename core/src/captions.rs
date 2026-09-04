@@ -116,6 +116,7 @@ mod tests {
       has_xmp: false,
       preview_available: true,
       cull_score: Some(50.0),
+      eyes_score: None,
       hash: String::new(),
       has_face: false,
       review: false,

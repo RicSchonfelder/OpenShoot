@@ -46,14 +46,14 @@ Benchmark completo e método de reprodução: `docs/TESTES/METRICAS-BASELINE.md`
   (2026-08-25)**: sem `target_picks`, picks = fotos com ★4+ (mesma regra do filtro
   da UI), não mais limiar fixo score≥70. Validado: 8 picks em 20 fotos (top 40%).
 
-## 🔴 P2 — Olhos fechados integrado ao culling (PRÓXIMA)
+## 🔴 P2 — Olhos fechados integrado ao culling
 
 As funções existem (`core/src/ml.rs`: `detect_faces_with_kps`, `eyes_open_score`) mas **não estão no fluxo**:
 
-- [ ] `cull_photos` (lib.rs): durante o culling, calcular `eyes_score` das fotos com rosto e persistir (coluna `eyes_score` já migrada pelo agent-02).
-- [ ] Filtros "Com aviso / Sem aviso" no dropdown Outros (avisos: olhos fechados, foto tremida).
+- [x] `cull_photos` (lib.rs): durante o culling, calcular `eyes_score` das fotos com rosto e persistir (SCRFD bnkps, mesma abordagem de keypoints usada pelo UniFace).
+- [x] Filtro "Olhos fechados" no painel de filtros (fotos sem análise não entram no resultado).
 - [ ] Badge/ícone de olho fechado no grid e no loupe.
-- [ ] i18n das novas chaves.
+- [x] i18n das novas chaves.
 
 ## 🟡 P3 — Filtros por cor de label
 

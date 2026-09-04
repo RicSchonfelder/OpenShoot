@@ -623,6 +623,13 @@ pub struct CullSummary {
   pub picks: i64,
   pub review: i64,
 }
+
+/// Considera aviso apenas quando houve análise facial válida. O valor -1 é o
+/// sentinel persistido para fotos sem rosto ou sem keypoints utilizáveis.
+fn eyes_warning(score: Option<f64>) -> bool {
+  score.is_some_and(|value| (0.0..0.40).contains(&value))
+}
+
 #[napi]
 pub async fn cull_photos(
   target_picks: Option<i64>,
@@ -643,10 +650,10 @@ pub async fn cull_photos(
     crate::catalog::log_debug("[cull] ML indisponivel, usando heuristica apenas");
   }
 
-  let results: Vec<(i64, bool, std::result::Result<f64, String>)> = paths
+  let results: Vec<(i64, bool, Option<f64>, std::result::Result<f64, String>)> = paths
     .into_par_iter()
     .map(
-      |p: catalog::PhotoPath| -> (i64, bool, std::result::Result<f64, String>) {
+      |p: catalog::PhotoPath| -> (i64, bool, Option<f64>, std::result::Result<f64, String>) {
         let path = PathBuf::from(&p.path);
         // Decode ÚNICO em 640px, reusado por faces + NIMA + heurística (gap G3:
         // antes decodificava 3× por foto — 2,5s/foto no benchmark de 459 fotos).
@@ -656,12 +663,33 @@ pub async fn cull_photos(
           None
         };
 
-        // Detecção de rosto (SCRFD) para preencher has_face (usado no filtro "faces").
-        let has_face = match &decoded {
-          Some((rgb, w, h)) => ml::detect_faces(rgb, *w, *h, 0.5)
-            .map(|faces| !faces.is_empty())
-            .unwrap_or(false),
-          None => false,
+        // UniFace segue o mesmo princípio de análise composta: detecção e
+        // keypoints numa única passagem. Reaproveitamos o SCRFD bnkps já
+        // empacotado no OpenShoot para produzir o aviso de olhos fechados.
+        let (has_face, eyes_score) = match &decoded {
+          Some((rgb, w, h)) => match ml::detect_faces_with_kps(rgb, *w, *h, 0.5) {
+            Ok(faces) => {
+              let scores: Vec<f32> = faces
+                .iter()
+                .filter_map(|face| {
+                  let kps: [[f32; 2]; 5] = face
+                    .kps
+                    .iter()
+                    .map(|point| Some([*point.first()? as f32, *point.get(1)? as f32]))
+                    .collect::<Option<Vec<_>>>()?
+                    .try_into()
+                    .ok()?;
+                  Some(ml::eyes_open_score(kps, rgb, *w, *h))
+                })
+                .collect();
+              let score = (!scores.is_empty())
+                .then(|| scores.iter().sum::<f32>() / scores.len() as f32)
+                .map(f64::from);
+              (!faces.is_empty(), score)
+            }
+            Err(_) => (false, None),
+          },
+          None => (false, None),
         };
         let score = if ml_ok {
           // IA: heurística + ML combinados
@@ -689,7 +717,7 @@ pub async fn cull_photos(
         } else {
           culling::heuristic_score(&path, 320)
         };
-        (p.id, has_face, score)
+        (p.id, has_face, eyes_score, score)
       },
     )
     .collect();
@@ -698,10 +726,17 @@ pub async fn cull_photos(
   let mut errors = 0;
   let mut sum = 0.0;
   let mut scores: Vec<(i64, f64)> = Vec::new();
-  for (id, has_face, r) in results {
+  let mut eye_warning_ids = std::collections::HashSet::new();
+  for (id, has_face, eyes_score, r) in results {
     // Persiste has_face independentemente do score.
     if let Err(e) = catalog::set_photo_has_face(id, has_face) {
       crate::catalog::log_debug(&format!("falha ao salvar has_face {}: {e}", id));
+    }
+    if let Err(e) = catalog::set_photo_eyes(id, eyes_score.unwrap_or(-1.0)) {
+      crate::catalog::log_debug(&format!("falha ao salvar eyes_score {}: {e}", id));
+    }
+    if eyes_warning(eyes_score) {
+      eye_warning_ids.insert(id);
     }
     match r {
       Ok(s) => {
@@ -778,7 +813,7 @@ pub async fn cull_photos(
   // picks, nem rejeições claras. Marcadas na coluna `review` para filtro na UI.
   let mut review = 0i64;
   for (id, s) in &scores {
-    let ambiguous = *s >= 55.0 && *s < 70.0;
+    let ambiguous = (*s >= 55.0 && *s < 70.0) || eye_warning_ids.contains(id);
     if let Err(e) = catalog::set_photo_review(*id, ambiguous) {
       crate::catalog::log_debug(&format!("falha ao salvar review {}: {e}", id));
     }
@@ -2481,5 +2516,16 @@ mod labels_tests {
       }
     }
     panic!("roundtrip de labels falhou após 8 tentativas: {last}");
+  }
+}
+
+#[cfg(test)]
+mod eyes_culling_tests {
+  #[test]
+  fn flags_only_analyzed_faces_below_open_eyes_threshold() {
+    assert!(super::eyes_warning(Some(0.39)));
+    assert!(!super::eyes_warning(Some(0.40)));
+    assert!(!super::eyes_warning(None));
+    assert!(!super::eyes_warning(Some(-1.0)));
   }
 }
