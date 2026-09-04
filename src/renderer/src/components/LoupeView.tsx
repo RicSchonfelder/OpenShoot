@@ -293,6 +293,7 @@ export default function LoupeView({
     pick: photo.rating >= 4,
     reject: photo.rating >= 1 && photo.rating <= 2
   }
+  const eyesWarning = photo.eyesScore != null && photo.eyesScore >= 0 && photo.eyesScore < 0.40
 
   const showImg = preview ?? src
 
@@ -306,6 +307,11 @@ export default function LoupeView({
           <div className="loupe-flags">
           <span className={`flag flag-pick ${flags.pick ? 'on' : ''}`}>P</span>
           <span className={`flag flag-reject ${flags.reject ? 'on' : ''}`}>X</span>
+          {eyesWarning && (
+            <span className="loupe-eyes-warning" title={t('app.olhosFechados')}>
+              ◌ {t('app.olhosFechados')}
+            </span>
+          )}
           <div className="loupe-stars" role="radiogroup" aria-label={t('gallery.starRating')}>
             {[1, 2, 3, 4, 5].map((star) => (
               <button

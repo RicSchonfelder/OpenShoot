@@ -395,7 +395,7 @@ comparação deslizante, com fallback para a foto original quando não há ediç
 - [ ] Grid/Loupe na UI com virtualização
 
 ### Fase 2 — Culling (MVP de IA)
-- [ ] Detecção de faces (SCRFD) + olhos fechados/nitidez de rosto
+- [x] Detecção de faces (SCRFD) + olhos fechados; [ ] nitidez de rosto
 - [ ] Score: nitidez global (Laplacian) + composição + qualidade (NIMA)
 - [ ] Ranqueamento + Picks/Rejects com XMP rating/label
 - [ ] Agrupamento de duplicatas por embedding CLIP

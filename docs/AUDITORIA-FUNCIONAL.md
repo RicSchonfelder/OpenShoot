@@ -228,7 +228,7 @@ Contém **image strip** (várias fotos p/ comparar o ajuste) + seções com slid
 | 4 | **Estrelas por foto** | ★1-5 clicável em cada célula | flag P/X + score | Adicionar classificação ★1-5 por foto no grid |
 | 5 | **Culling: meta de quantidade** | pergunta "quantas fotos selecionar" | culla tudo | Adicionar meta de nº de picks |
 | 6 | **Culling: duplicados** | agrupa conjuntos de duplicatas + filtro "Com/Sem duplicatas" | não agrupa | Embedding + agrupamento de duplicatas/semelhantes |
-| 7 | **Culling: olhos fechados** | detecta olhos fechados + avisos (Com aviso/Sem aviso) | não detecta | Detecção de olhos (SCRFD/landmarks) + flag de aviso |
+| 7 | **Culling: olhos fechados** | detecta olhos fechados + avisos (Com aviso/Sem aviso) | Implementado após a auditoria: `eyes_score`, filtro e indicadores | Manter validação visual e calibrar limiar com fotos reais |
 | 8 | **Edição tonal** | curva de tom + HSL (8 cores) + nitidez + ruído | 8 sliders básicos | Expandir: curva, HSL, nitidez, redução de ruído |
 | 9 | **Recorte / horizonte / máscara IA** | recorte por IA (suave/padrão), ajuste de horizonte, máscara de IA | não tem | Roadmap: crop com IA, endireitar horizonte |
 | 10 | **Retoque facial** | acne, rugas, dentes, olhos, cabelo, corpo | suavização de pele + remover distração (bbox central fixa) | Detecção de rosto + **seleção por arrasto no patch** + sliders faciais |

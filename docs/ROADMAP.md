@@ -48,7 +48,7 @@ Benchmark completo e método de reprodução: `docs/TESTES/METRICAS-BASELINE.md`
 
 ## 🔴 P2 — Olhos fechados integrado ao culling
 
-As funções existem (`core/src/ml.rs`: `detect_faces_with_kps`, `eyes_open_score`) mas **não estão no fluxo**:
+As funções existem (`core/src/ml.rs`: `detect_faces_with_kps`, `eyes_open_score`) e já estão integradas parcialmente ao fluxo:
 
 - [x] `cull_photos` (lib.rs): durante o culling, calcular `eyes_score` das fotos com rosto e persistir (SCRFD bnkps, mesma abordagem de keypoints usada pelo UniFace).
 - [x] Filtro "Olhos fechados" no painel de filtros (fotos sem análise não entram no resultado).

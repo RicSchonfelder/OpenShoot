@@ -488,6 +488,23 @@ button.ghost {
   font-size: 12px;
 }
 
+.cell-eyes-warning {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--danger, #c2414b);
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .cell-meta {
   padding: 6px 4px;
   overflow: hidden;
@@ -986,6 +1003,16 @@ button.danger {
   font-size: 14px;
   color: var(--warning);
   font-weight: 700;
+}
+
+.loupe-eyes-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--danger, #f87171);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .loupe-stars {

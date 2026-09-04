@@ -125,6 +125,7 @@ function Thumb({
 
   const isPick = photo.rating >= 4
   const isReject = photo.rating >= 1 && photo.rating <= 2
+  const eyesWarning = photo.eyesScore != null && photo.eyesScore >= 0 && photo.eyesScore < 0.40
 
   return (
     <div
@@ -184,6 +185,11 @@ function Thumb({
         )}
         {photo.cullScore != null && (
           <span className="cell-score">{Math.round(photo.cullScore)}</span>
+        )}
+        {eyesWarning && (
+          <span className="cell-eyes-warning" title={t('app.olhosFechados')} aria-label={t('app.olhosFechados')}>
+            ◌
+          </span>
         )}
         {selected && <span className="cell-check">✓</span>}
         {mode !== 'import' && (

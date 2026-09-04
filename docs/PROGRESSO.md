@@ -4,7 +4,7 @@
 > possíveis pontos de retomada caso o ambiente/agente reinicie.
 > **Ações pendentes:** ver `docs/ROADMAP.md` (fonte única de tarefas).
 
-**Última atualização:** 2026-08-24 (portabilidade Linux)
+**Última atualização:** 2026-09-04 (CodeFormer opt-in + olhos fechados no culling)
 
 ## Estado atual
 
@@ -47,9 +47,9 @@ Dois trabalhos paralelos integrados: **Linux** (agente ox-alpha,
   orientação EXIF, resolução nativa, sufixo de conflito, **paralela (rayon)**,
   espaço de cor (sRGB / P3 aproximado), templates de nomeação.
 - **Reconhecimento facial** ✅ — MobileFaceNet embeddings + agrupamento por
-  similaridade + **UI Pessoas** (agrupar/exportar pastas por pessoa) + olhos
-  fechados (funções `detect_faces_with_kps`/`eyes_open_score` — integração ao
-  culling pendente, ver ROADMAP P2).
+  similaridade + **UI Pessoas** (agrupar/exportar pastas por pessoa). O culling
+  também persiste `eyes_score`, marca fotos abaixo de 0.40 para revisão e expõe
+  o filtro/indicador de olhos fechados.
 - **Extras** ✅ — Labels de cor com menu de contexto, zoom Fit/100% no loupe,
   galeria web estática exportável, modo edição em tela grande, orientação EXIF,
   i18n pt-BR/en, CI GitHub Actions, README/THIRD_PARTY.
@@ -111,10 +111,9 @@ paralela, labels de cor — integrados e validados (commit `c77a57d`).
 
 ## Próximos passos
 Ver **`docs/ROADMAP.md`** (fonte única, priorizado). Resumo:
-1. 🔴 P1 — Portabilidade Windows/Linux (EP de IA, caminhos, lixeira, electron-builder, CI matriz).
-2. 🔴 P2 — Olhos fechados integrado ao culling + filtros de aviso.
-3. 🟡 P3-P5 — Filtros por cor, refinamentos de exportação, assinatura/auto-update.
-4. 🟢 P6-P8 — E2E, OpenRouter opt-in, polimento de UX.
+1. 🔴 P1/P1.5 — ARM Linux, CI Windows, importação lenta e validação de release.
+2. 🟡 P3-P5 — Filtros por cor, refinamentos de exportação e release workflow.
+3. 🟢 P6-P8 — E2E, OpenRouter opt-in e polimento de UX.
 
 ## Como retomar (recuperação de crash)
 1. `cd ~/OpenShoot`

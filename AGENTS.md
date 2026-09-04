@@ -60,4 +60,5 @@ Caminhos de cache/lixeira são multiplataforma (`dirs::cache_dir()`, XDG Trash).
 Fases 0–6 concluídas (catálogo, culling IA, edição, retoque, álbuns, export,
 reconhecimento facial) + **portabilidade Linux concluída** (2026-08-24, ver
 `docs/AUDITORIA-LINUX.md`). Pendências priorizadas em `docs/ROADMAP.md`:
-P2 olhos fechados no culling; Windows DirectML/Recycle Bin; release workflow.
+badge de olhos fechados no grid/loupe, ARM Linux, release workflow, exportação,
+E2E e polimento de UX. DirectML e Recycle Bin estão concluídos.
