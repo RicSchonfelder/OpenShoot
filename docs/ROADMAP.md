@@ -20,7 +20,7 @@
 - [x] **Lixeira nativa**: crate `trash` (Recycle Bin / Finder / freedesktop) — corrige também `fs::rename` entre volumes.
 - [x] **models_dir() em runtime**: `OPENSHOOT_MODELS_DIR` (main process) → dev → busca por ancestrais do exe; `asarUnpack: core/models/**`.
 - [x] **electron-builder.yml**: NSIS (win) + AppImage/**deb** (linux) + scripts `dist:linux`/`dist:win`/`smoke:core`.
-- [x] **CI com matriz**: `cargo test` em macos+ubuntu+windows (+ deps Linux); typecheck; clippy ubuntu. *(pendente: upload de instaladores — P5)*
+- [x] **CI com matriz**: `cargo test` em macos+ubuntu+windows (+ deps Linux); typecheck; clippy ubuntu. *(upload de instaladores permanece no P5)*
 - [ ] Testar build do core nos 3 targets napi: `x86_64-pc-windows-msvc` ✓ (agente Windows) · `x86_64-unknown-linux-gnu` ✓ (agente Linux) · `aarch64-unknown-linux-gnu` ⬜ pendente.
 
 ## 🔴 P1.5 — Performance (gaps medidos com 459 fotos reais)
@@ -75,8 +75,9 @@ Labels (Red/Yellow/Green/Blue/Purple) já existem com menu de contexto no grid (
 
 - [ ] **Assinatura + notarização macOS** (Apple Developer ID) para instalar sem avisos de Gatekeeper.
 - [ ] **Auto-update** (electron-updater) com feed de releases do GitHub.
-- [ ] Release workflow: tag → build 3 plataformas → anexar instaladores na GitHub Release.
-- [x] `npm run dist:win` script (dist:linux ainda pendente).
+- [x] Release workflow criado em `.github/workflows/release.yml`: tag → validação → build 3 plataformas → anexar instaladores na GitHub Release.
+- [ ] Executar uma release de teste com uma tag, confirmar os três artefatos e registrar o readback da GitHub Release.
+- [x] Scripts `npm run dist:linux` e `npm run dist:win`; build Linux validado em auditoria.
 
 ## 🟢 P6 — Qualidade & testes
 
