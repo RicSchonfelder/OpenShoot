@@ -52,8 +52,9 @@ As funções existem (`core/src/ml.rs`: `detect_faces_with_kps`, `eyes_open_scor
 
 - [x] `cull_photos` (lib.rs): durante o culling, calcular `eyes_score` das fotos com rosto e persistir (SCRFD bnkps, mesma abordagem de keypoints usada pelo UniFace).
 - [x] Filtro "Olhos fechados" no painel de filtros (fotos sem análise não entram no resultado).
-- [ ] Badge/ícone de olho fechado no grid e no loupe.
+- [x] Badge/ícone de olho fechado no grid e no loupe.
 - [x] i18n das novas chaves.
+- [ ] Validação E2E com fotos reais e calibração do limiar (bloqueada neste host pelo addon ORT incompatível e pela ausência de fixture facial; evidência em `docs/TESTES/rodadas/2026-09-04-olhos-fechados.md`).
 
 ## 🟡 P3 — Filtros por cor de label
 
