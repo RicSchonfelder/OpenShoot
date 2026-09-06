@@ -53,13 +53,13 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            command: npm run dist:linux
+            command: npm run dist:linux -- --publish never
             artifact: linux
           - os: windows-latest
-            command: npm run dist:win
+            command: npm run dist:win -- --publish never
             artifact: windows
           - os: macos-latest
-            command: npm run dist:mac
+            command: npm run dist:mac -- --publish never
             artifact: macos
     runs-on: ${{ matrix.os }}
     steps:
