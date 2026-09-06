@@ -103,11 +103,9 @@ paralela, labels de cor — integrados e validados (commit `c77a57d`).
   `GROUP BY HAVING COUNT(*) > 1` + NAPI `findDuplicates()`; filtro "faces" usa
   coluna `has_face` populada no culling (SCRFD).
 
-## Auditoria referência externa (2026-08-18/20)
-- Documento de referência: `docs/AUDITORIA-referência externa.md` (mapa completo + gap
-  analysis com 15 itens priorizados). Implementados até agora:
-  ★1-5 por foto, filtros avançados (dropdown), detecção de duplicatas, loupe,
-  flags, i18n, toolbar de culling.
+## Histórico de auditoria externa
+- O documento histórico de referência não faz parte deste clone. O estado atual e as pendências verificáveis estão em `docs/ROADMAP.md` e `docs/AUDITORIA-FUNCIONAL.md`.
+- Implementados até agora: ★1-5 por foto, filtros avançados, detecção de duplicatas, loupe, flags, i18n e toolbar de culling.
 
 ## Próximos passos
 Ver **`docs/ROADMAP.md`** (fonte única, priorizado). Resumo:

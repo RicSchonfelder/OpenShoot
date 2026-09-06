@@ -3,7 +3,7 @@
 > **Objetivo:** deixar o OpenShoot com o mesmo conjunto de features/UX da referência externa
 > (v2.21.4, auditado em 2026-08-18/20). Cada item = feature da referência externa → plano de
 > implementação no OpenShoot, com prioridade e esforço.
-> **Fonte:** `docs/AUDITORIA-referência externa.md` (mapa completo + gap analysis).
+> **Fonte histórica:** o documento externo original não é distribuído neste clone. Para o estado atual, consulte [`docs/ROADMAP.md`](ROADMAP.md) e [`docs/AUDITORIA-FUNCIONAL.md`](AUDITORIA-FUNCIONAL.md).
 > **Atualizado:** 2026-08-21
 
 **Legenda de status:** ✅ feito · 🟡 em andamento · ⬜ pendente

@@ -252,4 +252,5 @@ Contém **image strip** (várias fotos p/ comparar o ajuste) + seções com slid
 - UI: `src/renderer/src/App.tsx`, `components/Gallery.tsx`, `components/EditPanel.tsx`,
   `components/LoupeView.tsx`.
 - Core (Rust): `core/src/` — `catalog.rs`, `lib.rs`, `culling.rs`, `xmp.rs`, `imageproc.rs`, `cr3.rs`.
-- Docs: `docs/DESIGN.md`, `docs/PROGRESSO.md`, `docs/SESSAO.md`.
+- Docs públicos: `docs/DESIGN.md`, `docs/PROGRESSO.md`, `docs/ROADMAP.md` e `docs/TESTES/`.
+- Histórico operacional local: `docs-local/SESSAO.md` (não é enviado ao GitHub).

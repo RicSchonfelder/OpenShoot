@@ -33,3 +33,6 @@ core/*.node
 # Editor
 .vscode/
 .idea/
+
+# Local-only operational notes
+docs-local/
