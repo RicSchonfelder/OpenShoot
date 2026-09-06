@@ -76,7 +76,7 @@ Labels (Red/Yellow/Green/Blue/Purple) já existem com menu de contexto no grid (
 - [ ] **Assinatura + notarização macOS** (Apple Developer ID) para instalar sem avisos de Gatekeeper.
 - [ ] **Auto-update** (electron-updater) com feed de releases do GitHub.
 - [x] Release workflow criado em `.github/workflows/release.yml`: tag → validação → build 3 plataformas → anexar instaladores na GitHub Release.
-- [ ] Executar uma release de teste com uma tag, confirmar os três artefatos e registrar o readback da GitHub Release.
+- [x] Executar release de teste com a tag `v0.1.0`: workflow `34043305194` verde e artefatos publicados em https://github.com/RicSchonfelder/OpenShoot/releases/tag/v0.1.0.
 - [x] Scripts `npm run dist:linux` e `npm run dist:win`; build Linux validado em auditoria.
 
 ## 🟢 P6 — Qualidade & testes
