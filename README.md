@@ -1,26 +1,39 @@
 # OpenShoot 📸
 
-[![CI](https://github.com/RicSchonfelder/OpenShoot/actions/workflows/ci.yml/badge.svg)](https://github.com/RicSchonfelder/OpenShoot/blob/main/.github/workflows/ci.yml)
+[![CI](https://github.com/RicSchonfelder/OpenShoot/actions/workflows/ci.yml/badge.svg)](https://github.com/RicSchonfelder/OpenShoot/actions/workflows/ci.yml) [![Latest Release](https://img.shields.io/github/v/release/RicSchonfelder/OpenShoot)](https://github.com/RicSchonfelder/OpenShoot/releases/latest)
 
-> **Open-source AI photo culling, editing & retouching — 100% local & offline**
+**Languages:** [English](README.md) · [Português (Brasil)](README.pt-BR.md) · [Español](README.es.md) · [简体中文](README.zh-CN.md)
 
-OpenShoot is a desktop app for photographers that automates post-processing with
-AI models running **entirely on your machine**. No cloud. No uploads. No
-subscriptions. Your pixels never leave your computer.
+> **AI photo culling, editing and retouching for photographers — local-first and offline by default.**
+
+OpenShoot is a desktop app for photographers. Its core photo analysis runs on the user's computer by default, with optional network features kept separate and opt-in. Originals are preserved and editing metadata can be written to XMP sidecars.
+
+## Download
+
+Choose your operating system from the latest GitHub Release:
+
+| Operating system | Download |
+|---|---|
+| **Linux x86_64** | [AppImage](https://github.com/RicSchonfelder/OpenShoot/releases/latest/download/OpenShoot-0.1.0-Linux-x86_64.AppImage) · [Debian/Ubuntu `.deb`](https://github.com/RicSchonfelder/OpenShoot/releases/latest/download/OpenShoot-0.1.0-Linux-amd64.deb) |
+| **Windows x64** | [Windows installer](https://github.com/RicSchonfelder/OpenShoot/releases/latest/download/OpenShoot-0.1.0-Windows-Setup-x64.exe) |
+| **macOS Apple Silicon** | [macOS arm64 DMG](https://github.com/RicSchonfelder/OpenShoot/releases/latest/download/OpenShoot-0.1.0-macOS-arm64.dmg) |
+| **macOS Intel** | [macOS x64 DMG](https://github.com/RicSchonfelder/OpenShoot/releases/latest/download/OpenShoot-0.1.0-macOS-x64.dmg) |
+
+If a direct link is unavailable, open the [complete Release page](https://github.com/RicSchonfelder/OpenShoot/releases/latest) and choose the file whose name contains your operating system.
 
 ## Why OpenShoot?
 
 | | |
 |---|---|
-| 🔒 **100% local & offline** | All AI inference runs via ONNX Runtime (CoreML/Metal on macOS). Images are never uploaded anywhere. |
-| ⚡ **AI-powered culling** | Aesthetic scoring (NIMA) + face detection (SCRFD) + sharpness analysis rate every photo automatically. |
-| ✍️ **Batch editing** | Presets, tone curve, HSL, exposure/WB/contrast — non-destructive, applied to whole sessions. |
-| 💄 **Retouching** | Skin smoothing, facial enhancement and background blur with selective masks. |
-| 👤 **Face recognition grouping** | Cluster photos by person using MobileFaceNet embeddings. |
-| 📁 **Albums & workflow** | Organize shoots into albums and work through an IMPORT → CULL → EDIT → RETOUCH pipeline. |
-| 🔀 **Interoperable** | Writes Lightroom/Capture One-compatible XMP sidecars; exports JPEG/PNG. |
-| ♻️ **Non-destructive** | Originals are never modified — ratings and edits live in sidecar files. |
-| 🧩 **Truly open source** | MIT licensed, fully auditable code. No proprietary weights, no black boxes. |
+| 🔒 **Local-first** | Core photo analysis runs on the computer and does not require a cloud account. Optional text features are separate and opt-in. |
+| ⚡ **AI-powered culling** | Aesthetic scoring, face detection, sharpness and exposure analysis rate photos automatically. |
+| ✍️ **Batch editing** | Presets, tone curve, HSL, exposure, white balance and contrast applied non-destructively. |
+| 💄 **Retouching** | Skin smoothing, facial enhancement, background blur and selective masks. |
+| 👤 **Face grouping** | Group photos by person using face embeddings. |
+| 📁 **Albums & workflow** | IMPORT → CULL → EDIT → RETOUCH workflow for photo sessions. |
+| 🔀 **Interoperable** | Lightroom/Capture One-compatible XMP sidecars and JPEG/PNG export. |
+| ♻️ **Non-destructive** | Originals are not modified; ratings and edits are stored separately. |
+| 🧩 **Open source** | MIT-licensed code with third-party models and licenses documented. |
 
 ## Features
 
@@ -145,7 +158,9 @@ you're ready to go.
 - [ ] CR3 dimensions from BMFF header for photos without EXIF
 - [ ] Opt-in text features (keywords/captions via user-provided API key)
 - [x] Linux support (CPU inference, XDG paths/trash, AppImage/deb targets)
-- [ ] Windows builds (DirectML + native Recycle Bin)
+- [x] Windows installer (x64) and native Recycle Bin support
+- [x] macOS installers (Apple Silicon and Intel)
+- [x] Multilingual README links (English, Português, Español, 简体中文)
 
 ## Contributing
 
