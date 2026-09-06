@@ -78,6 +78,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Build installer
+        env:
+          # Optional Authenticode signing for Windows. Keep both values in GitHub Secrets.
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
         run: ${{ matrix.command }}
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v4

@@ -102,7 +102,7 @@ Platform notes:
 - **Inference**: CoreML on macOS (Apple Neural Engine / Metal); CPU ONNX Runtime on Linux/Windows (CUDA/DirectML planned as opt-in).
 - **Paths**: caches and trash follow each platform's convention (`~/.cache`, XDG Trash on Linux; `~/Library/Caches`, `~/.Trash` on macOS).
 - Linux build deps: `build-essential`, `pkg-config`, `libssl-dev`; runtime dep: `libgomp1`. Requires glibc ≥ 2.38 (Ubuntu 24.04+ / Debian 13+ / Fedora 40+).
-
+- Windows SmartScreen: o instalador atual é distribuído sem certificado Authenticode; consulte [docs/WINDOWS-SMARTSCREEN.md](docs/WINDOWS-SMARTSCREEN.md) para configurar assinatura.
 ## Getting Started
 
 ```bash
